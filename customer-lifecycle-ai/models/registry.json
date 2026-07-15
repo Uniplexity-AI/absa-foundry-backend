@@ -1,0 +1,50 @@
+﻿{
+  "name": "Customer Lifecycle Prediction Model Registry",
+  "version": "2.0.0",
+  "description": "Central model registry for the Customer Lifecycle Prediction System with champion/challenger support",
+  "TODO": "Populate with model metadata, versions, and deployment status",
+  "champion": {
+    "customer_state": {
+      "path": "./champion/customer_state/",
+      "status": "placeholder",
+      "version": null,
+      "description": "Markov chain transition matrix and customer state classifier"
+    },
+    "churn_prediction": {
+      "path": "./champion/churn_prediction/",
+      "status": "placeholder",
+      "version": null,
+      "description": "Champion churn prediction model (XGBoost/LightGBM)"
+    },
+    "clv_prediction": {
+      "path": "./champion/clv_prediction/",
+      "status": "placeholder",
+      "version": null,
+      "description": "Champion Customer Lifetime Value prediction model"
+    },
+    "health_score": {
+      "path": "./champion/health_score/",
+      "status": "placeholder",
+      "version": null,
+      "description": "Customer Health Score fusion model configuration"
+    },
+    "nba": {
+      "path": "./champion/nba/",
+      "status": "placeholder",
+      "version": null,
+      "description": "Champion Next Best Action recommendation model"
+    }
+  },
+  "challenger": {
+    "description": "Challenger models undergoing evaluation. Promoted to champion on surpassing performance thresholds."
+  },
+  "archive": {
+    "description": "Archived models from previous champion/challenger rotations."
+  },
+  "feature_metadata": {
+    "description": "Feature definitions, drift statistics, and metadata for all model features."
+  },
+  "training_history": {
+    "description": "Training run logs, hyperparameter tuning history, and model lineage records."
+  }
+}

@@ -1,0 +1,50 @@
+# Cursor Rules — Customer Lifecycle Prediction System
+
+## Project Documentation
+
+Before making any changes, read these files in the `.ai/` directory:
+
+1. `.ai/README.md` — Entry point and quick rules
+2. `.ai/project-context.md` — Domain and business context
+3. `.ai/current-sprint.md` — Current phase (Phase 2: Database & APIs)
+4. `.ai/architecture.md` — Service boundaries and data flow
+5. `.ai/coding-standards.md` — Code structure and style
+
+## Always Include in Context
+
+When working on a service, always include these in your context:
+
+```
+@.ai/README.md
+@.ai/architecture.md
+@.ai/coding-standards.md
+@.ai/skills/<relevant-skill>.md
+```
+
+## Architecture Rules
+
+- **3-Layer AI:** customer-state-service (Layer 1) → prediction-service (Layer 2) → decision-intelligence-service (Layer 3)
+- **Service boundaries are strict** — one service never writes to another service's database schema
+- **API Gateway is the single entry point** — no direct service-to-service calls in production
+- **Feature Store is central** — all ML features come from feature-engineering-service
+
+## Code Rules
+
+- Python 3.12+ with full type hints
+- FastAPI routes are thin (delegate to services)
+- Services contain all business logic
+- Repositories contain all data access
+- Pydantic v2 for schemas
+- SQLAlchemy 2.0 Mapped[] style for models
+- All config via environment variables
+
+## Current Sprint Scope
+
+**Phase 2:** Database models → Schemas → Repositories → Services → Routes
+
+Do NOT implement:
+- Markov chain logic (Phase 3)
+- XGBoost/LightGBM training (Phase 3)
+- SHAP explainability (Phase 3)
+- NBA rule engine (Phase 4)
+- RL optimization (Future)
