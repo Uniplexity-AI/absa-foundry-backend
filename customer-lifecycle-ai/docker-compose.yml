@@ -1,0 +1,176 @@
+# ============================================================
+# Customer Lifecycle Prediction System - Local Development
+# ============================================================
+# TODO: Configure for production deployment with proper secrets management
+
+version: "3.9"
+
+services:
+  # ---- Infrastructure ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: clp-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-customer_lifecycle}
+      POSTGRES_USER: ${POSTGRES_USER:-clp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clp_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-clp_user} -d ${POSTGRES_DB:-customer_lifecycle}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - clp-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: clp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - clp-network
+
+  # ---- API Gateway ----
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: clp-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - clp-network
+
+  # ---- Layer 1: Behaviour Intelligence ----
+  customer-state-service:
+    build:
+      context: ./services/customer-state-service
+      dockerfile: Dockerfile
+    container_name: clp-customer-state
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_PORT=8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - clp-network
+
+  # ---- Layer 2: Prediction Intelligence ----
+  prediction-service:
+    build:
+      context: ./services/prediction-service
+      dockerfile: Dockerfile
+    container_name: clp-prediction
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_PORT=8004
+      - PREDICTION_MODEL_TYPE=${PREDICTION_MODEL_TYPE:-xgboost}
+      - PREDICTION_MODEL_BACKUP=${PREDICTION_MODEL_BACKUP:-lightgbm}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - clp-network
+
+  # ---- Layer 3: Decision Intelligence ----
+  decision-intelligence-service:
+    build:
+      context: ./services/decision-intelligence-service
+      dockerfile: Dockerfile
+    container_name: clp-decision-intelligence
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_PORT=8005
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - clp-network
+
+  # ---- Supporting Services ----
+  model-management-service:
+    build:
+      context: ./services/model-management-service
+      dockerfile: Dockerfile
+    container_name: clp-model-management
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_PORT=8006
+      - CHAMPION_CHALLENGER_ENABLED=${CHAMPION_CHALLENGER_ENABLED:-true}
+    volumes:
+      - ./models:/app/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - clp-network
+
+  dashboard-service:
+    build:
+      context: ./services/dashboard-service
+      dockerfile: Dockerfile
+    container_name: clp-dashboard
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_PORT=8007
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - clp-network
+
+  orchestration-service:
+    build:
+      context: ./services/orchestration-service
+      dockerfile: Dockerfile
+    container_name: clp-orchestration
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - SERVICE_PORT=8008
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - clp-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  clp-network:
+    driver: bridge
