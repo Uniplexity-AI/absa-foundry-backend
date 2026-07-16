@@ -177,11 +177,11 @@ def _default_steps() -> list[LoadStep]:
             step_id="load_transactions",
             step_name="Load Transactions",
             staging_table="stg_transaction",
-            target_table="transaction",
+            target_table="customer_transactions_clean",
             target_schema="clean",
             load_strategy=LoadStrategy.APPEND,
             depends_on=["load_customers", "load_accounts", "load_branches"],
             post_load_action="feature_engineering",
-            description="Load transactions — depends on customers, accounts, branches",
+            description="Load transactions into clean.customer_transactions_clean — depends on customers, accounts, branches",
         ),
     ]

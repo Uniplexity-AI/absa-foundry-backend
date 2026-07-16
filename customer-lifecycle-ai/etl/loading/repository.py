@@ -1,8 +1,12 @@
 """
 ETL Loading Repository - Production database upsert operations.
 
-Handles moving data from staging tables into production (clean) schema
-using PostgreSQL INSERT ... ON CONFLICT for idempotent upserts.
+Handles moving data from staging tables (source DB: etl_validation)
+into production/clean schema (target DB: etl_clean) using PostgreSQL
+INSERT ... ON CONFLICT for idempotent upserts.
+
+The session passed to this repository MUST be connected to the
+target (clean) database, not the source (staging) database.
 """
 
 from __future__ import annotations
@@ -15,17 +19,31 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from etl.schemas.loading_schemas import LoadStrategy
+from shared.database.session import target_session_context
 
 
 class LoadingRepository:
-    """Repository for production database loading operations.
+    """Repository for loading data into the target (clean) database.
 
     Provides upsert, append, and replace strategies for moving
     data from staging tables into the production (clean) schema.
+
+    IMPORTANT: The session must connect to the TARGET database (etl_clean),
+    not the source database (etl_validation).
     """
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    @classmethod
+    async def create(cls) -> "LoadingRepository":
+        """Factory that creates a LoadingRepository with a target-DB session.
+
+        The target session connects to etl_clean where cleaned/transformed
+        data is stored (e.g., customer_transactions_clean).
+        """
+        async with target_session_context() as session:
+            return cls(session)
 
     async def upsert(
         self,

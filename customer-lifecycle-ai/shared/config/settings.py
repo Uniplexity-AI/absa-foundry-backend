@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
 
-    # ---- PostgreSQL ----
+    # ---- PostgreSQL (Source — raw/validation data) ----
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str = "customer_lifecycle"
@@ -47,6 +47,29 @@ class Settings(BaseSettings):
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    # ---- PostgreSQL Target (ETL clean/transformed data) ----
+    postgres_target_host: str = "localhost"
+    postgres_target_port: int = 5432
+    postgres_target_db: str = "etl_clean"
+    postgres_target_user: str = "postgres"
+    postgres_target_password: str = ""
+
+    @property
+    def database_target_url(self) -> str:
+        """Construct the async target database URL (ETL output)."""
+        return (
+            f"postgresql+asyncpg://{self.postgres_target_user}:{self.postgres_target_password}"
+            f"@{self.postgres_target_host}:{self.postgres_target_port}/{self.postgres_target_db}"
+        )
+
+    @property
+    def database_target_url_sync(self) -> str:
+        """Construct the sync target database URL."""
+        return (
+            f"postgresql://{self.postgres_target_user}:{self.postgres_target_password}"
+            f"@{self.postgres_target_host}:{self.postgres_target_port}/{self.postgres_target_db}"
         )
 
     # ---- Redis ----
