@@ -2,53 +2,121 @@
 
 An enterprise-grade AI platform for banking Customer Lifecycle Prediction, Churn Analysis, Customer Value Prediction, and Next Best Action (NBA) recommendations for Relationship Managers.
 
-> **Phase:** Project Scaffolding — 3-Layer AI Architecture. No business logic implemented yet.
+> **Phase:** Phase 2 Complete — ETL Engine Implemented. 3-Layer AI Architecture scaffolded.
 
 ---
 
-## Architecture: Three AI Layers
+## Architecture Overview
 
 ```mermaid
 graph TD
-    GW[API Gateway] --> DI[Data Ingestion Service]
-    GW --> FE[Feature Engineering Service<br/>(Feature Store)]
-    GW --> CS[Customer State Service<br/>Layer 1: Behaviour Intelligence]
-    GW --> PS[Prediction Service<br/>Layer 2: Prediction Intelligence]
-    GW --> DS[Decision Intelligence Service<br/>Layer 3: Decision Intelligence]
+    GW[API Gateway] --> ETL[ETL Engine]
+    GW --> DI[Data Ingestion Service]
+    GW --> FE[Feature Engineering Service]
+    GW --> CS[Customer State Service]
+    GW --> PS[Prediction Service]
+    GW --> DS[Decision Intelligence Service]
     GW --> MM[Model Management Service]
     GW --> DB[Dashboard Service]
-    OS[Orchestration Service] --> DI
-    OS --> FE
-    OS --> CS
-    OS --> PS
-    OS --> DS
 
-    CS -- customer state --> PS
-    CS -- behavioural features --> FE
+    ETL --> PG[(PostgreSQL)]
+    ETL --> RD[(Redis)]
 
-    PS -- health score<br/>churn prob<br/>CLV --> DS
+    CS -- state --> PS
+    CS -- features --> FE
+    PS -- scores --> DS
+    DS -- NBA --> DB
 
-    DS -- NBA recommendations --> DB
-
-    DI --> PG[(PostgreSQL)]
-    FE --> PG
-    CS --> PG
-    PS --> PG
-    DS --> PG
-    MM --> PG
-    DB --> PG
-
-    GW --> RD[(Redis)]
-    subgraph Infrastructure
-        NG[Nginx]
-        PG
-        RD
+    subgraph "ETL Engine (New)"
+        CN[12 Connectors]
+        IG[Ingestion]
+        LZ[Landing Zone]
+        VL[Validation]
+        TR[Transformation]
+        ST[Staging]
+        LD[Production Loader]
+        OR[Orchestration]
     end
 ```
 
-### Layer 1 — Behaviour Intelligence (`customer-state-service`)
+### Data Flow
 
-Markov Chain based customer state engine that tracks customer behavioral state transitions.
+```
+Bank Core Systems
+  → ETL Engine (Extract → Validate → Transform → Load)
+  → Feature Store
+  → Behaviour Intelligence (Markov State Classification)
+  → Prediction Intelligence (XGBoost / LightGBM)
+  → Decision Intelligence (NBA Recommendations)
+  → Dashboard (Relationship Manager View)
+```
+
+---
+
+## Project Structure
+
+```
+customer-lifecycle-ai/
+├── etl/                    # Enterprise ETL Engine (NEW - 15 modules)
+│   ├── connectors/         # 12 data source connectors
+│   ├── ingestion/          # Data reception & routing
+│   ├── landing/            # Immutable raw storage (Parquet)
+│   ├── validation/         # 5-stage validation engine
+│   ├── transformation/     # 3-stage transform pipeline
+│   ├── staging/            # Temporary staging tables
+│   ├── loading/            # Production upsert loader
+│   ├── orchestration/      # DAG-based pipeline execution
+│   ├── checkpoint/         # Resumable processing
+│   ├── monitoring/         # Real-time observability
+│   ├── logging/            # 7-stream structured JSON
+│   ├── audit/              # Immutable compliance trail
+│   ├── config/             # Centralized env+YAML config
+│   ├── pipelines/          # Assembled pipeline runner
+│   ├── models/             # 17 SQLAlchemy 2.0 ORM models
+│   └── schemas/            # 12 Pydantic v2 schema modules
+├── services/               # AI microservices
+│   ├── customer-state-service/    # Layer 1: Behaviour Intelligence
+│   ├── prediction-service/        # Layer 2: Prediction Intelligence
+│   ├── decision-intelligence-service/  # Layer 3: Decision Intelligence
+│   ├── feature-engineering-service/    # Feature Store
+│   ├── model-management-service/      # Model Registry
+│   ├── dashboard-service/             # Dashboards
+│   ├── data-ingestion-service/        # Data Ingestion (deprecated by ETL)
+│   └── orchestration-service/         # Pipeline Scheduling
+├── gateway/                # API Gateway (FastAPI)
+├── shared/                 # Shared libraries
+├── database/               # Database schemas (17 schemas)
+├── models/                 # ML model registry
+├── docs/                   # Documentation
+└── tests/                  # Test suites
+```
+
+---
+
+## ETL Engine
+
+The **Enterprise ETL Engine** is the data integration backbone of the system. It ingests banking data from diverse source systems, validates and transforms it, and loads it into the tiered database architecture.
+
+| Feature | Description |
+|---------|-------------|
+| **12 Connectors** | PostgreSQL, SQL Server, Oracle, MySQL, CSV, Excel, JSON, XML, REST, SOAP, Core Banking, Kafka (future) |
+| **5 Validators** | Schema, Mandatory Fields, Business Rules, Duplicate Detection, Referential Integrity |
+| **3 Transforms** | Field Mapping, Value Standardization, Data Enrichment |
+| **4 Staging Tables** | stg_customer, stg_account, stg_transaction, stg_branch |
+| **DAG Orchestration** | 11-step pipeline with topological sort and retry |
+| **Checkpointing** | Resumable processing — never restart completed work |
+| **Monitoring** | Job status, throughput, system metrics, alerts |
+| **7 Log Streams** | System, ETL, Validation, Transformation, Performance, Audit, Security |
+| **Immutable Audit** | 7-year compliance trail, one record per batch |
+
+See [ETL README](etl/README.md) and [ETL Architecture](docs/architecture/etl/README.md) for details.
+
+---
+
+## AI Architecture: Three Layers
+
+### Layer 1 — Behaviour Intelligence (`customer-state-service`)
+Markov Chain based customer state engine tracking behavioral state transitions.
 
 | Component | Description |
 |-----------|-------------|

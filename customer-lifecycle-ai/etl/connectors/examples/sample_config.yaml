@@ -1,0 +1,37 @@
+# etl/connectors/examples/sample_config.yaml
+# Sample ETL connector configuration file
+# Values with ${VAR} are resolved from environment variables at runtime
+
+connectors:
+  - connector_id: pg-core-banking
+    source_type: postgresql
+    source_name: "Core Banking Database - Production"
+    host: "${DB_HOST}"
+    port: 5432
+    database: core_banking
+    username: "${DB_USER}"
+    password: "${DB_PASSWORD}"
+    table_name: public.transactions
+    batch_size: 10000
+    timeout_seconds: 300
+
+  - connector_id: csv-monthly-export
+    source_type: csv
+    source_name: "Monthly Transaction Export"
+    file_path: "/data/exports/transactions.csv"
+    delimiter: ","
+    has_header: true
+    encoding: utf-8
+
+  - connector_id: rest-customer-api
+    source_type: rest
+    source_name: "Customer 360 API"
+    api_base_url: "https://api.bank.internal/v1"
+    api_key: "${API_KEY}"
+    query: "/customers"
+    batch_size: 500
+    extra_params:
+      pagination: offset
+      data_key: customers
+      auth_header: X-API-Key
+      auth_prefix: ""

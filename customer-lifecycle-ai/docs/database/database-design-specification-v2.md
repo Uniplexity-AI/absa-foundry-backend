@@ -1,11 +1,18 @@
-# Database Design Specification — Version 2.0
+# Database Design Specification — Version 2.1
 
 **Customer Lifecycle Prediction System**
-**Date:** 2026-07-15
+**Date:** 2026-07-16
 **Author:** Enterprise Data Architecture Team
-**Status:** Draft — Supersedes v1.0
+**Status:** Updated — ETL Schema Added
 
 ---
+
+## Revision Notes (v2.0 → v2.1)
+
+| Change | v2.0 | v2.1 |
+|--------|------|------|
+| ETL Schema | Not defined | `etl` schema with 11 tables for ETL metadata |
+| Staging Schema | Conceptual | `staging` schema with 4 tables (customer, account, transaction, branch) |
 
 ## Revision Notes (v1.0 → v2.0)
 
@@ -166,11 +173,53 @@ Layer 5 (Learning):     Feedback → Retraining → Champion/Challenger → Moni
 
 ---
 
-### 3.5 Tier-Level Access Control
+### 3.5 ETL Metadata
+
+**Purpose:** Operational metadata for the ETL Engine — connector registry, batch tracking, checkpoints, audit trail.
+
+**Schemas:** `etl`
+
+**Tables:**
+- `etl_connector_registry` — Registered data source connectors
+- `etl_batch_execution_log` — Batch extraction history
+- `etl_ingestion_batch` — Ingestion lifecycle tracking
+- `etl_ingestion_chunk` — Per-chunk ingestion records
+- `etl_landing_file` — Immutable landing zone file tracking
+- `etl_validation_run` — Validation execution records
+- `etl_validation_error` — Individual validation errors
+- `etl_pipeline_run` — Pipeline execution history
+- `etl_pipeline_metrics` — Pipeline performance metrics
+- `etl_job_status` — Current job status snapshots
+- `etl_checkpoint` — Resumable processing checkpoints
+- `etl_audit` — Immutable compliance audit trail
+
+**Owning Service:** ETL Engine
+
+---
+
+### 3.6 Staging
+
+**Purpose:** Temporary storage for validated, transformed data before production load.
+
+**Schemas:** `staging`
+
+**Tables:**
+- `stg_customer` — Customer master data (truncated after clean load)
+- `stg_account` — Account data (truncated after clean load)
+- `stg_transaction` — Banking transactions (truncated after clean load)
+- `stg_branch` — Branch/channel reference data (truncated after clean load)
+
+**Owning Service:** ETL Engine
+
+---
+
+### 3.7 Tier-Level Access Control
 
 | Tier | Write Access | Read Access |
 |------|-------------|-------------|
 | Operational DB | data-ingestion-service | feature-engineering-service |
+| ETL Metadata | ETL Engine | ETL Engine, monitoring, audit |
+| Staging | ETL Engine | ETL Engine (loading) |
 | Feature Store | feature-engineering-service | prediction-service, customer-state-service |
 | Prediction DB | prediction-service, customer-state-service | decision-intelligence-service, dashboard-service |
 | Analytics Warehouse | dashboard-service (refresh) | dashboard-service, gateway (API) |
