@@ -1,5 +1,9 @@
 # Architecture — 3-Layer AI System
 
+> **Active branch:** `poc-90day` (lean subset) | **Reference:** `architecture-target-full` (complete)
+> PoC removes: HMM engine, RL engine, Kafka/Debezium/REST/SOAP connectors, orchestration service.
+> See [ARCHITECTURE.md](../ARCHITECTURE.md) for branch strategy and recovery commands.
+
 ## High-Level Architecture
 
 ```

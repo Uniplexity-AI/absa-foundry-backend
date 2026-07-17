@@ -1,15 +1,26 @@
-# Current Sprint — Phase 2: Foundation Implementation
+# Current Sprint — PoC (90-Day)
 
-**Sprint Status:** ETL Engine — Production Hardened ✅ | API Services — In Progress
-**Target:** Implement core infrastructure before ML logic
+**Sprint Status:** PoC — Month 1: Data Foundation
+**Branch:** `poc-90day` (active) | Reference: `architecture-target-full` (frozen)
+**Target:** Feature Engineering Service + minimal 3-Layer AI by month-end
 
 ---
 
-## Active Phase: ETL Hardening Complete / Database & API Foundations
+## Active Phase: Feature Engineering (Month 1 — Data Foundation)
 
-ETL engine is production-hardened and verified against ground truth. Focus shifting to API layer.
+ETL engine is production-hardened. Focus shifting to the Feature Store and service layer.
 
-## What's Done (Phase 2a — ETL Engine)
+## Branch Strategy
+
+| Branch | Purpose |
+|---|---|
+| `poc-90day` | **Active** — lean subset for 90-day PoC delivery |
+| `architecture-target-full` | **Frozen reference** — full 8-service design for post-PoC rollout |
+| `mukoma` | Original development branch |
+
+See [ARCHITECTURE.md](../ARCHITECTURE.md) for recovery commands.
+
+## What's Done (PoC — ETL Engine)
 
 - [x] ETL pipeline runs end-to-end (CSV → Extract → Validate → Transform → Load → Audit)
 - [x] All 10 validation categories verified against ground truth (800/800 dirty rows, 69,672 clean)
@@ -20,58 +31,27 @@ ETL engine is production-hardened and verified against ground truth. Focus shift
 - [x] Data-agnostic invariant checks (conservation, no silent skips, reason coverage, quality floor)
 - [x] Fixture regression test (`pytest tests/test_validation_ground_truth.py` — 6/6 passing)
 - [x] PII compliance flag (customer_id/account_id plaintext review note for BoZ data residency)
+- [x] Branch strategy: full architecture frozen on `architecture-target-full`, PoC on `poc-90day`
 
-## What's Next (Phase 2)
+## What's Next (Month 1 — Data Foundation)
 
-### Priority 1: Database Models
-1. Implement SQLAlchemy ORM models for each service
-2. Set up Alembic for migrations
-3. Create initial migration for all schemas:
-   - `customer_data` — ingested customer records
-   - `features` — feature store tables
-   - `customer_states` — Markov state assignments
-   - `predictions` — churn/CLV/health score predictions
-   - `decisions` — NBA recommendations
-   - `model_registry` — champion/challenger tracking
+### Priority: Feature Engineering Service
+1. Implement real feature generation logic in `services/feature-engineering-service/`
+2. Build feature pipelines for: customer profile, transactions, products, loans, cards, digital, behaviour, CLV
+3. Wire Feature Store to ETL output (customer_transactions_clean)
+4. Create feature metadata registry (feature names, types, lineage)
 
-### Priority 2: API Endpoints
-1. Implement CRUD routes for each service
-2. Set up FastAPI dependency injection
-3. Wire up service → repository → database flow
-4. Add request/response validation with Pydantic v2
-5. Implement health check endpoints
+### Supporting: Minimal 3-Layer Services
+1. Customer State Service — basic Markov engine (no HMM)
+2. Prediction Service — single XGBoost model (no champion/challenger)
+3. Decision Intelligence — rule engine only (no RL)
 
-### Priority 3: Shared Infrastructure
-1. Finalize `shared/database/session.py` with async session factory
-2. Implement `shared/auth/authenticator.py` with JWT
-3. Set up `shared/logging/logger.py` for structured JSON logging
-4. Implement `shared/exceptions/` hierarchy
+## What's Deferred (available on `architecture-target-full`)
 
-## What NOT to Implement Yet
-
-- ❌ Markov chain transition matrices (Phase 3)
-- ❌ XGBoost/LightGBM model training (Phase 3)
-- ❌ SHAP explainability (Phase 3)
-- ❌ NBA rule engine logic (Phase 4)
-- ❌ Champion/challenger evaluation (Phase 4)
-- ❌ RL-based optimization (Future)
-
-## Current Focus for AI Agents
-
-When asked to implement code right now, the response should be:
-
-1. **Build database models first** — `app/models/models.py` for each service
-2. **Then build schemas** — `app/schemas/schemas.py` (Pydantic v2)
-3. **Then build repositories** — `app/repository/repository.py`
-4. **Then build services** — `app/services/service.py` (thin, delegates to repos initially)
-5. **Then build routes** — `app/api/routes.py`
-
-Follow the order. Don't jump ahead.
-
-## Next Sprint Preview (Phase 3)
-
-- Markov chain implementation in customer-state-service
-- XGBoost and LightGBM model training in prediction-service
-- SHAP explainability integration
-- Health score calculator
-- Feature Store pipeline implementation
+- Hidden Markov Model (`services/customer-state-service/app/engines/hmm/`)
+- Reinforcement Learning (`services/decision-intelligence-service/app/reinforcement_learning/`)
+- Kafka/Debezium streaming connectors (`etl/connectors/streaming/`)
+- REST/SOAP API connectors (`etl/connectors/api/`)
+- Orchestration service (not yet implemented)
+- Champion/challenger model evaluation
+- Full auth/rate-limit/CORS gateway middleware
