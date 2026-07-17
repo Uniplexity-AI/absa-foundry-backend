@@ -18,14 +18,16 @@ Connector (ABC)
 │   ├── ExcelConnector         ✅ Implemented
 │   ├── JsonConnector          ✅ Implemented
 │   └── XmlConnector           ✅ Implemented
-├── ApiConnector (ABC)
-│   ├── RestConnector          ✅ Implemented
-│   └── SoapConnector          ✅ Implemented
-├── StreamingConnector (ABC)
-│   ├── KafkaConnector         ⏳ Future
-│   └── DebeziumConnector      ⏳ Future
 └── CoreBankingConnector       ✅ Implemented
-```
+
+<!-- Restored from architecture-target-full for post-PoC:
+├── ApiConnector (ABC)
+│   ├── RestConnector          ✅ Implemented (removed for PoC)
+│   └── SoapConnector          ✅ Implemented (removed for PoC)
+├── StreamingConnector (ABC)
+│   ├── KafkaConnector         ⏳ Future (removed for PoC)
+│   └── DebeziumConnector      ⏳ Future (removed for PoC)
+-->```
 
 ## Usage
 

@@ -151,21 +151,22 @@ services:
     networks:
       - clp-network
 
-  orchestration-service:
-    build:
-      context: ./services/orchestration-service
-      dockerfile: Dockerfile
-    container_name: clp-orchestration
-    environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
-      - REDIS_URL=redis://redis:6379/0
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - SERVICE_PORT=8008
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - clp-network
+  # --- NOT YET IMPLEMENTED (restore from architecture-target-full post-PoC) ---
+  # orchestration-service:
+  #   build:
+  #     context: ./services/orchestration-service
+  #     dockerfile: Dockerfile
+  #   container_name: clp-orchestration
+  #   environment:
+  #     - DATABASE_URL=postgresql://${POSTGRES_USER:-clp_user}:${POSTGRES_PASSWORD:-clp_password}@postgres:5432/${POSTGRES_DB:-customer_lifecycle}
+  #     - REDIS_URL=redis://redis:6379/0
+  #     - ENVIRONMENT=${ENVIRONMENT:-development}
+  #     - SERVICE_PORT=8008
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   networks:
+  #     - clp-network
 
 volumes:
   postgres_data:

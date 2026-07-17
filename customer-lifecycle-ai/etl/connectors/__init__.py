@@ -29,8 +29,8 @@ from etl.connectors.factory import (
 # Import connector implementations to trigger auto-registration with factory
 from etl.connectors.database import connectors as _db  # noqa: F401
 from etl.connectors.files import connectors as _files  # noqa: F401
-from etl.connectors.api import connectors as _api  # noqa: F401
-from etl.connectors.streaming import connectors as _streaming  # noqa: F401
+# from etl.connectors.api import connectors as _api  # noqa: F401  — removed for PoC (restore from architecture-target-full)
+# from etl.connectors.streaming import connectors as _streaming  # noqa: F401  — removed for PoC (future Kafka/Debezium)
 from etl.connectors.banking import connectors as _banking  # noqa: F401
 
 __all__ = [
