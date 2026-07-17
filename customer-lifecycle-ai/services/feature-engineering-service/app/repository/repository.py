@@ -160,20 +160,26 @@ class FeatureRepository:
         self._conn_str = settings.database_target_url_sync
 
     def compute_batch(self, as_of_date: date) -> dict:
-        """Compute features for all customers as of a given date.
+        """Compute features for all customers as of a given date."""
+        return self._compute(as_of_date)
 
-        Uses INSERT ... ON CONFLICT DO UPDATE (upsert) for idempotency.
-        Customers with zero transactions before as_of_date are excluded
-        by the GROUP BY (they produce no rows).
+    def compute_for_customers(self, as_of_date: date, customer_ids: list[str]) -> dict:
+        """Compute features for specific customers only (fast, for testing)."""
+        return self._compute(as_of_date, customer_ids=customer_ids)
 
-        Returns:
-            Dict with customers_processed, rows_upserted, duration_seconds.
-        """
+    def _compute(self, as_of_date: date, customer_ids: list[str] | None = None) -> dict:
         t0 = time.monotonic()
         conn = psycopg2.connect(self._conn_str)
         try:
             cur = conn.cursor()
-            cur.execute(FEATURE_SQL, {"as_of_date": as_of_date.isoformat()})
+            if customer_ids:
+                sql = FEATURE_SQL.replace(
+                    "FROM customer_transactions_clean t\nWHERE transaction_date::date <= %(as_of_date)s::date",
+                    "FROM customer_transactions_clean t\nWHERE transaction_date::date <= %(as_of_date)s::date\n  AND t.customer_id = ANY(%(customer_ids)s)"
+                )
+                cur.execute(sql, {"as_of_date": as_of_date.isoformat(), "customer_ids": customer_ids})
+            else:
+                cur.execute(FEATURE_SQL, {"as_of_date": as_of_date.isoformat()})
             conn.commit()
             rows = cur.rowcount
         finally:
