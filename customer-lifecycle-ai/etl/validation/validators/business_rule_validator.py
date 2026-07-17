@@ -2,7 +2,7 @@
 Business Rule Validator - Configurable business logic validation.
 
 Checks:
-- Date format validity
+- Date format validity and implausible future dates
 - Amount > 0 and within acceptable range
 - Currency is in accepted list
 - Transaction type is in accepted list
@@ -15,7 +15,7 @@ Checks:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -65,14 +65,20 @@ class BusinessRuleValidator(BaseValidator):
         results: list[RecordValidationResult] = []
 
         for idx, (_, row) in enumerate(df.iterrows()):
-            # Skip already-invalid records if stop_on_first_error
+            # Preserve errors from previous validators
             if existing_results and idx < len(existing_results):
                 prev = existing_results[idx]
                 if not prev.is_valid and self.config.stop_on_first_error:
                     results.append(prev)
                     continue
+                # Merge: start with previous errors, add business rule results
+                result = self.validate_record(row, idx)
+                result.errors = list(prev.errors) + result.errors
+                result.warnings = list(prev.warnings) + result.warnings
+                result.is_valid = result.is_valid and prev.is_valid
+            else:
+                result = self.validate_record(row, idx)
 
-            result = self.validate_record(row, idx)
             results.append(result)
             if not result.is_valid:
                 self._error_count += len(result.errors)
@@ -129,7 +135,7 @@ class BusinessRuleValidator(BaseValidator):
     def _check_date_format(
         self, row: pd.Series, row_index: int
     ) -> list[ValidationError]:
-        """Check that transaction_date is a valid date."""
+        """Check that transaction_date is a valid date and not implausibly far in the future."""
         errors: list[ValidationError] = []
         field = "transaction_date"
         if field not in row.index:
@@ -138,19 +144,19 @@ class BusinessRuleValidator(BaseValidator):
         if value is None or pd.isna(value):
             return errors  # Already caught by mandatory field validator
 
-        parsed = False
+        parsed_dt: datetime | None = None
+
         if isinstance(value, datetime):
-            parsed = True
+            parsed_dt = value
         elif isinstance(value, str):
             for fmt in self.config.accepted_date_formats:
                 try:
-                    datetime.strptime(value.strip(), fmt)
-                    parsed = True
+                    parsed_dt = datetime.strptime(value.strip(), fmt)
                     break
                 except ValueError:
                     continue
 
-        if not parsed:
+        if parsed_dt is None:
             errors.append(ValidationError(
                 rule_id="BUSINESS-DATE-001",
                 category=ValidationCategory.BUSINESS_RULE,
@@ -161,14 +167,34 @@ class BusinessRuleValidator(BaseValidator):
                 expected_value="Valid date in accepted format",
                 record_index=row_index,
             ))
+            return errors
+
+        # Check for implausible future dates (BUSINESS-DATE-002)
+        now = datetime.now(timezone.utc)
+        if parsed_dt.tzinfo is None:
+            parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+        max_allowed = now + timedelta(days=self.config.max_future_date_days)
+        if parsed_dt > max_allowed:
+            errors.append(ValidationError(
+                rule_id="BUSINESS-DATE-002",
+                category=ValidationCategory.BUSINESS_RULE,
+                severity=ValidationSeverity.ERROR,
+                field_name=field,
+                message=f"Transaction date {parsed_dt.date()} is too far in the future. Max allowed: {max_allowed.date()}",
+                actual_value=str(parsed_dt.date()),
+                expected_value=f"Date ≤ {max_allowed.date()}",
+                record_index=row_index,
+            ))
+
         return errors
 
     def _check_amount(
         self, row: pd.Series, row_index: int
     ) -> list[ValidationError]:
-        """Check that transaction_amount is positive and within range."""
+        """Check that amount is positive and within range."""
         errors: list[ValidationError] = []
-        field = "transaction_amount"
+        # Support both 'amount' and 'transaction_amount' column names
+        field = "amount" if "amount" in row.index else "transaction_amount"
         if field not in row.index:
             return errors
         value = row[field]
@@ -269,7 +295,8 @@ class BusinessRuleValidator(BaseValidator):
     ) -> list[ValidationError]:
         """Check channel is accepted."""
         errors: list[ValidationError] = []
-        field = "transaction_channel"
+        # Support both 'channel' and 'transaction_channel' column names
+        field = "channel" if "channel" in row.index else "transaction_channel"
         if field not in row.index:
             return errors
         value = row[field]

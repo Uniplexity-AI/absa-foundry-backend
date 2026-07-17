@@ -1,6 +1,20 @@
 # ETL Configuration - Customer Lifecycle Prediction System
 # All values can be overridden by environment variables (ETL_ prefix).
 
+# Schema drift detection — fail loudly on unexpected columns for regulated banking
+schema:
+  mode: strict          # strict = fail on any difference | warn = log only | off = skip check
+  expected_columns:
+    - customer_id       # string, non-null
+    - account_id        # string, non-null
+    - branch_code       # string
+    - transaction_date  # string (YYYY-MM-DD)
+    - transaction_type  # string (CREDIT/DEBIT/TRANSFER/PAYMENT)
+    - channel           # string (BRANCH/ATM/POS/ONLINE/MOBILE/INTERNET)
+    - currency          # string (ISO 4217, 3-char)
+    - amount            # float64, > 0
+    - data_issue        # string | null — ground-truth label column (test data)
+
 landing:
   base_path: /data/landing
   default_format: parquet
@@ -18,10 +32,11 @@ validation:
     - branch_code
     - transaction_date
     - transaction_type
-    - transaction_channel
-    - transaction_amount
+    - channel
+    - amount
     - currency
   accepted_currencies:
+    - ZMW
     - ZAR
     - USD
     - EUR
@@ -37,15 +52,17 @@ validation:
     - POS
     - ONLINE
     - MOBILE
+    - INTERNET
   duplicate_detection_enabled: true
   duplicate_keys:
     - customer_id
     - account_id
     - branch_code
     - transaction_date
-    - transaction_amount
+    - amount
     - transaction_type
-    - transaction_channel
+    - channel
+    - currency
   exact_duplicate_strategy: reject
   near_duplicate_strategy: flag
 

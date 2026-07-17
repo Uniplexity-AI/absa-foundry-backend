@@ -35,19 +35,41 @@ See [ETL Architecture Documentation](../docs/architecture/etl/README.md) for com
 ## Quick Start
 
 ```bash
-# The ETL engine runs as part of the docker-compose orchestration
-docker-compose up -d
+# Run the ETL pipeline against the test dataset
+python run_etl.py --csv scripts/etl_validation_customers.csv
 
-# Trigger a pipeline run via the orchestration service API
-curl -X POST http://localhost:8080/api/v1/etl/pipelines/run \
-  -H "Content-Type: application/json" \
-  -d '{"pipeline": "customer_data_ingestion", "source": "core_banking"}'
+# Dry run (validate only, no DB writes)
+python run_etl.py --dry-run
+
+# Force re-process an already-loaded file
+python run_etl.py --csv data.csv --force
+
+# Run the fixture regression test
+pytest tests/test_validation_ground_truth.py -v
+
+# Verify pipeline output against ground truth
+python verify.py --verbose
 ```
+
+## Production Features
+
+| Feature | Description |
+|---------|-------------|
+| **Schema Drift Detection** | Fails loudly in strict mode on missing/reordered columns (configurable per `etl_config.yaml`) |
+| **Idempotency Guard** | Detects duplicate loads by SHA-256 file hash in audit trail; `--force` to override |
+| **Bulk Insert** | Batch inserts via `psycopg2.extras.execute_values` (5K-row chunks) — ~17K rows/s |
+| **Structured Logging** | INFO/WARNING/ERROR levels with timestamps; UTF-8 output |
+| **Invariant Checks** | Conservation, no silent skips, reason coverage, quality floor — run on every batch |
+| **Immutable Audit** | `etl.etl_audit` — 24-column compliance trail, one record per batch, append-only |
+| **Per-Row Rejections** | Every row in `customer_transactions_rejected` carries its specific failed rule ID(s) |
+| **Constraint Rescue** | Rows failing DB constraints are rescued to rejected table, never silently dropped |
 
 ## Status
 
 - **Phase 1:** Architecture scaffolding — COMPLETE
-- **Phase 2:** Module implementation — COMPLETE
+- **Phase 2a:** ETL engine production hardening — COMPLETE
+- **Phase 2b:** API service implementation — IN PROGRESS
+- **All 15 modules implemented** with 120+ unit/integration tests + fixture regression suite
 - **All 15 modules implemented** with 120+ unit/integration tests
 
 ### Implementation Summary

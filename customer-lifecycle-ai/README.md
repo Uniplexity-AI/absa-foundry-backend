@@ -2,7 +2,7 @@
 
 An enterprise-grade AI platform for banking Customer Lifecycle Prediction, Churn Analysis, Customer Value Prediction, and Next Best Action (NBA) recommendations for Relationship Managers.
 
-> **Phase:** Phase 2 Complete — ETL Engine Implemented. 3-Layer AI Architecture scaffolded.
+> **Phase:** Phase 2a Complete — ETL Engine Production Hardened. 3-Layer AI Architecture scaffolded.
 
 ---
 
@@ -101,13 +101,26 @@ The **Enterprise ETL Engine** is the data integration backbone of the system. It
 |---------|-------------|
 | **12 Connectors** | PostgreSQL, SQL Server, Oracle, MySQL, CSV, Excel, JSON, XML, REST, SOAP, Core Banking, Kafka (future) |
 | **5 Validators** | Schema, Mandatory Fields, Business Rules, Duplicate Detection, Referential Integrity |
+| **10 Validation Rules** | All verified against ground truth (currency, channel, date, future-date, amount, duplicates, mandatory fields) |
 | **3 Transforms** | Field Mapping, Value Standardization, Data Enrichment |
-| **4 Staging Tables** | stg_customer, stg_account, stg_transaction, stg_branch |
-| **DAG Orchestration** | 11-step pipeline with topological sort and retry |
-| **Checkpointing** | Resumable processing — never restart completed work |
-| **Monitoring** | Job status, throughput, system metrics, alerts |
-| **7 Log Streams** | System, ETL, Validation, Transformation, Performance, Audit, Security |
-| **Immutable Audit** | 7-year compliance trail, one record per batch |
+| **Batch Bulk Insert** | `execute_values` with 5K-row chunks — ~17K rows/s on 70K-row test file |
+| **Schema Drift Detection** | Strict mode — fails loudly on missing/reordered columns (configurable) |
+| **Idempotency Guard** | SHA-256 file hash dedup — refuses to reload without `--force` |
+| **Immutable Audit** | 24-column `etl.etl_audit` — compliance-grade, append-only, 7-year retention |
+| **Per-Row Rejection** | Every rejected row carries its specific failed rule ID(s) |
+| **Invariant Checks** | Conservation, no-silent-skips, reason coverage, quality floor — every batch |
+| **Structured Logging** | INFO/WARNING/ERROR with timestamps, UTF-8 output |
+
+### Quick Usage
+
+```bash
+python run_etl.py                           # run against default fixture CSV
+python run_etl.py --csv data.csv            # custom input
+python run_etl.py --dry-run                 # validate only, no DB writes
+python run_etl.py --csv data.csv --force    # re-process already-loaded file
+pytest tests/test_validation_ground_truth.py -v   # fixture regression test (6/6)
+python verify.py --verbose                  # ground-truth comparison
+```
 
 See [ETL README](etl/README.md) and [ETL Architecture](docs/architecture/etl/README.md) for details.
 

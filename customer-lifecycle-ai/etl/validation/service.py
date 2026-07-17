@@ -24,7 +24,10 @@ from etl.schemas.validation_schemas import (
     ValidationStatus,
 )
 from etl.validation.interfaces import BaseValidator
-from etl.validation.validators.business_rule_validator import LookupProvider
+from etl.validation.validators.business_rule_validator import (
+    BusinessRuleValidator,
+    LookupProvider,
+)
 from etl.validation.validators.duplicate_detector import DuplicateDetector
 from etl.validation.validators.mandatory_field_validator import MandatoryFieldValidator
 from etl.validation.validators.referential_integrity_validator import (

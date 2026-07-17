@@ -63,6 +63,14 @@ class ETLConfig:
         self.validation = ValidationConfig()
         self.transformation = TransformationConfig()
 
+        # Schema drift detection
+        self.schema_mode: str = "strict"
+        self.expected_columns: list[str] = [
+            "customer_id", "account_id", "branch_code",
+            "transaction_date", "transaction_type", "channel",
+            "currency", "amount", "data_issue",
+        ]
+
         # Override from env
         self._load_from_env()
 
@@ -147,6 +155,12 @@ class ETLConfig:
             for k, v in data["logging"].items():
                 if hasattr(self.logging, k):
                     setattr(self.logging, k, v)
+        if "schema" in data:
+            schema_cfg = data["schema"]
+            if "mode" in schema_cfg:
+                self.schema_mode = schema_cfg["mode"]
+            if "expected_columns" in schema_cfg:
+                self.expected_columns = schema_cfg["expected_columns"]
 
 
 # ---------------------------------------------------------------------------

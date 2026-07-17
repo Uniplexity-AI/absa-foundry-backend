@@ -1,24 +1,25 @@
 # Current Sprint — Phase 2: Foundation Implementation
 
-**Sprint Status:** Planning
+**Sprint Status:** ETL Engine — Production Hardened ✅ | API Services — In Progress
 **Target:** Implement core infrastructure before ML logic
 
 ---
 
-## Active Phase: Database & API Foundations
+## Active Phase: ETL Hardening Complete / Database & API Foundations
 
-We are moving from scaffolding (Phase 1) to implementation (Phase 2).
+ETL engine is production-hardened and verified against ground truth. Focus shifting to API layer.
 
-## What's Done (Phase 1)
+## What's Done (Phase 2a — ETL Engine)
 
-- [x] Complete project structure with 3-layer AI architecture
-- [x] All 8 microservices scaffolded with Clean Architecture
-- [x] Shared module with database, logging, exceptions, auth, ML utilities
-- [x] Docker Compose for local development (PostgreSQL, Redis, all services)
-- [x] Champion/challenger model registry structure
-- [x] Feature Store subdirectories for all banking domains
-- [x] Research notebook structure for experimentation
-- [x] AI development guidance system (`.ai/`, `.github/`, `.cursor/`, `.claude/`)
+- [x] ETL pipeline runs end-to-end (CSV → Extract → Validate → Transform → Load → Audit)
+- [x] All 10 validation categories verified against ground truth (800/800 dirty rows, 69,672 clean)
+- [x] Compliance-grade immutable audit trail (`etl.etl_audit`) with batch-level traceability
+- [x] Per-row rejection reasons (each rejected row carries its specific failed rule IDs)
+- [x] Production hardening: bulk inserts (17K rows/s), structured logging, idempotency guard
+- [x] Schema drift detection (strict mode — fails loudly on missing/reordered columns)
+- [x] Data-agnostic invariant checks (conservation, no silent skips, reason coverage, quality floor)
+- [x] Fixture regression test (`pytest tests/test_validation_ground_truth.py` — 6/6 passing)
+- [x] PII compliance flag (customer_id/account_id plaintext review note for BoZ data residency)
 
 ## What's Next (Phase 2)
 

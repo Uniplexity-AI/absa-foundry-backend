@@ -245,7 +245,7 @@ class ValidationConfig(BaseModel):
         default_factory=lambda: [
             "customer_id", "account_id", "branch_code",
             "transaction_date", "transaction_type",
-            "transaction_channel", "transaction_amount", "currency",
+            "channel", "amount", "currency",
         ],
         description="Fields that must be present and non-null",
     )
@@ -258,7 +258,7 @@ class ValidationConfig(BaseModel):
 
     # Accepted values
     accepted_currencies: list[str] = Field(
-        default_factory=lambda: ["ZAR", "USD", "EUR", "GBP", "BWP", "NAD", "SZL", "LSL"],
+        default_factory=lambda: ["ZMW", "ZAR", "USD", "EUR", "GBP", "BWP", "NAD", "SZL", "LSL"],
         description="Whitelist of accepted currency codes",
     )
     accepted_transaction_types: list[str] = Field(
@@ -271,7 +271,7 @@ class ValidationConfig(BaseModel):
     accepted_channels: list[str] = Field(
         default_factory=lambda: [
             "BRANCH", "ATM", "POS", "ONLINE", "MOBILE",
-            "USSD", "E_WALLET", "DIRECT_DEBIT", "EFT",
+            "INTERNET", "USSD", "E_WALLET", "DIRECT_DEBIT", "EFT",
         ],
         description="Whitelist of accepted transaction channels",
     )
@@ -298,8 +298,8 @@ class ValidationConfig(BaseModel):
     duplicate_keys: list[str] = Field(
         default_factory=lambda: [
             "customer_id", "account_id", "branch_code",
-            "transaction_date", "transaction_amount",
-            "transaction_type", "transaction_channel",
+            "transaction_date", "amount",
+            "transaction_type", "channel", "currency",
         ],
         description="Fields forming the duplicate detection composite key",
     )
@@ -341,6 +341,11 @@ class ValidationConfig(BaseModel):
         default=10000,
         ge=0,
         description="Maximum errors before aborting the batch",
+    )
+    max_future_date_days: int = Field(
+        default=365,
+        ge=0,
+        description="Maximum days into the future a transaction date can be before rejection",
     )
     parallel_validation: bool = Field(
         default=False,

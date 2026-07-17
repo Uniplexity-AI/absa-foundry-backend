@@ -229,8 +229,9 @@ class DuplicateDetector(BaseValidator):
         Returns:
             Fuzzy hash string.
         """
-        # Use a subset of keys for fuzzy matching
-        fuzzy_fields = ["customer_id", "account_id", "branch_code", "transaction_type", "transaction_channel"]
+        # Use a subset of keys for fuzzy matching — must include transaction_date
+        # to avoid flagging legitimate repeat transactions on different dates
+        fuzzy_fields = ["customer_id", "account_id", "branch_code", "transaction_date", "transaction_type", "channel", "currency"]
         fuzzy_values: dict[str, object] = {}
         for field in fuzzy_fields:
             if field in row.index:
@@ -241,10 +242,11 @@ class DuplicateDetector(BaseValidator):
                     fuzzy_values[field] = val
 
         # Round amount to nearest 100 for near-duplicate matching
-        if "transaction_amount" in row.index:
+        amount_field = "amount" if "amount" in row.index else "transaction_amount"
+        if amount_field in row.index:
             try:
-                amt = float(row["transaction_amount"])
-                fuzzy_values["transaction_amount"] = round(amt / 100) * 100
+                amt = float(row[amount_field])
+                fuzzy_values[amount_field] = round(amt / 100) * 100
             except (ValueError, TypeError):
                 pass
 

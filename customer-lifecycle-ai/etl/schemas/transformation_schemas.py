@@ -165,7 +165,7 @@ class TransformationConfig(BaseModel):
 
     All mappings are stored here — nothing hardcoded in code.
     """
-    model_config = ConfigDict(extra="forbidden")
+    model_config = ConfigDict(extra="forbid")
 
     # Field mappings (source → target)
     field_mappings: list[FieldMapping] = Field(

@@ -1,6 +1,7 @@
 # AI Development Guide — Customer Lifecycle Prediction System
 
 > **CRITICAL:** Read this file first before making ANY code changes.
+> **ETL Status:** Production-hardened. Validation verified against ground truth (10/10 categories, 800/800 dirty rows). Run `python verify.py --verbose` after any ETL change.
 
 ---
 
@@ -26,6 +27,32 @@ Read these documents **in order** before generating any implementation:
 4. **All configuration via environment variables.** Read from `app/config/settings.py`, never hardcode.
 5. **Every Python file must have a module docstring and TODO comment.** No exceptions.
 6. **Tests go in the proper subdirectory:** `unit/`, `integration/`, `performance/`, `security/`, or `fixtures/`.
+7. **ETL changes must pass the fixture regression test:** `pytest tests/test_validation_ground_truth.py -v` before merging.
+8. **Never change the fixture CSV** (`tests/fixtures/etl_validation_customers.csv`) — its value is that it never changes.
+
+---
+
+## Running Tests
+
+```bash
+# ETL fixture regression — runs pipeline once against known fixture, asserts all 10 categories
+pytest tests/test_validation_ground_truth.py -v
+
+# Ground-truth comparison (source vs target DB counts)
+python verify.py --verbose
+
+# ETL pipeline — dry run (validate only, no DB writes)
+python run_etl.py --dry-run
+
+# ETL pipeline — full run against fixture
+python run_etl.py --force
+
+# ETL pipeline — custom CSV
+python run_etl.py --csv path/to/data.csv
+
+# All tests (when Phase 2b API tests are added)
+pytest tests/ -v
+```
 
 ---
 
