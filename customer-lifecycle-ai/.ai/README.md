@@ -66,7 +66,7 @@ customer-lifecycle-ai/
 │   ├── decision-intelligence-service/# Layer 3: Decision Intelligence (NBA)
 │   ├── feature-engineering-service/  # Central Feature Store
 │   ├── model-management-service/     # Champion/Challenger model registry
-│   ├── data-ingestion-service/       # ETL pipelines
+│   ├── model-management-service/     # Champion/Challenger model registry
 │   ├── dashboard-service/            # Analytics data
 │   └── orchestration-service/        # Workflow coordination
 ├── shared/                           # Reusable code — CHECK HERE FIRST

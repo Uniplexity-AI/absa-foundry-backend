@@ -78,8 +78,7 @@ customer-lifecycle-ai/
 │   ├── feature-engineering-service/    # Feature Store
 │   ├── model-management-service/      # Model Registry
 │   ├── dashboard-service/             # Dashboards
-│   ├── data-ingestion-service/        # Data Ingestion (deprecated by ETL)
-│   └── orchestration-service/         # Pipeline Scheduling
+│   └── orchestration-service/         # Pipeline Scheduling (deferred)
 ├── gateway/                # API Gateway (FastAPI)
 ├── shared/                 # Shared libraries
 ├── database/               # Database schemas (17 schemas)

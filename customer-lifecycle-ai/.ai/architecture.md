@@ -95,7 +95,7 @@ Weights configured via `HEALTH_SCORE_CHURN_WEIGHT`, `HEALTH_SCORE_CLV_WEIGHT`, `
 
 | Service | Responsibility |
 |---------|---------------|
-| `data-ingestion-service` | ETL pipelines, data validation, raw data storage |
+| `data-ingestion-service` | Replaced by `etl/` engine — removed from PoC (available on `architecture-target-full`) |
 | `feature-engineering-service` | Central Feature Store — computes and caches all ML features |
 | `model-management-service` | Champion/challenger registry, versioning, drift monitoring |
 | `dashboard-service` | Aggregates data for the RM dashboard frontend |
