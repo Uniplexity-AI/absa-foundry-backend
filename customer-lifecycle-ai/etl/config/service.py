@@ -71,6 +71,16 @@ class ETLConfig:
             "currency", "amount", "data_issue",
         ]
 
+        # Target tables (config-driven bulk insert)
+        self.target_clean_table: str = "customer_transactions_clean"
+        self.target_rejected_table: str = "customer_transactions_rejected"
+        self.target_data_columns: list[str] = [
+            "customer_id", "account_id", "branch_code",
+            "transaction_date", "transaction_type", "channel",
+            "currency", "amount",
+        ]
+        self.target_meta_columns: list[str] = ["loaded_at", "source_row_id", "batch_id"]
+
         # Override from env
         self._load_from_env()
 
@@ -78,7 +88,7 @@ class ETLConfig:
     def load(cls, config_path: str | None = None) -> ETLConfig:
         """Load configuration from YAML file and environment.
 
-        Args:
+      oo   Args:
             config_path: Optional path to YAML config file.
 
         Returns:
@@ -161,6 +171,16 @@ class ETLConfig:
                 self.schema_mode = schema_cfg["mode"]
             if "expected_columns" in schema_cfg:
                 self.expected_columns = schema_cfg["expected_columns"]
+        if "target" in data:
+            target_cfg = data["target"]
+            if "clean_table" in target_cfg:
+                self.target_clean_table = target_cfg["clean_table"]
+            if "rejected_table" in target_cfg:
+                self.target_rejected_table = target_cfg["rejected_table"]
+            if "data_columns" in target_cfg:
+                self.target_data_columns = target_cfg["data_columns"]
+            if "meta_columns" in target_cfg:
+                self.target_meta_columns = target_cfg["meta_columns"]
 
 
 # ---------------------------------------------------------------------------

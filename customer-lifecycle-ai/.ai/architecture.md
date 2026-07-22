@@ -4,6 +4,37 @@
 > PoC removes: HMM engine, RL engine, Kafka/Debezium/REST/SOAP connectors, orchestration service.
 > See [ARCHITECTURE.md](../ARCHITECTURE.md) for branch strategy and recovery commands.
 
+## Data Ingestion Tier (IMPLEMENTED — 9 modules)
+
+Before data reaches the ETL engine, a **Dynamic Extractor, Unifier & Validation Engine** handles multi-table extraction from fragmented source schemas.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│           Dynamic Extractor & Unifier (Pre-Processor)        │
+│  YAML Spec → Version Guard → Join Validator → Query Builder  │
+│  → Streaming Extraction → Pydantic v2 Validation             │
+│  → Business Rules Engine → DLQ (audit.rejected_records)      │
+│  Output: unified, structurally-valid DataFrame               │
+└────────────────────────────┬─────────────────────────────────┘
+                             │ unified DataFrame
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│               ETL Engine (run_etl.py — existing)             │
+│  Schema Drift → Business Validation → Transform → Load       │
+│  Output: *_clean / *_rejected tables in etl_clean            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Implementation:** `etl/extraction/` (9 files) | Wired via `--extraction-spec` flag | 2 YAML specs in `etl/config/extraction_specs/`
+
+### API Gateway (IMPLEMENTED — 17 auth files)
+
+```
+Gateway (:8080) → JWT Auth → RBAC → Rate Limit → API Key Auth → Logging
+Routes: /auth/*, /admin/*, /internal/*
+Auth: LDAP-ready, JWT + refresh tokens, 6 roles, Redis blacklist
+```
+
 ## High-Level Architecture
 
 ```

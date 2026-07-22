@@ -1,0 +1,157 @@
+# Customer 360 — Multi-Table Extraction Spec
+# JOINs raw_customers, raw_transactions, and raw_interactions to produce
+# a unified view with customer profile + transaction summary + interaction history.
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_360_multi.yaml
+
+version: "1.0"
+dataset_name: "customer_360_multi"
+description: "Unified view: customer profiles joined with transaction summaries and interaction history."
+
+# ---- Driving table ----
+primary_entity:
+  table: "public.raw_customers"
+  alias: "cust"
+  select_fields:
+    - field: "customer_id"
+      alias: "customer_id"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "activation_date"
+      alias: "activation_date"
+      validation:
+        type: "datetime"
+        required: true
+
+    - field: "branch_code"
+      alias: "branch_code"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "country"
+      alias: "country"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "customer_type"
+      alias: "customer_type"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "onboarding_channel"
+      alias: "onboarding_channel"
+      validation:
+        type: "str"
+        required: false
+        default: "UNKNOWN"
+
+    - field: "date_of_birth"
+      alias: "date_of_birth"
+      validation:
+        type: "datetime"
+        required: true
+
+    - field: "gender"
+      alias: "gender"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "status"
+      alias: "status"
+      validation:
+        type: "str"
+        required: true
+
+# ---- Joins ----
+joins:
+  - table: "public.raw_transactions"
+    alias: "txn"
+    join_type: "left"
+    "on":
+      - left: cust.customer_id
+        right: txn.customer_id
+    select_fields: []
+
+  - table: "public.raw_interactions"
+    alias: "intr"
+    join_type: "left"
+    "on":
+      - left: cust.customer_id
+        right: intr.customer_id
+    select_fields: []
+
+# ---- Aggregations (computed from joined tables) ----
+aggregations:
+  - function: COUNT
+    field: "txn.transaction_id"
+    alias: transaction_count
+
+  - function: SUM
+    field: "txn.amount"
+    alias: total_spent
+
+  - function: AVG
+    field: "txn.amount"
+    alias: avg_transaction_value
+
+  - function: MAX
+    field: "txn.transaction_date"
+    alias: last_transaction_date
+
+  - function: COUNT
+    field: "intr.interaction_id"
+    alias: interaction_count
+
+group_by:
+  - "cust.customer_id"
+  - "cust.activation_date"
+  - "cust.branch_code"
+  - "cust.country"
+  - "cust.customer_type"
+  - "cust.onboarding_channel"
+  - "cust.date_of_birth"
+  - "cust.gender"
+  - "cust.status"
+
+# ---- Calculated fields (SQL expressions) ----
+calculated_fields:
+  - name: customer_age
+    expression: "EXTRACT(YEAR FROM AGE(CURRENT_DATE, cust.date_of_birth))"
+    output_type: int
+
+  - name: tenure_days
+    expression: "CURRENT_DATE - cust.activation_date::DATE"
+    output_type: int
+
+# ---- Business rules ----
+business_rules:
+  - id: BR001
+    name: "Valid customer type"
+    expression: "customer_type in ('Retail', 'SME', 'Premium', 'Corporate')"
+    severity: ERROR
+    message: "Invalid customer type"
+
+  - id: BR002
+    name: "Valid status"
+    expression: "status in ('Active', 'Dormant', 'Closed', 'Suspended')"
+    severity: ERROR
+    message: "Invalid customer status"
+
+  - id: BR003
+    name: "Valid gender"
+    expression: "gender in ('M', 'F')"
+    severity: WARNING
+    message: "Gender should be M or F"
+
+# ---- Streaming ----
+streaming:
+  enabled: true
+  batch_size: 10000
+  fetch_strategy: cursor

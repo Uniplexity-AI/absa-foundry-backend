@@ -13,12 +13,15 @@ Add read-replica engine support when horizontal scaling is needed.
 
 from __future__ import annotations
 
+from sqlalchemy import create_engine as create_sync_engine
+from sqlalchemy import Engine as SyncEngine
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from shared.config.settings import settings
 
 _engine: AsyncEngine | None = None
 _target_engine: AsyncEngine | None = None
+_sync_engine: SyncEngine | None = None
 
 
 def get_engine() -> AsyncEngine:
@@ -56,6 +59,26 @@ def get_target_engine() -> AsyncEngine:
 def get_sync_url() -> str:
     """Return the synchronous database URL for Alembic migrations."""
     return settings.database_url_sync
+
+
+def get_sync_engine() -> SyncEngine:
+    """Return a singleton synchronous SQLAlchemy engine for the source DB.
+
+    Used by the Dynamic Extractor and any component that needs
+    synchronous DB access (reflection, inspection, raw queries).
+    """
+    global _sync_engine
+    if _sync_engine is None:
+        _sync_engine = create_sync_engine(
+            settings.database_url_sync,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_timeout=settings.db_pool_timeout,
+            pool_recycle=settings.db_pool_recycle,
+            echo=settings.environment == "development",
+            future=True,
+        )
+    return _sync_engine
 
 
 def reset_engine() -> None:

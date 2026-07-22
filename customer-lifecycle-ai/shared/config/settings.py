@@ -93,7 +93,26 @@ class Settings(BaseSettings):
     # ---- JWT / Auth ----
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 30
+    jwt_access_token_expire_minutes: int = 15
+    jwt_refresh_token_expire_days: int = 7
+
+    # ---- LDAP / Active Directory ----
+    ldap_enabled: bool = False
+    ldap_server: str = "ldap://ad.absa.co.zm:389"
+    ldap_base_dn: str = "DC=absa,DC=co,DC=zm"
+    ldap_user_dn_template: str = "CN={username},OU=Users,DC=absa,DC=co,DC=zm"
+    ldap_bind_dn: str = ""
+    ldap_bind_password: str = ""
+    ldap_search_filter: str = "(sAMAccountName={username})"
+    ldap_timeout_seconds: int = 10
+    ldap_tls_enabled: bool = False  # Enforce StartTLS in production
+
+    # ---- Security Hardening ----
+    lockout_max_attempts: int = 5
+    lockout_duration_minutes: int = 15
+    password_min_length: int = 8
+    password_require_uppercase: bool = True
+    password_require_digit: bool = True
 
     # ---- Health Score ----
     health_score_churn_weight: float = 0.40

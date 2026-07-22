@@ -1,0 +1,420 @@
+# System Requirements Document
+
+## Customer Lifecycle Prediction — Proof of Concept (PoC)
+
+### Version 1.1
+
+---
+
+| | |
+|---|---|
+| **Prepared By** | UniplexityAI |
+| **Prepared For** | Absa Bank Zambia |
+| **Date** | July 2026 |
+| **Classification** | Confidential — For Architecture Review Board |
+| **Target Environment** | 32 GB RAM · 500 GB Storage · 8-Core CPU (Provisioned) |
+| **Purpose** | Component-by-component justification of the provisioned environment; model training and fine-tuning methodology; automation component sourcing; frontend resource requirements; and local LLM hosting environment sizing |
+
+---
+
+## Table of Contents
+
+| Section | |
+|---|---|
+| 1. Executive Summary | |
+| 2. Provisioned PoC Environment | |
+| 3. Resource Allocation & Justification | |
+|     3.1 RAM Allocation (32 GB) | |
+|     3.2 CPU Allocation (8 Cores) | |
+|     3.3 Storage Allocation (500 GB) | |
+| 4. Model Training & Fine-Tuning Approach | |
+|     4.1 Training Methodology | |
+|     4.2 Fine-Tuning / Hyperparameter Optimization | |
+|     4.3 Explainability | |
+| 5. Agentic / Automation Components | |
+|     5.1 Current PoC Scope: Rule-Based, Not Autonomous | |
+|     5.2 Dependency Sourcing (Open-Source Packages) | |
+|     5.3 Future Agentic AI Layer (Out of Scope) | |
+| 6. Frontend Resource Requirements & Justification | |
+| 7. Local Large Language Model (LLM) Hosting Environment | |
+|     7.1 Model Acquisition Strategy | |
+|     7.2 Selected Model | |
+|     7.3 Quantization | |
+|     7.4 Local Model Hosting Platform | |
+|     7.5 LLM Architecture | |
+|     7.6 Detailed Resource Allocation | |
+|     7.7 LLM Model Lifecycle | |
+|     7.8 LLM Security | |
+| 8. Risk & Contingency | |
+
+---
+
+## 1. Executive Summary 
+
+This version keeps v1.0 as the technical baseline and adds the section the infrastructure team specifically requested: a component-by-component justification of the provisioned 32 GB RAM / 500 GB storage / 8-core CPU environment, the model training and fine-tuning methodology, the approach to any agent or automation components and how their dependencies are sourced, and the equivalent resourcing picture for the frontend. 
+
+Stakeholder engagements have confirmed that there is currently no enterprise LLM platform available within Absa Bank Zambia. The PoC therefore includes deployment of a locally hosted Large Language Model (LLM) as an integral, independently-sized component of the architecture. The LLM operates entirely inside Absa infrastructure — customer information never leaves the bank. Predictive models remain XGBoost. The LLM provides reasoning and natural language generation only; it does NOT make business decisions. Business rules remain deterministic, and the Decision Intelligence Service remains the authoritative recommendation engine. 
+
+The LLM is documented as an independent infrastructure layer with its own dedicated resource allocation, justified in full engineering detail in Section 7. 
+
+## 2. Provisioned PoC Environment 
+
+The following has been confirmed and provisioned for the PoC: 
+
+|**Resource**|**Provisioned**|**Utilization target**|
+|---|---|---|
+|RAM|32 GB|~31 GB allocated across all services at steady state with active model training — see Section 3.1|
+|Storage|500 GB|Allocated across database, audit trail, model artifacts, LLM model files, inference logs, backups and headroom — see Section 3.3|
+|CPU|8 cores|Fully allocated across concurrent database, ETL, and model training workloads — see Section 3.2|
+
+
+The sizing below reflects a deliberately full — not over-provisioned — use of the allocation, and the detail is intended to show the infrastructure team exactly where each gigabyte and core is spent. The LLM hosting environment is sized separately and independently in Section 7; its resources do not draw from the core platform allocation. 
+
+## 3. Resource Allocation & Justification 
+
+### 3.1 RAM Allocation (32 GB) 
+
+|**Component**|**Allocated** **RAM**|**Justification**|
+|---|---|---|
+|PostgreSQL 18 (etl_validation + etl_clean)|6 GB|shared_buffers, work_mem and concurrent connection overhead for both databases; sized for query performance against feature and audit tables as they grow through the pilot|
+|ETL Engine (batch runs)|3 GB|In-memory validation and bulk-insert buffering during batch loads; current benchmark processes 70K+ rows at ~17,000 rows/sec, which requires working memory headroom above the raw dataset size|
+|Feature Engineering Service|2 GB|FastAPI process handling concurrent feature computation and lookup requests; most heavy lifting is pushed down to PostgreSQL, so this is primarily request-handling overhead|
+|Customer State Service (Layer 1)|2 GB|Holds transition matrices and state computations in memory per customer batch; scales with distinct customer count, sized for PoC scale(5,000+, headroom to 100K+)|
+
+
+|**Component**|**Allocated** **RAM**|**Justification**|
+|---|---|---|
+|Prediction Service (Layer 2)|5 GB|Largest single allocation after PostgreSQL — covers the in- memory training working set for XGBoost churn and CLV models, plus holding the served champion model in memory for live inference|
+|Decision Intelligence Service (Layer 3)|1.5 GB|Rule engine evaluation and NBA ranking; lightweight, rule- based rather than model-based|
+|Model Management Service|1 GB|Model versioning, metadata and champion/challenger tracking|
+|API Gateway|1 GB|Request routing, LDAP session handling across all upstream services|
+|Redis (cache layer)|1 GB|Optional caching for frequently accessed feature/prediction lookups, reducing repeat database load|
+|Dashboard runtime (Nginx, static Vue build)|0.5 GB|Serving pre-built static assets only; negligible runtime footprint bydesign|
+|Docker Engine & container overhead|2 GB|Per-container isolation overhead across 8 running services|
+|Ubuntu OS baseline|2 GB|Standard kernel and systemprocess footprint|
+|Concurrent user / burst headroom|4 GB|Buffer for 1–10 concurrent pilot users querying dashboards while ETL or training jobs run in the background, so live use is not degraded by batch workloads|
+
+
+Total: approximately 31 GB of the 32 GB provisioned, leaving a deliberately thin but functional safety margin rather than idle capacity. 
+
+### 3.2 CPU Allocation (8 cores) 
+
+|**Component**|**Core** **allocation**|**Justification**|
+|---|---|---|
+|PostgreSQL|2 cores|Concurrent query execution, indexing, and simultaneous connections from multiple services (Feature, State, Prediction, Gateway all query the database)|
+|Prediction Service — model training|2 cores|XGBoost tree construction is multi-threaded and scales near- linearly with available cores; this allocation keeps training runs (initial and periodic retraining) from blocking the live inference API|
+|ETL Engine (batch runs)|1.5 cores|Bulk validation and insert throughput; bursty rather than constant, shared with other services outside batch windows|
+|Lighter services (Feature Eng., Customer State, Decision Intelligence, Model Mgmt, Gateway, Dashboard)|1.5 cores (shared)|None of these are individually CPU-intensive; they share remaining capacity for request handling|
+|OS / Docker overhead + pilot-user burst capacity|0.5–1 core|Scheduling overhead and headroom for concurrent dashboard use during business hours|
+
+
+The two genuinely CPU-bound workloads are PostgreSQL and model training — the 8-core allocation exists specifically so a retraining run does not visibly slow down the RM dashboard for pilot users during business hours. 
+
+### 3.3 Storage Allocation (500 GB)
+
+| **Component** | **Allocated Storage** | **Justification** |
+|---|---|---|
+| PostgreSQL data (etl_clean, etl_validation, indexes, WAL) | 200 GB | Current PoC footprint is approximately 50 MB at 70K rows / 5,000 customers; this allocation provides headroom to scale to 100K+ customers with recurring feature snapshots (needed for the state timeline and retraining) over the full 90-day pilot |
+| Audit trail (etl.etl_audit) | 50 GB | Immutable, append-only, 7-year retention policy. This table only grows, never shrinks, and must be sized for sustained accumulation, not just PoC volume |
+| Docker images & containers | 40 GB | Base OS layers, Python and Node runtimes, and all vendored dependencies across 8 services. Larger than a typical cloud deployment because everything must be vendored for the air-gapped network rather than pulled on demand |
+| Model artifacts (XGBoost) | 20 GB | Versioned champion/challenger churn and CLV models retained for rollback and comparison |
+| LLM model files | 20 GB | Quantized GGUF model (~4.5 GB) plus tokenizer, prompt templates, and one rollback model version. Detailed in Section 7.6 |
+| LLM inference logs & audit | 15 GB | Prompt/response logging for compliance audit trail and operational monitoring across the 90-day pilot |
+| Application logs | 15 GB | Structured logging (INFO/WARNING/ERROR) across all services |
+| Local backup/snapshot staging | 70 GB | Pre-offsite backup staging in line with Absa standard backup process, ahead of tape/offsite transfer |
+| Vendored dependency cache | 20 GB | Local mirror of Python wheels and npm packages required because the environment has no live internet access for on-demand installs; includes Ollama binary and runtime |
+| OS and system | 20 GB | Base Ubuntu installation and system files |
+| Future vector index (expansion) | 10 GB | Reserved for potential embedding-based retrieval if customer context retrieval is added post-PoC |
+| Contingency / growth buffer | 20 GB | Reserve for the 90-day pilot period in case of higher-than-expected data volume, audit growth, or additional model evaluation |
+
+**Total: 500 GB.** The single largest driver remains the database, sized for pilot-duration growth rather than the current test-fixture volume. The LLM components collectively consume approximately 35 GB of the 500 GB allocation, leaving adequate headroom for the core platform while accommodating the inference layer within the same storage envelope. 500 GB provides sufficient capacity throughout the PoC and allows controlled future expansion without immediate infrastructure changes.
+## 4. Model Training & Fine-Tuning Approach 
+
+### 4.1 Training Methodology 
+
+- Both the churn model and the CLV model use XGBoost, a CPU-based gradient-boosting framework — no GPU is required or provisioned, and none is needed at this data scale (thousands to low hundreds of thousands of customers, 16 tabular features). 
+
+- Training runs against the customer_features table produced by the Feature Engineering Service, using historical point-in-time snapshots so the model learns from past states, not just the current one. 
+
+- Initial training uses the labelled history available at PoC start; retraining is planned on a periodic cadence (proposed monthly, or triggered by feature drift) as new data accumulates through the pilot. 
+
+- Retraining runs are scheduled to use the 2-core allocation described in Section 3.2, so they do not compete with live dashboard queries during business hours. 
+
+### 4.2 Fine-Tuning / Hyperparameter Optimization 
+
+- "Fine-tuning" in this context means hyperparameter search (tree depth, learning rate, regularization) rather than deep-learning-style fine-tuning — consistent with XGBoost being a tree-based, not a neural, model. 
+
+- This is done via standard CPU-based search (grid or randomized search); multiple trials can run in parallel across the available cores, which is the second reason the 8-core allocation matters. 
+
+- Model comparison uses a champion/challenger pattern (already reflected in the Model Management Service) — a new candidate model is evaluated against the currently deployed one before promotion. 
+
+### 4.3 Explainability 
+
+- Every prediction requires an explainability component per the stated compliance requirement. For the PoC, this is delivered as simplified feature-importance output (top contributing features and their direction) rather than a full SHAP waterfall, which is more computationally expensive per prediction. 
+
+- Full SHAP waterfall explanations are scoped as a post-PoC enhancement, partly because of the additional compute cost per prediction that a fuller explainability engine would add. 
+
+## 5. Agentic / Automation Components 
+
+### 5.1 Current PoC Scope: Rule-Based, Not Autonomous 
+
+It's important to be precise on this point for the infrastructure conversation: the Decision Intelligence Service that generates Next Best Action recommendations is a configurable rule engine, not an autonomous LLM-based agent. It evaluates customer state, churn probability, CLV, and feature values against defined business rules to rank recommendations. This is a deliberate PoC design choice — it keeps the system fully explainable, avoids any dependency on an LLM runtime, and fits comfortably inside the provisioned 32 GB / 8-core envelope. 
+
+### 5.2 Dependency Sourcing (Open-Source Packages) 
+
+All software components — Python packages for the backend services, npm packages for the Vue frontend, and Docker base images — are open-source and vendored ahead of deployment, since the environment is air-gapped with no live internet access. 
+
+- Packages are sourced from their standard public repositories (PyPI, npmjs) during development, then bundled/mirrored for transfer into the bank environment rather than installed live from those environments. 
+
+- This raises a genuine open question for the infrastructure team: what is Absa's approved process for vetting and admitting new open-source packages into the air-gapped network going forward — an internal artifact 
+
+mirror/proxy, a manual security-reviewed transfer process, or something else? This should be confirmed explicitly, since it affects how any future package addition or version update gets into the environment. 
+
+- If no such intake process currently exists, that is a dependency Absa will need to stand up or approve an alternative for — otherwise every future dependency change becomes a manual, ad hoc transfer, which will slow delivery. 
+
+### 5.3 Future Agentic AI Layer (Explicitly Out of Scope for This PoC) 
+
+The original solution blueprint describes a fuller autonomous Agentic AI layer — self-directed agents that independently decide which customers to contact, compose and send communications, or adjust product offers without RM review. That autonomous agent layer is not part of this 90-day PoC and is not reflected in the resource sizing above. 
+
+This is distinct from the LLM advisory layer (Section 7), which generates narrative text for RM review but does not act autonomously. The LLM advisory layer is in scope and fully resourced. The autonomous agentic layer — where the system initiates actions rather than recommending them — remains explicitly out of scope. If Absa wants to pursue autonomous agents in a later phase, it should be treated as a separate infrastructure and governance conversation. 
+
+> **Note — Scope Distinction for Reviewers**
+> 
+|**Capability**|**Status**|**Section**|
+|---|---|---|
+|LLM advisory layer — generates narrative summaries, call preparation notes, and plain-language explanations from structured platform outputs; outputs are drafts for RM review|**In scope — PoC**|Section 7|
+|Autonomous agentic AI — self-directed agents that independently decide and execute customer outreach actions without human review|**Out of scope**|This section (5.3)| 
+
+## 6. Frontend Resource Requirements & Justification 
+
+The frontend (Vue 3 + TypeScript, built with Vite, served via Nginx) has a deliberately light resource footprint, and the justification here is more about build-time versus run-time separation than raw sizing. 
+
+|**Aspect**|**Requirement**|**Justification**|
+|---|---|---|
+|Runtime footprint|~0.5 GB RAM, negligible CPU (included in Section 3.1)|Once built, the frontend is static HTML/JS/CSS served by Nginx — there is no server-side rendering or persistent process beyond the web server itself|
+|Build-time footprint|Recommend building off the PoC VM|Node.js/Vite bundling can spike to 2–4 GB RAM during a build, which is better absorbed on a separate development machine than competing with live services on the 32 GB PoC environment; only the compiled build artifact needs to be deployed|
+|Dependency vendoring|All UI libraries (Chart.js via vue- chartjs, any component libraries) vendored, no CDN|Consistent with the air-gapped constraint — no runtime dependency on external CDNs or package registries, and covered under the vendored dependency cache in Section 3.3|
+|Browser support|Chromium-based only, 1920×1080 desktop|Matches Absa's locked-down standard desktop environment; no mobile/responsive build required for PoC, which keeps the frontend scope — and its build complexity— smaller|
+
+
+## 7. Local Large Language Model (LLM) Hosting Environment
+
+This section defines the independent infrastructure layer for the locally hosted Large Language Model. The LLM is an integral component of the PoC architecture, not an optional add-on. It is sized, justified, and documented separately from the core Customer Lifecycle Prediction platform (Sections 2–6) so that both platforms can be provisioned, reviewed, and operated independently while functioning as a coherent system.
+
+The core platform continues to host PostgreSQL, ETL, Feature Engineering, Customer State Service, Prediction Service, Decision Intelligence, Dashboard, Redis, and all APIs — exactly as sized in Sections 3.1–3.3. The LLM does not draw from those allocations. Its resources are additional and dedicated.
+
+### 7.1 Model Acquisition Strategy
+
+The PoC **will not train an LLM from scratch.** Training a foundation model from scratch is not feasible for a banking PoC for the following engineering reasons:
+
+|**Constraint**|**Explanation**|
+|---|---|
+|Parameter scale|Foundation models require billions of parameters. DeepSeek-R1-Distill-Qwen-7B has 7 billion parameters; training a model of this class from random initialization demands computational resources orders of magnitude beyond PoC scope.|
+|Hardware requirements|Training requires multi-GPU clusters (typically 8×A100/H100 or equivalent) with high-bandwidth interconnects — hardware that does not exist in the Absa PoC environment and is not justified for a 90-day pilot.|
+|Dataset scale|Pre-training corpora range from terabytes to petabytes of curated text. Assembling, cleaning, and governing a dataset of this scale is a multi-month engineering project in its own right.|
+|Training duration|Even with adequate hardware, training a 7B-parameter model takes weeks to months of continuous compute, during which the hardware cannot be used for anything else.|
+|Cost|The electrical, hardware procurement, and operational cost of training a foundation model is completely outside the scope and budget of a banking PoC.|
+|Risk|Training introduces model quality, data contamination, and evaluation risks that are entirely avoided by starting from a published, benchmarked, community-validated pretrained model.|
+
+The PoC instead uses a **pretrained foundation model** — a model that has already been trained on large-scale corpora by its originating research organization, evaluated against standard benchmarks, and published with documented performance characteristics. This is standard industry practice: organizations deploy pretrained models and adapt them through prompt engineering, retrieval augmentation, or fine-tuning — not by training from scratch.
+
+### 7.2 Selected Model
+
+The selected model is **DeepSeek-R1-Distill-Qwen-7B**.
+
+|**Selection Criterion**|**Justification**|
+|---|---|
+|Reasoning capability|DeepSeek-R1蒸馏模型专门针对链式推理（Chain-of-Thought）优化，能够在生成最终回答前进行结构化分步推理。这对银行咨询场景至关重要——模型需要先分析客户状态、识别风险信号、评估NBA优先级，然后才能生成有意义的RM建议。|
+|Instruction following|基于Qwen-7B架构，具有较强的指令遵循能力，能够可靠地按照结构化提示词模板生成一致格式的输出，减少幻觉和不相关响应。|
+|Structured reasoning|模型在数学推理、逻辑推导和结构化输出方面表现突出，适合将结构化数据（Health Score、CLV、Churn Probability）转化为有逻辑的自然语言叙述。|
+|CPU inference|7B参数规模在量化后（Q4_K_M）可在纯CPU环境下高效运行，无需GPU。这对Absa的气隙环境至关重要——无需GPU硬件采购、无需CUDA依赖、无需额外的散热和电源基础设施。|
+|Quantization efficiency|GGUF Q4_K_M量化将模型从约14 GB（FP16）压缩至约4.5 GB，质量损失可忽略不计（通常困惑度增加<2%），推理速度显著提升。|
+|Enterprise suitability|模型在Apache 2.0或类似许可下发布，适合企业部署。社区活跃，文档完善，在多个企业级部署中有验证记录。|
+|Future versatility|除银行咨询场景外，该模型还可用于未来内部软件开发辅助（"vibe coding"）和开发者生产力场景——扩大了PoC基础设施投资的价值回报。|
+
+This model provides the optimal balance between reasoning quality, inference performance, memory footprint, deployment simplicity, and inference latency for the PoC's CPU-only, air-gapped environment.
+
+### 7.3 Quantization
+
+The deployed model will use a **quantized GGUF version** with the **Q4_K_M** quantization scheme.
+
+**What quantization means:** Large language models store their parameters (weights) as floating-point numbers. In full precision (FP16), each parameter occupies 2 bytes — a 7B model requires approximately 14 GB just to store the weights. Quantization reduces the precision of these weights (e.g., from 16-bit to 4-bit), dramatically shrinking the model's memory footprint with minimal quality degradation.
+
+**Q4_K_M explained:**
+
+|**Property**|**Description**|
+|---|---|
+|Q4|4-bit quantization — each weight is stored in approximately 4 bits instead of 16, reducing memory to roughly one-quarter of FP16|
+|K|"K-quant" — applies mixed precision: attention and feed-forward layers use higher precision (Q6_K) for quality-critical computations while less sensitive layers use Q4_K|
+|M|"Medium" — balanced size/quality profile between "S" (small, more aggressive compression) and "L" (large, more conservative compression)|
+
+**Why Q4_K_M is standard practice:**
+
+|**Benefit**|**Explanation**|
+|---|---|
+|Reduced memory footprint|~4.5 GB on disk and in memory versus ~14 GB for FP16 — a 68% reduction that makes CPU-only deployment practical|
+|Negligible quality loss|Perplexity increase typically under 2% compared to FP16; for structured summarization and advisory text generation (not creative writing or code generation), this is imperceptible to end users|
+|Faster inference|Smaller weights mean less data to move from RAM to CPU cache per token generated; memory bandwidth is the primary bottleneck for CPU inference, so reducing weight size directly improves tokens-per-second|
+|CPU suitability|4-bit weights are efficient to dequantize on-the-fly during CPU inference; modern x86-64 processors handle this with negligible overhead|
+|Industry standard|Q4_K_M is the most commonly deployed quantization level for 7B-class models in production — widely tested, benchmarked, and trusted|
+
+Quantization is not a compromise — it is the enabling technology that makes local, CPU-based LLM inference practical within enterprise infrastructure constraints.
+
+### 7.4 Local Model Hosting Platform
+
+The preferred inference platform is **Ollama**.
+
+|**Capability**|**Justification**|
+|---|---|
+|Local execution|Runs entirely on local hardware — no cloud dependency, no API keys, no external network calls. All inference happens inside the Absa infrastructure boundary.|
+|REST API|Exposes a simple, well-documented HTTP API (`POST /api/generate`, `POST /api/chat`) compatible with any HTTP client — integration with the existing FastAPI ecosystem is trivial.|
+|GGUF support|Natively supports GGUF-format models, including Q4_K_M quantized versions — the exact format specified in Section 7.3.|
+|Model lifecycle management|Commands for pull, list, remove, and version-tag models — operational simplicity for managing the model throughout the PoC.|
+|Version management|Supports model version tags, enabling controlled rollback to a previous model version if needed.|
+|Deployment simplicity|Single binary, single command (`ollama serve`), container-friendly — deploys in minutes rather than hours.|
+|Air-gapped suitability|Models can be pre-downloaded, packaged, and transferred into the air-gapped environment as a single file; Ollama can load from a local path without internet access.|
+|Operational simplicity|No Kubernetes, no distributed configuration, no complex service discovery — consistent with the PoC's Docker Compose deployment model.|
+|Enterprise maintainability|Active open-source project with regular releases, security patches, and community support; well-documented configuration and monitoring endpoints.|
+
+> **Note — Enterprise Architecture Question**
+> 
+> Uniplexity AI proposes Ollama because of its simplicity and operational maturity. However, if Absa already has an approved inference platform, the PoC can instead be deployed on that platform. Uniplexity requests confirmation whether Absa already supports an approved inference platform such as:
+
+- Ollama
+- llama.cpp
+- vLLM
+- NVIDIA NIM
+- OpenShift AI
+- Red Hat AI Inference Server
+- Another internally approved inference runtime
+
+Using an existing approved platform would simplify governance and align with Absa technology standards. If no such platform exists, Ollama is proposed as the PoC inference runtime with the understanding that it would be subject to Absa's standard security and architecture review process.
+
+### 7.5 LLM Architecture
+
+The LLM operates as a **presentation and advisory layer only**. It does not calculate, decide, or replace any component of the core 3-layer AI pipeline.
+
+**Inputs (received from core platform):**
+
+|**Input**|**Source Service**|**Format**|
+|---|---|---|
+|Customer Health Score|Prediction Service (Layer 2)|Numeric 0–100|
+|Customer Lifetime Value (CLV)|Prediction Service (Layer 2)|Numeric (ZMW)|
+|Churn Probability|Prediction Service (Layer 2)|Numeric 0.0–1.0|
+|Customer State|Customer State Service (Layer 1)|Enum: Active / At Risk / Dormant / Churned|
+|Product Holdings|Feature Engineering Service|Structured list|
+|Recommended Next Best Actions|Decision Intelligence (Layer 3)|Ranked list with impact/confidence scores|
+|Top Feature Drivers|Prediction Service (Layer 2)|Ranked feature importance|
+|Risk Indicators|Decision Intelligence (Layer 3)|Flagged risk signals|
+
+**The LLM does NOT calculate these values.** The Prediction Service, Customer State Service, and Decision Intelligence Service remain solely responsible for all quantitative outputs. The LLM receives these structured outputs as input context and converts them into natural language.
+
+**Outputs (generated for RM consumption):**
+
+|**Output Type**|**Description**|
+|---|---|
+|Customer summaries|Plain-language paragraph summarizing the customer's current state, risk level, and key behavioural signals|
+|RM call preparation notes|Structured briefing for a Relationship Manager before a customer contact — what to discuss, what to offer, what to watch for|
+|Portfolio summaries|Aggregated narrative overview of an RM's entire customer portfolio — top risks, notable changes, trends|
+|Relationship insights|Behavioural patterns explained in natural language (e.g., "This customer's transaction frequency has declined 60% over 90 days, primarily in branch channel")|
+|Customer risk explanations|Why a specific customer is flagged as at-risk — the narrative behind the churn probability score|
+|Executive summaries|Condensed narrative for Branch Managers reviewing team-level portfolio health|
+|Meeting preparation notes|Structured agenda and talking points for RM-customer meetings|
+
+**Architecture rationale:** This separation of concerns — deterministic business logic in the core platform, natural language generation in the LLM — provides three architectural benefits:
+
+1. **Explainability:** Every business decision (state classification, churn prediction, NBA recommendation) is traceable to a specific model or rule engine output. The LLM adds narrative, not decision logic. If an RM asks "Why was this customer flagged?", the answer comes from the Prediction Service's SHAP/feature importance output, not from an opaque LLM reasoning chain.
+
+2. **Deterministic business logic:** All quantitative outputs (scores, classifications, rankings) are produced by deterministic or near-deterministic systems (XGBoost inference, rule engine evaluation). The LLM's non-deterministic nature is contained to natural language generation, where variation in phrasing is acceptable.
+
+3. **Independent testing and validation:** Each layer can be tested, validated, and approved independently. The core platform's acceptance criteria do not depend on LLM behaviour, and the LLM can be upgraded or replaced without revalidating the prediction pipeline.
+
+### 7.6 Detailed Resource Allocation
+
+The LLM hosting environment requires dedicated resources beyond the core platform allocation. These resources are sized for the DeepSeek-R1-Distill-Qwen-7B model with Q4_K_M quantization, running on Ollama, serving 1–10 concurrent Relationship Managers in a batch/async advisory pattern.
+
+#### 7.6.1 RAM Allocation — LLM Hosting Environment: 16 GB
+
+|**Component**|**Allocated RAM**|**Justification**|
+|---|---|---|
+|Model weights (Q4_K_M)|5.0 GB|The 7B-parameter model quantized to Q4_K_M occupies approximately 4.5 GB on disk. Once loaded into memory by Ollama, the runtime representation — including dequantization buffers and weight metadata — requires approximately 5 GB of resident memory. Weights remain resident for the lifetime of the inference server to avoid reload latency between requests.|
+|KV cache|3.0 GB|The Key-Value cache stores attention computation intermediates during token generation. For a 7B model with a 4K–8K token context window, the KV cache grows proportionally to batch size × sequence length. Allocating 3 GB supports prompt contexts up to approximately 4,000 tokens with headroom for concurrent request overlap. The KV cache dramatically reduces latency: without it, every token generation step would recompute attention over the full sequence, making CPU inference impractically slow.|
+|Tokenizer & runtime overhead|1.5 GB|Tokenization libraries, Ollama runtime process, HTTP server buffers, and Python integration overhead.|
+|Prompt processing buffer|1.5 GB|Temporary allocation for assembling and preprocessing prompt templates — including structured input data (customer features, NBA recommendations) formatted into the prompt — before feeding to the model.|
+|Concurrent request handling|2.0 GB|Buffer for handling 1–5 simultaneous RM requests without memory pressure. Each concurrent generation requires its own KV cache allocation and working memory. The 2 GB allocation supports modest concurrency appropriate for a pilot with 5–10 users.|
+|Monitoring & observability|1.0 GB|Ollama metrics endpoint, log buffering, and health-check overhead.|
+|Docker container overhead|1.0 GB|Container isolation, shared library mappings, and Docker runtime overhead for the LLM service container.|
+|Linux OS allocation for LLM VM|1.0 GB|If the LLM runs on a separate VM, the base OS footprint. If co-located on the same VM, this is already accounted under the core platform's OS allocation.|
+
+**Total LLM RAM: approximately 16 GB.** This is additional to the 32 GB allocated to the core platform. If both platforms are deployed on a single VM, the combined allocation is approximately 47–48 GB. If deployed on separate VMs (recommended for operational isolation), each VM is sized independently: 32 GB for the core platform, 16 GB for the LLM.
+
+#### 7.6.2 CPU Allocation — LLM Hosting Environment: 4 Dedicated Cores
+
+|**Component**|**Core Allocation**|**Justification**|
+|---|---|---|
+|Token generation (inference)|2 cores|CPU inference is memory-bandwidth-bound, not compute-bound. Two dedicated cores are sufficient to saturate the memory bandwidth available to a 7B Q4_K_M model, achieving 5–10 tokens/second — adequate for batch/async advisory text generation.|
+|Prompt construction & preprocessing|1 core|Assembling structured input data into prompt templates, tokenization, and formatting — bursty CPU usage before each inference call.|
+|REST API, audit logging & monitoring|0.5 core|Ollama HTTP server, request/response logging, prompt audit trail writes, and health-check endpoint.|
+|Background & OS overhead|0.5 core|System processes, Docker scheduling, and I/O wait.|
+
+**Total LLM CPU: 4 dedicated cores.** This is additional to the 8 cores allocated to the core platform. Dedicated CPU allocation via container CPU pinning or cgroup limits (or a separate VM) prevents LLM inference from competing with PostgreSQL queries, XGBoost training, or API Gateway request handling — any of which would degrade the RM dashboard experience during business hours.
+
+#### 7.6.3 Storage Allocation — LLM Hosting Environment
+
+|**Component**|**Allocated Storage**|**Justification**|
+|---|---|---|
+|Quantized model file (Q4_K_M GGUF)|5 GB|The primary model file, approximately 4.5 GB on disk. Rounded to 5 GB for filesystem block alignment.|
+|Tokenizer & model configuration|1 GB|Tokenizer vocabulary, model configuration JSON, and Ollama Modelfile metadata.|
+|Rollback model version|5 GB|One previous model version retained for immediate rollback if a newly deployed model exhibits degraded output quality.|
+|Prompt template library|1 GB|Version-controlled prompt templates for each advisory output type (customer summary, call preparation, portfolio summary, etc.) — small text files, but version history accumulates.|
+|Inference logs & audit trail|5 GB|Prompt/response pairs logged for compliance, debugging, and output quality monitoring over the 90-day pilot. A typical advisory response is 500–2,000 tokens; at 10–50 generations per day, 5 GB provides ample headroom.|
+|Runtime cache & temporary files|2 GB|Ollama runtime cache, tokenizer cache, and temporary generation buffers.|
+|Future embedding model (expansion)|2 GB|Reserved for a compact embedding model (~100–300 MB) and a small vector index, if retrieval-augmented generation (RAG) is added post-PoC for customer context retrieval.|
+|Configuration & operational data|1 GB|Docker Compose definitions, environment files, service configuration, and health-check scripts.|
+
+**Total LLM storage: approximately 22 GB.** This is included within the 500 GB storage allocation detailed in Section 3.3, which already accounts for LLM model files, inference logs, and related components. The 500 GB allocation provides sufficient headroom for both platforms throughout the 90-day pilot.
+
+### 7.7 LLM Model Lifecycle
+
+|**Stage**|**Activity**|**Owner**|
+|---|---|---|
+|Selection|DeepSeek-R1-Distill-Qwen-7B selected based on the criteria in Section 7.2; rationale documented and approved|Data Scientist + AI Governance|
+|Security review|Model file scanned for embedded malicious content; license terms (Apache 2.0) reviewed for enterprise compatibility; model provenance verified from official DeepSeek release|Information Security|
+|Packaging|Q4_K_M GGUF conversion verified; model packaged with Ollama Modelfile; transferred into air-gapped environment via approved Absa intake process|Operations + Delivery Lead|
+|Deployment|Ollama pulls model from local path; inference server started; health-check endpoint validated; integration test with core platform API|Operations|
+|Validation|Output quality assessed against a curated set of test prompts; generated text reviewed for accuracy, relevance, and absence of hallucination in banking advisory context; RM feedback incorporated|Data Scientist + Business Sponsor|
+|Prompt engineering|Prompt templates iteratively refined during pilot based on RM feedback; templates version-controlled alongside model configuration|Data Scientist|
+|Operational monitoring|Token generation latency, requests per day, error rate, memory utilization tracked; output quality spot-checked periodically|Operations|
+|Model replacement|If a newer or better-performing model becomes available within the 7B-class CPU-inference envelope, it can be evaluated, quantized, and deployed as a replacement following the same lifecycle stages; the previous model version is retained for rollback|Data Scientist + Operations|
+|Rollback|If a deployed model exhibits degraded output quality, operations reverts to the previous Ollama model tag; rollback takes < 5 minutes; incident logged|Operations|
+|Version control|Model file hashes, quantization parameters, Ollama Modelfile, and prompt templates committed to version control; full reproducibility of any deployment state|Delivery Lead|
+
+### 7.8 LLM Security
+
+|**Control**|**Implementation**|
+|---|---|
+|Air-gapped deployment|The LLM runs entirely within the Absa infrastructure boundary. No internet connectivity exists in the production environment. The model file is transferred into the environment via approved offline media; no runtime network calls are made.|
+|Local inference only|All inference computation happens on the local CPU. No prompts, responses, or customer data are transmitted outside the bank. No external API is called at any point in the inference pipeline.|
+|Customer data isolation|The LLM receives structured inputs (scores, classifications, feature values) but does not have direct access to the core database. It cannot query customer_transactions_clean or customer_features. All data it receives passes through the core platform's API Gateway, which enforces role-based access control.|
+|Prompt logging|Every prompt sent to the LLM and every response generated is logged with timestamp, user ID, and model version. This provides a complete audit trail for compliance review.|
+|Response audit|Generated text is stored alongside the structured data that produced it, enabling full traceability: "This RM call summary was generated from these specific Health Score, CLV, and NBA values at this timestamp."|
+|Model version tracking|Ollama model tags and GGUF file hashes are recorded at deployment and logged with every inference request, ensuring auditability of which model version produced which output.|
+|Role-based access|LLM inference endpoints are protected by the same API Gateway LDAP authentication and RBAC as all other services. Only authenticated users with appropriate roles (RM, Branch Manager) can request LLM-generated content.|
+|Container isolation|The LLM runs in a dedicated Docker container with its own resource limits (CPU, memory) and no access to other containers' filesystems or network ports beyond the defined API interface.|
+
+---
+
+## 8. Risk & Contingency
+
+|**ID**|**Risk**|**Category**|**Likelihood**|**Impact**|**Mitigation**|
+|---|---|---|---|---|---|
+|R-001|Data volumes exceed PoC assumptions (70K rows / 5,000 customers) significantly during pilot|Data|Medium|Medium|PostgreSQL storage and RAM allocations include headroom to 100K+ customers; monitor weekly|
+|R-002|Required open-source package blocked by Absa intake process|Dependency|Medium|High|Flag specific dependency early; Absa infrastructure team to either approve intake mechanism or agree alternative; must not silently block a sprint|
+|R-003|Inference platform (Ollama) not approved by Absa architecture/security review|Infrastructure|Medium|High|Alternative inference platforms identified (llama.cpp, vLLM, Red Hat AI); if Absa has an existing approved platform, PoC can deploy on it instead|
+|R-004|DeepSeek-R1-Distill-Qwen-7B model not approved by Absa AI governance|Governance|Medium|High|Model selection rationale documented in Section 7.2; alternative 7B-class models (Llama 3.1 8B, Mistral 7B) available with similar performance characteristics; model approval should be sought early in Month 2|
+|R-005|LLM inference latency exceeds RM usability threshold (target: < 15 seconds per response)|Performance|Low|Medium|Batch/async generation pattern means RMs are not waiting synchronously; prompt optimization and context-window tuning can reduce latency; quantized model already optimized for CPU inference|
+|R-006|LLM output quality degrades after prompt template or model changes|Quality|Medium|Medium|Output quality spot-checked periodically; rollback to previous model version takes < 5 minutes; prompt templates version-controlled|
+|R-007|LLM resource contention with core platform if co-located on single VM|Infrastructure|Medium|Medium|Dedicated CPU pinning and memory limits enforced at container level; separate VM recommended for operational isolation; if co-located, LLM scheduled outside business hours|
+|R-008|Future model upgrade introduces larger resource requirements beyond 16 GB / 4-core allocation|Infrastructure|Low|Low|Any model upgrade must fit within the defined 7B-class CPU-inference envelope or be submitted as a separate infrastructure change request; the current allocation is sufficient for the PoC duration|
+
+

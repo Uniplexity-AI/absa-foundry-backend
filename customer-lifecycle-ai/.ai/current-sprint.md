@@ -1,14 +1,14 @@
 # Current Sprint — PoC (90-Day)
 
-**Sprint Status:** PoC — Month 1: Data Foundation
+**Sprint Status:** PoC — Month 1: Data Foundation (Near Complete)
 **Branch:** `poc-90day` (active) | Reference: `architecture-target-full` (frozen)
-**Target:** Feature Engineering Service + minimal 3-Layer AI by month-end
+**Target:** Stakeholder demo-ready with ETL + Dynamic Extractor + Auth + Gateway
 
 ---
 
-## Active Phase: Feature Engineering (Month 1 — Data Foundation)
+## Active Phase: Demo Preparation
 
-ETL engine is production-hardened. Focus shifting to the Feature Store and service layer.
+ETL engine, Dynamic Extractor, and Auth system are production-hardened. Focus: stakeholder demo, then Feature Store + service layer.
 
 ## Branch Strategy
 
@@ -20,38 +20,59 @@ ETL engine is production-hardened. Focus shifting to the Feature Store and servi
 
 See [ARCHITECTURE.md](../ARCHITECTURE.md) for recovery commands.
 
-## What's Done (PoC — ETL Engine)
+## What's Done
 
-- [x] ETL pipeline runs end-to-end (CSV → Extract → Validate → Transform → Load → Audit)
-- [x] All 10 validation categories verified against ground truth (800/800 dirty rows, 69,672 clean)
-- [x] Compliance-grade immutable audit trail (`etl.etl_audit`) with batch-level traceability
-- [x] Per-row rejection reasons (each rejected row carries its specific failed rule IDs)
-- [x] Production hardening: bulk inserts (17K rows/s), structured logging, idempotency guard
-- [x] Schema drift detection (strict mode — fails loudly on missing/reordered columns)
-- [x] Data-agnostic invariant checks (conservation, no silent skips, reason coverage, quality floor)
-- [x] Fixture regression test (`pytest tests/test_validation_ground_truth.py` — 6/6 passing)
-- [x] PII compliance flag (customer_id/account_id plaintext review note for BoZ data residency)
-- [x] Branch strategy: full architecture frozen on `architecture-target-full`, PoC on `poc-90day`
+### ETL Engine
+- [x] ETL pipeline end-to-end (Extract → Validate → Transform → Load → Audit)
+- [x] Config-driven `target` section — same engine runs customers, transactions, or interactions
+- [x] Schema drift detection (strict mode), invariant checks, idempotency guard
+- [x] Bulk inserts: 16,000+ rows/s, 100% quality on 15,200-row customer dataset
+- [x] `customers_clean` in etl_clean database (15,200 rows from raw_customers)
+- [x] Source DB has 4 tables: raw_customers, raw_transactions, raw_interactions, customer_transactions
 
-## What's Next (Month 1 — Data Foundation)
+### Dynamic Extractor (9 files, fully implemented)
+- [x] `etl/extraction/` — config_models, query_builder, join_validator, schema_factory, business_rules, streaming, executor, version_guard
+- [x] 22 filter operators, multi-column JOINs, aggregations (SUM/COUNT/AVG/MIN/MAX), calculated fields
+- [x] Wired into `run_etl.py` via `--extraction-spec` flag as Phase 0
+- [x] `customer_360.yaml` — Single-table: 15,200 rows, 100% quality, 2s runtime
+- [x] `customer_360_multi.yaml` — 3-table JOIN (customers + transactions + interactions) with 5 aggregations + 2 calculated fields
 
-### Priority: Feature Engineering Service
-1. Implement real feature generation logic in `services/feature-engineering-service/`
-2. Build feature pipelines for: customer profile, transactions, products, loans, cards, digital, behaviour, CLV
-3. Wire Feature Store to ETL output (customer_transactions_clean)
-4. Create feature metadata registry (feature names, types, lineage)
+### Authentication (Phases 1-3 Complete — 17 files)
+- [x] LDAP/AD authenticator, JWT service (create/verify/refresh/blacklist)
+- [x] RBAC matrix: 30 rules across 6 roles (Admin, RM, Branch Manager, Data Scientist, Operations, Service Account)
+- [x] API key service: `clp_sk_*` format, SHA-256 hashing, scoped access
+- [x] Rate limiting: Redis sliding window, 3 default rules
+- [x] Account lockout: 5 failed attempts → 15-minute lock, exponential backoff
+- [x] Password policy: 8+ chars, uppercase, digit
+- [x] Audit trail: PostgreSQL `iam.auth_audit` — every login/logout/refresh persisted
+- [x] Gateway: 14 routes, logging middleware, CORS, health check
+- [x] IAM schema: 7 tables, 6 seeded roles
+- [x] `seed_iam.py`: admin user (admin/Admin123!) with ADMIN role + 4 service account API keys
 
-### Supporting: Minimal 3-Layer Services
-1. Customer State Service — basic Markov engine (no HMM)
-2. Prediction Service — single XGBoost model (no champion/challenger)
-3. Decision Intelligence — rule engine only (no RL)
+### Documentation
+- [x] `docs/architecture/etl/dynamic-extractor-spec.md` — 18 sections
+- [x] `docs/architecture/security/authentication-flow.md` — 15 sections
+- [x] `AUTH-INTEGRATION.md` — Frontend guide (Pinia store, Axios interceptor, router guard, login view)
+- [x] Demo runbook: 5-act stakeholder walkthrough
+
+### Frontend
+- [x] `api.js` updated: JWT login, refresh interceptor, auto-redirect on 401
+- [x] Tailscale-connected: gateway accessible to remote frontend dev
+
+## Known Issues
+- [ ] Multi-table extraction: Pydantic Decimal → float coercion (data flows, validation rejects)
+- [ ] Refresh token `expires_at` uses PostgreSQL function, not Python datetime (non-blocking)
+- [ ] Feature Engineering Service not yet implemented
+- [ ] 3-Layer AI services not yet implemented
+
+## What's Next
+1. Fix multi-table extraction Decimal coercion
+2. Feature Engineering Service
+3. Customer State Service (Markov engine)
+4. Prediction Service (XGBoost churn/CLV)
 
 ## What's Deferred (available on `architecture-target-full`)
-
-- Hidden Markov Model (`services/customer-state-service/app/engines/hmm/`)
-- Reinforcement Learning (`services/decision-intelligence-service/app/reinforcement_learning/`)
-- Kafka/Debezium streaming connectors (`etl/connectors/streaming/`)
-- REST/SOAP API connectors (`etl/connectors/api/`)
-- Orchestration service (not yet implemented)
+- Hidden Markov Model, Reinforcement Learning
+- Kafka/Debezium/REST/SOAP connectors
+- Orchestration service
 - Champion/challenger model evaluation
-- Full auth/rate-limit/CORS gateway middleware

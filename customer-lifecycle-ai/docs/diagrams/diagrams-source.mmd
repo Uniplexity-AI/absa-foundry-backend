@@ -1,0 +1,506 @@
+%% Diagram 1
+C4Context
+    title System Context Diagram — Customer Lifecycle Prediction System
+
+    Person(rm, "Relationship Manager", "Absa Bank Zambia employee")
+    Person(bm, "Branch Manager", "Absa Bank Zambia employee")
+    Person(ds, "Data Scientist", "Uniplexity AI / Absa Analytics")
+    Person(ops, "Operations", "Absa IT Operations")
+
+    System(clp, "Customer Lifecycle Prediction System", "3-Layer AI: ETL → Features → State → Prediction → Decision Intelligence")
+
+    System_Ext(cbs, "Core Banking System", "Source of transaction data")
+    System_Ext(ldap, "LDAP / Active Directory", "Authentication provider")
+
+    Rel(cbs, clp, "Provides transaction CSV/DB extract", "Batch (daily/weekly)")
+    Rel(ldap, clp, "Authenticates users", "LDAP(S)")
+    Rel(rm, clp, "Views portfolio, drills into customers, logs actions", "HTTPS (Vue 3 Dashboard)")
+    Rel(bm, clp, "Views branch analytics, team performance", "HTTPS")
+    Rel(ds, clp, "Trains models, monitors drift", "API + Python")
+    Rel(ops, clp, "Monitors ETL, system health", "HTTPS")
+
+%% Diagram 2
+graph TD
+    subgraph "Absa Bank Zambia — On-Premise Infrastructure"
+        subgraph "Data Layer"
+            PG_RAW[(etl_validation<br/>PostgreSQL 18)]
+            PG_CLEAN[(etl_clean<br/>PostgreSQL 18)]
+            REDIS[(Redis 7<br/>Cache)]
+        end
+
+        subgraph "ETL Layer"
+            ETL[ETL Engine<br/>Python CLI]
+        end
+
+        subgraph "AI Services Layer"
+            FE[Feature Engineering<br/>FastAPI :8002]
+            CS[Customer State<br/>FastAPI :8003]
+            PS[Prediction Service<br/>FastAPI :8004]
+            DI[Decision Intelligence<br/>FastAPI :8005]
+            MM[Model Management<br/>FastAPI :8006]
+        end
+
+        subgraph "Presentation Layer"
+            GW[API Gateway<br/>FastAPI :8080]
+            NGX[Nginx<br/>Reverse Proxy]
+            VUE[Vue 3 Dashboard<br/>Static Assets]
+        end
+    end
+
+    CBS[Core Banking System] -->|CSV/DB Extract| ETL
+    ETL -->|Write| PG_CLEAN
+    ETL -->|Audit| PG_CLEAN
+    FE -->|Read TXNs| PG_CLEAN
+    FE -->|Write Features| PG_CLEAN
+    CS -->|Read Features| PG_CLEAN
+    CS -->|Write States| PG_CLEAN
+    PS -->|Read Features + States| PG_CLEAN
+    PS -->|Write Predictions| PG_CLEAN
+    DI -->|Read Predictions| PG_CLEAN
+    DI -->|Write NBA| PG_CLEAN
+    GW --> FE
+    GW --> CS
+    GW --> PS
+    GW --> DI
+    GW --> MM
+    NGX --> GW
+    NGX --> VUE
+    VUE -->|API Calls| GW
+    FE -.->|Cache| REDIS
+    PS -.->|Cache| REDIS
+
+%% Diagram 3
+graph TD
+    subgraph "Presentation Tier"
+        UI[Vue 3 SPA]
+        API[API Gateway]
+    end
+
+    subgraph "Application Tier"
+        direction LR
+        FE_SVC[Feature Engineering Service]
+        CS_SVC[Customer State Service]
+        PS_SVC[Prediction Service]
+        DI_SVC[Decision Intelligence Service]
+        MM_SVC[Model Management Service]
+    end
+
+    subgraph "Data Processing Tier"
+        ETL_ENG[ETL Engine]
+        VAL[Validation Engine]
+        AUD[Audit Service]
+    end
+
+    subgraph "Data Tier"
+        SRC[(Source DB:<br/>etl_validation)]
+        TGT[(Target DB:<br/>etl_clean)]
+        CACHE[(Cache:<br/>Redis)]
+    end
+
+    subgraph "ML Tier"
+        TRAIN[Model Training]
+        CHAMP[Champion Registry]
+        CHALL[Challenger Registry]
+        SHAP[SHAP Explainer]
+    end
+
+    UI --> API
+    API --> FE_SVC
+    API --> CS_SVC
+    API --> PS_SVC
+    API --> DI_SVC
+    ETL_ENG --> VAL
+    ETL_ENG --> AUD
+    ETL_ENG --> SRC
+    ETL_ENG --> TGT
+    FE_SVC --> TGT
+    CS_SVC --> TGT
+    PS_SVC --> TGT
+    DI_SVC --> TGT
+    PS_SVC --> TRAIN
+    PS_SVC --> SHAP
+    TRAIN --> CHAMP
+    TRAIN --> CHALL
+    FE_SVC -.-> CACHE
+    PS_SVC -.-> CACHE
+
+%% Diagram 4
+graph TD
+    subgraph "Ubuntu VM — 32 GB RAM / 8 Cores / 500 GB Storage"
+        subgraph "Docker Engine"
+            direction TB
+            D1[PostgreSQL 18<br/>Container<br/>6 GB RAM / 2 cores]
+            D2[Redis 7<br/>Container<br/>1 GB RAM]
+            D3[API Gateway<br/>Container<br/>1 GB RAM]
+            D4[Feature Engineering<br/>Container<br/>2 GB RAM]
+            D5[Customer State<br/>Container<br/>2 GB RAM]
+            D6[Prediction Service<br/>Container<br/>5 GB RAM / 2 cores]
+            D7[Decision Intelligence<br/>Container<br/>1.5 GB RAM]
+            D8[Model Management<br/>Container<br/>1 GB RAM]
+            D9[Nginx<br/>Container<br/>0.5 GB RAM]
+        end
+        OS[Ubuntu OS<br/>2 GB RAM]
+        ETL_CLI[ETL Engine<br/>CLI Process<br/>3 GB RAM / 1.5 cores burst]
+    end
+
+    USERS[Bank Users<br/>Chromium Browsers] -->|HTTPS :443| D9
+    D9 --> D3
+    CBS[Core Banking<br/>CSV/DB Extract] -->|File/DB| ETL_CLI
+
+%% Diagram 5
+C4Container
+    title Container Diagram — Customer Lifecycle Prediction System
+
+    Person(rm, "Relationship Manager", "Absa Employee")
+
+    Container_Boundary(clp, "Customer Lifecycle Prediction System") {
+        Container(nginx, "Nginx", "Reverse Proxy", "Serves static Vue build + routes API calls")
+        Container(gateway, "API Gateway", "FastAPI :8080", "Routes requests to backend services, handles LDAP auth")
+        Container(fe, "Feature Engineering", "FastAPI :8002", "Computes point-in-time customer features")
+        Container(cs, "Customer State", "FastAPI :8003", "Markov Chain state classification")
+        Container(ps, "Prediction Service", "FastAPI :8004", "XGBoost churn + CLV prediction")
+        Container(di, "Decision Intelligence", "FastAPI :8005", "Rule engine + NBA generator")
+        Container(mm, "Model Management", "FastAPI :8006", "Champion/challenger model registry")
+        Container(pg, "PostgreSQL 18", "Database", "etl_validation + etl_clean databases")
+        Container(redis, "Redis 7", "Cache", "Feature + prediction caching")
+        Container(etl, "ETL Engine", "Python CLI", "Batch data pipeline")
+    }
+
+    System_Ext(cbs, "Core Banking", "Source transaction data")
+    System_Ext(ldap, "LDAP/AD", "Authentication")
+
+    Rel(rm, nginx, "Uses dashboard", "HTTPS")
+    Rel(nginx, gateway, "Proxies to", "HTTP :8080")
+    Rel(gateway, fe, "Routes /features/*", "HTTP")
+    Rel(gateway, cs, "Routes /states/*", "HTTP")
+    Rel(gateway, ps, "Routes /predictions/*", "HTTP")
+    Rel(gateway, di, "Routes /nba/*", "HTTP")
+    Rel(cbs, etl, "Provides data", "CSV/DB")
+    Rel(etl, pg, "Reads/Writes", "psycopg2")
+    Rel(fe, pg, "Reads/Writes", "psycopg2")
+    Rel(cs, pg, "Reads/Writes", "psycopg2")
+    Rel(ps, pg, "Reads/Writes", "psycopg2")
+    Rel(di, pg, "Reads/Writes", "psycopg2")
+    Rel(gateway, ldap, "Authenticates", "LDAP(S)")
+
+%% Diagram 6
+sequenceDiagram
+    participant CBS as Core Banking System
+    participant ETL as ETL Engine
+    participant AUDIT as Audit Trail
+    participant DB as etl_clean (PostgreSQL)
+    participant FE as Feature Engineering
+    participant CS as Customer State (L1)
+    participant PS as Prediction Service (L2)
+    participant DI as Decision Intelligence (L3)
+    participant DASH as Vue 3 Dashboard
+    participant RM as Relationship Manager
+
+    CBS->>ETL: CSV file drop / DB extract
+    activate ETL
+    ETL->>ETL: Schema drift check
+    ETL->>ETL: 10 validation rules
+    ETL->>DB: INSERT clean rows (batch 5K)
+    ETL->>DB: INSERT rejected rows (per-row reasons)
+    ETL->>AUDIT: Write immutable audit record
+    deactivate ETL
+
+    Note over FE,DB: Feature computation (on-demand or scheduled)
+    FE->>DB: SELECT transactions WHERE date <= as_of_date
+    FE->>DB: INSERT ... ON CONFLICT DO UPDATE (upsert features)
+    FE-->>DASH: Features available via API
+
+    Note over CS,DB: State classification (batch)
+    CS->>DB: SELECT features for multiple as_of_dates
+    CS->>CS: Compute Markov transition matrix
+    CS->>CS: Classify: Active / At Risk / Dormant / Churned
+    CS->>DB: INSERT customer states
+
+    Note over PS,DB: Prediction (batch or on-demand)
+    PS->>DB: SELECT latest features + state
+    PS->>PS: XGBoost inference (churn + CLV)
+    PS->>PS: Compute Health Score
+    PS->>PS: SHAP feature importance
+    PS->>DB: INSERT predictions
+
+    Note over DI,DB: Decision intelligence
+    DI->>DB: SELECT predictions + features
+    DI->>DI: Rule engine evaluation
+    DI->>DI: NBA ranking (impact × confidence)
+    DI->>DB: INSERT NBA recommendations
+
+    RM->>DASH: Open dashboard
+    DASH->>FE: GET /api/customers/{rm_id}
+    DASH->>PS: GET predictions
+    DASH->>DI: GET NBA recommendations
+    DASH-->>RM: Display prioritised portfolio
+
+    RM->>DASH: Drill into customer
+    DASH->>FE: GET customer features + history
+    DASH->>CS: GET customer state timeline
+    DASH->>PS: GET health score + churn drivers
+    DASH-->>RM: Display customer 360° view
+
+    RM->>DASH: Execute NBA action
+    DASH->>DI: POST action log
+    DI->>DB: INSERT action record
+    Note over RM,CBS: RM contacts customer (call/visit/offer)
+    RM->>DASH: Log outcome
+    DASH->>DI: POST outcome
+    Note over CBS,PS: Next data cycle — measure retention
+
+%% Diagram 7
+graph LR
+    A[CSV File] --> B[EXTRACT<br/>CsvConnector]
+    B --> C[VALIDATE<br/>5 validators<br/>10 rules]
+    C --> D{Valid?}
+    D -->|Yes| E[TRANSFORM<br/>FieldMapper<br/>ValueStandardizer<br/>DataEnricher]
+    D -->|No| F[REJECTED<br/>Per-row reasons]
+    E --> G[LOAD<br/>Batch insert<br/>17K rows/s]
+    G --> H[(customer_transactions_clean)]
+    F --> I[(customer_transactions_rejected)]
+    G --> J[AUDIT<br/>etl.etl_audit]
+
+%% Diagram 8
+erDiagram
+    customer_transactions_clean {
+        int id PK
+        text customer_id
+        text account_id
+        text branch_code
+        date transaction_date
+        text transaction_type
+        text channel
+        text currency
+        numeric amount
+        timestamp loaded_at
+        int source_row_id
+        text batch_id FK
+    }
+
+    customer_transactions_rejected {
+        int id PK
+        int source_row_id
+        text customer_id
+        text account_id
+        text branch_code
+        text transaction_date
+        text transaction_type
+        text channel
+        text currency
+        numeric amount
+        text rejection_reason
+        timestamp rejected_at
+        text batch_id FK
+    }
+
+    customer_features {
+        int id PK
+        text customer_id
+        date as_of_date
+        int days_since_last_txn
+        int days_since_first_txn
+        int txn_count_30d
+        int txn_count_90d
+        int txn_count_180d
+        numeric avg_days_between_txn
+        numeric total_amount_90d
+        numeric avg_amount_90d
+        numeric total_amount_180d
+        numeric amount_growth_ratio
+        int distinct_channels_90d
+        int distinct_txn_types_90d
+        text dominant_channel
+        numeric amount_stddev_90d
+        timestamp computed_at
+    }
+
+    etl_audit {
+        bigint id PK
+        text audit_id UK
+        text batch_id
+        text source_type
+        text source_name
+        text pipeline_name
+        timestamp started_at
+        timestamp completed_at
+        float duration_seconds
+        bigint rows_received
+        bigint rows_valid
+        bigint rows_rejected
+        bigint rows_loaded
+        bigint rows_skipped
+        bigint duplicates_detected
+        bigint warnings_count
+        bigint errors_count
+        float quality_score
+        text status
+        text error_message
+        text triggered_by
+        text operator_id
+        jsonb tags
+        jsonb extra
+    }
+
+    customer_transactions_clean ||--o{ customer_features : "customer_id (feature source)"
+    etl_audit ||--o{ customer_transactions_clean : "batch_id"
+    etl_audit ||--o{ customer_transactions_rejected : "batch_id"
+
+%% Diagram 9
+graph LR
+    A[Raw Transactions] --> B[ETL Validation]
+    B --> C[customer_transactions_clean]
+    C --> D[SQL Aggregation<br/>Single Query<br/>FILTER WHERE clauses]
+    D --> E[customer_features<br/>16 metrics]
+    E --> F[Customer State Service]
+    E --> G[Prediction Service]
+    E --> H[Dashboard]
+
+%% Diagram 10
+graph TD
+    subgraph "Layer 1: Behaviour Intelligence"
+        M1[Markov Chain Engine]
+        M1 --> S1[State Classification]
+        S1 --> O1[Active / At Risk / Dormant / Churned]
+    end
+
+    subgraph "Layer 2: Prediction Intelligence"
+        M2[XGBoost Churn Model]
+        M3[XGBoost CLV Model]
+        M2 --> P1[Churn Probability]
+        M3 --> P2[CLV Estimate]
+        P1 --> HS[Health Score Fusion]
+        P2 --> HS
+        O1 --> HS
+    end
+
+    subgraph "Layer 3: Decision Intelligence"
+        HS --> RE[Rule Engine]
+        RE --> NBA[NBA Generator]
+        NBA --> O3[Ranked Recommendations<br/>Impact × Effort × Confidence]
+    end
+
+    FEATURES[16 Customer Features] --> M1
+    FEATURES --> M2
+    FEATURES --> M3
+    O1 --> M2
+
+%% Diagram 11
+graph LR
+    A[Training Data<br/>Historical Features] --> B[Model Training<br/>XGBoost]
+    B --> C[Evaluation<br/>AUC-ROC, Precision, Recall]
+    C --> D{Pass Threshold?}
+    D -->|Yes| E[Register as Challenger]
+    D -->|No| F[Discard / Retune]
+    E --> G[Champion vs Challenger<br/>A/B Comparison]
+    G --> H{Challenger Wins?}
+    H -->|Yes| I[Promote to Champion]
+    H -->|No| J[Keep Champion]
+    I --> K[Deploy to Prediction Service]
+    K --> L[Monitor Drift<br/>PSI, Accuracy Decay]
+    L -->|Drift Detected| A
+
+%% Diagram 12
+graph LR
+    A[Historical Features<br/>customer_features] --> B[Train/Test Split<br/>80/20 temporal]
+    B --> C[Hyperparameter Search<br/>Grid/Random CV]
+    C --> D[Model Training<br/>XGBoost]
+    D --> E[Evaluation<br/>AUC-ROC, Precision, Recall, F1]
+    E --> F{Meets Threshold?}
+    F -->|Yes| G[Register as Challenger]
+    F -->|No| C
+    G --> H[Champion Comparison]
+    H --> I{Challenger Better?}
+    I -->|Yes| J[Promote to Champion]
+    I -->|No| K[Archive Challenger]
+
+%% Diagram 13
+graph TD
+    subgraph "Vue 3 Application"
+        VUE[Vue 3 Composition API]
+        PINIA[Pinia State Management]
+        ROUTER[Vue Router 4]
+        CHARTS[Chart.js + vue-chartjs]
+    end
+
+    subgraph "Build & Deploy"
+        VITE[Vite Build Tool]
+        NGINX[Nginx — Static Asset Serving]
+    end
+
+    subgraph "Backend"
+        GW[API Gateway :8080]
+    end
+
+    VUE --> PINIA
+    VUE --> ROUTER
+    VUE --> CHARTS
+    VITE --> NGINX
+    VUE -->|REST API Calls| GW
+    NGINX -->|Reverse Proxy| GW
+    BROWSER[Chromium Browser] -->|HTTPS| NGINX
+
+%% Diagram 14
+sequenceDiagram
+    participant User as RM (Browser)
+    participant Nginx as Nginx
+    participant GW as API Gateway
+    participant LDAP as LDAP/AD
+
+    User->>Nginx: GET /dashboard
+    Nginx->>User: Static Vue app
+
+    User->>GW: POST /api/auth/login {username, password}
+    GW->>LDAP: LDAP Bind
+    LDAP-->>GW: Success + Groups
+    GW-->>User: JWT Token + Role
+
+    User->>GW: GET /api/customers/rm001
+    GW->>GW: Validate JWT
+    GW->>GW: Check role >= RM
+    GW-->>User: Customer list
+
+%% Diagram 15
+graph LR
+    DEV[Development<br/>Local/VM<br/>Synthetic Data] --> UAT[UAT<br/>Bank-Hosted<br/>Masked Data]
+    UAT -->|Security Sign-off| PROD[Production<br/>Bank-Hosted<br/>Live Data]
+    PROD --> DR[Disaster Recovery<br/>Bank-Hosted<br/>Replicated]
+
+%% Diagram 16
+graph LR
+    A[DR Event Detected] --> B[Provision DR VM<br/>from Infrastructure Team]
+    B --> C[Restore PostgreSQL<br/>from Latest Backup]
+    C --> D[Deploy Docker Compose<br/>from Git Tag]
+    D --> E[Validate Data Integrity<br/>Row counts, audit log]
+    E --> F[Re-run Most Recent<br/>ETL Batch if Needed]
+    F --> G[Notify Users<br/>System Available]
+
+%% Diagram 17
+graph TD
+    subgraph "Metrics Sources"
+        PG[PostgreSQL Metrics]
+        API[API Response Times]
+        ETL_M[ETL Batch Metrics]
+        FEAT[Feature Computation]
+        MODEL[Model Performance]
+        SYS[System Resources]
+    end
+
+    subgraph "Collection"
+        LOGS[Structured Logs<br/>JSON Format]
+        AUDIT[etl.etl_audit<br/>Per-Batch Metrics]
+    end
+
+    subgraph "Visualisation (Recommended)"
+        GRAFANA[Grafana Dashboards]
+    end
+
+    PG --> LOGS
+    API --> LOGS
+    ETL_M --> AUDIT
+    FEAT --> LOGS
+    MODEL --> LOGS
+    SYS --> LOGS
+    LOGS --> GRAFANA
+    AUDIT --> GRAFANA
+

@@ -64,7 +64,10 @@ from etl.schemas.connector_schemas import ConnectorConfig, SourceType
 from etl.connectors.factory import create_connector
 from etl.validation.service import ValidationService
 from etl.transformation.service import TransformationService
+from etl.extraction.executor import ExtractionExecutor
+from sqlalchemy import MetaData
 from shared.config.settings import settings
+from shared.database.postgres import get_sync_engine
 
 # --- Logging ---
 logging.basicConfig(
@@ -195,20 +198,19 @@ def write_audit_record(
 # ===========================================================================
 
 
-def bulk_insert_clean(records: list[dict], batch_id: str) -> tuple[int, int]:
+def bulk_insert_clean(records: list[dict], batch_id: str, config) -> tuple[int, int]:
     """Insert cleaned records using batch execute_values.
-    Falls back to row-by-row with rescue on constraint failures.
+    Table, columns, and metadata are driven by config (etl_config.yaml → target section).
     Returns (inserted_clean, rescued_to_rejected)."""
     if not records:
         return (0, 0)
 
     t0 = time.monotonic()
-    data_columns = [
-        "customer_id", "account_id", "branch_code",
-        "transaction_date", "transaction_type", "channel",
-        "currency", "amount",
-    ]
-    table_columns = data_columns + ["loaded_at", "source_row_id", "batch_id"]
+    data_columns = config.target_data_columns
+    meta_columns = config.target_meta_columns
+    table_columns = data_columns + meta_columns
+    clean_table = config.target_clean_table
+    rejected_table = config.target_rejected_table
 
     conn = get_target_conn()
     inserted = 0
@@ -223,13 +225,13 @@ def bulk_insert_clean(records: list[dict], batch_id: str) -> tuple[int, int]:
             chunk = records[chunk_start : chunk_start + BATCH_SIZE]
             values = [
                 tuple(rec.get(c) for c in data_columns)
-                + (now, rec.get("source_row_id"), batch_id)
+                + _build_meta_tuple(rec, meta_columns, now, batch_id)
                 for rec in chunk
             ]
             try:
                 extras.execute_values(
                     cur,
-                    f"INSERT INTO customer_transactions_clean ({col_names}) VALUES %s",
+                    f"INSERT INTO {clean_table} ({col_names}) VALUES %s",
                     values,
                     template=f"({placeholders})",
                     page_size=BATCH_SIZE,
@@ -238,15 +240,15 @@ def bulk_insert_clean(records: list[dict], batch_id: str) -> tuple[int, int]:
                 inserted += len(chunk)
             except Exception as batch_err:
                 conn.rollback()
-                logger.warning("Batch clean insert failed, falling back row-by-row")
+                logger.warning("Batch clean insert failed, falling back row-by-row: %s", batch_err)
                 for rec in chunk:
                     try:
                         row_vals = (
                             tuple(rec.get(c) for c in data_columns)
-                            + (now, rec.get("source_row_id"), batch_id)
+                            + _build_meta_tuple(rec, meta_columns, now, batch_id)
                         )
                         cur.execute(
-                            f"INSERT INTO customer_transactions_clean ({col_names}) VALUES ({placeholders})",
+                            f"INSERT INTO {clean_table} ({col_names}) VALUES ({placeholders})",
                             row_vals,
                         )
                         conn.commit()
@@ -254,20 +256,7 @@ def bulk_insert_clean(records: list[dict], batch_id: str) -> tuple[int, int]:
                     except Exception as row_err:
                         conn.rollback()
                         try:
-                            rej_sql = (
-                                "INSERT INTO customer_transactions_rejected "
-                                "(source_row_id,customer_id,account_id,branch_code,"
-                                "transaction_date,transaction_type,channel,currency,amount,"
-                                "rejection_reason,rejected_at,batch_id) "
-                                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
-                            )
-                            cur.execute(rej_sql, (
-                                rec.get("source_row_id"),
-                                rec.get("customer_id"), rec.get("account_id"), rec.get("branch_code"),
-                                rec.get("transaction_date"), rec.get("transaction_type"), rec.get("channel"),
-                                rec.get("currency"), rec.get("amount"),
-                                f"db_constraint_violation: {row_err}", now, batch_id,
-                            ))
+                            _rescue_to_rejected(cur, rec, rejected_table, data_columns, now, batch_id, row_err)
                             conn.commit()
                             rescued += 1
                         except Exception:
@@ -275,7 +264,7 @@ def bulk_insert_clean(records: list[dict], batch_id: str) -> tuple[int, int]:
 
         elapsed = time.monotonic() - t0
         rate = inserted / elapsed if elapsed > 0 else 0
-        logger.info("Clean insert: %d rows in %.1fs (%.0f rows/s)", inserted, elapsed, rate)
+        logger.info("Clean insert: %d rows into %s in %.1fs (%.0f rows/s)", inserted, clean_table, elapsed, rate)
         if rescued > 0:
             logger.warning("Rescued %d rows from constraint violations", rescued)
     finally:
@@ -283,19 +272,49 @@ def bulk_insert_clean(records: list[dict], batch_id: str) -> tuple[int, int]:
     return (inserted, rescued)
 
 
+def _build_meta_tuple(rec: dict, meta_columns: list[str], now: datetime, batch_id: str) -> tuple:
+    """Build the metadata portion of an insert tuple from meta_columns config."""
+    vals = []
+    for mc in meta_columns:
+        if mc == "loaded_at" or mc == "rejected_at":
+            vals.append(now)
+        elif mc == "batch_id":
+            vals.append(batch_id)
+        elif mc == "source_row_id":
+            vals.append(rec.get("source_row_id"))
+        else:
+            vals.append(rec.get(mc))
+    return tuple(vals)
+
+
+def _rescue_to_rejected(cur, rec: dict, rejected_table: str, data_columns: list[str],
+                         now: datetime, batch_id: str, error: Exception) -> None:
+    """Insert a single rescued row into the rejected table."""
+    rej_cols = data_columns + ["rejection_reason", "rejected_at", "batch_id"]
+    rej_placeholders = ",".join(["%s"] * len(rej_cols))
+    rej_sql = (
+        f"INSERT INTO {rejected_table} "
+        f"({', '.join(rej_cols)}) "
+        f"VALUES ({rej_placeholders})"
+    )
+    cur.execute(rej_sql, (
+        *tuple(rec.get(c) for c in data_columns),
+        f"db_constraint_violation: {error}", now, batch_id,
+    ))
+
+
 def bulk_insert_rejected(
-    records: list[dict], batch_id: str, reasons: list[str]
+    records: list[dict], batch_id: str, reasons: list[str], config
 ) -> int:
-    """Insert rejected records using batch execute_values."""
+    """Insert rejected records using batch execute_values.
+    Table and columns are driven by config (etl_config.yaml → target section)."""
     if not records:
         return 0
 
     t0 = time.monotonic()
-    data_columns = [
-        "source_row_id", "customer_id", "account_id", "branch_code",
-        "transaction_date", "transaction_type", "channel", "currency", "amount",
-    ]
+    data_columns = config.target_data_columns
     table_columns = data_columns + ["rejection_reason", "rejected_at", "batch_id"]
+    rejected_table = config.target_rejected_table
 
     conn = get_target_conn()
     inserted = 0
@@ -321,7 +340,7 @@ def bulk_insert_rejected(
             try:
                 extras.execute_values(
                     cur,
-                    f"INSERT INTO customer_transactions_rejected ({col_names}) VALUES %s",
+                    f"INSERT INTO {rejected_table} ({col_names}) VALUES %s",
                     values,
                     template=f"({placeholders})",
                     page_size=BATCH_SIZE,
@@ -340,7 +359,7 @@ def bulk_insert_rejected(
                     try:
                         row = tuple(rec.get(c) for c in data_columns) + (reason, now, batch_id)
                         cur.execute(
-                            f"INSERT INTO customer_transactions_rejected ({col_names}) VALUES ({placeholders})",
+                            f"INSERT INTO {rejected_table} ({col_names}) VALUES ({placeholders})",
                             row,
                         )
                         conn.commit()
@@ -350,7 +369,7 @@ def bulk_insert_rejected(
 
         elapsed = time.monotonic() - t0
         rate = inserted / elapsed if elapsed > 0 else 0
-        logger.info("Rejected insert: %d rows in %.1fs (%.0f rows/s)", inserted, elapsed, rate)
+        logger.info("Rejected insert: %d rows into %s in %.1fs (%.0f rows/s)", inserted, rejected_table, elapsed, rate)
     finally:
         conn.close()
     return inserted
@@ -368,6 +387,7 @@ def _run_invariant_checks(
     rows_rescued: int,
     quality_score: float,
     batch_id: str,
+    rejected_table: str = "customer_transactions_rejected",
 ) -> list[str]:
     """Run data-agnostic invariant checks on every batch.
     These must hold for ANY input data, not just the fixture."""
@@ -398,7 +418,7 @@ def _run_invariant_checks(
         conn = get_target_conn()
         cur = conn.cursor()
         cur.execute(
-            "SELECT COUNT(*) FROM customer_transactions_rejected "
+            f"SELECT COUNT(*) FROM {rejected_table} "
             "WHERE batch_id = %s AND (rejection_reason IS NULL OR rejection_reason = '' "
             "OR rejection_reason = 'Validation failed')",
             (batch_id,),
@@ -491,66 +511,143 @@ def _validate_schema(
 
 
 async def run_etl_pipeline(
-    csv_path: str,
+    csv_path: str | None = None,
+    source_table: str | None = None,
+    source_query: str | None = None,
+    extraction_spec: str | None = None,
     dry_run: bool = False,
     force: bool = False,
     triggered_by: str = "cli",
 ) -> dict:
-    """Execute the complete ETL pipeline: Extract -> Validate -> Transform -> Load."""
+    """Execute the complete ETL pipeline: Extract -> Validate -> Transform -> Load.
+
+    Supports three extraction modes:
+    - Extraction Spec mode (primary): --extraction-spec → Dynamic Extractor pre-processor
+    - Database mode: --source-table or --source-query
+    - CSV mode (fallback): --csv
+    """
     run_id = str(uuid.uuid4())
     batch_id = str(uuid.uuid4())
     start_time = time.monotonic()
     started_at = datetime.now(timezone.utc)
 
+    # Determine extraction mode
+    use_extraction_spec = bool(extraction_spec)
+    use_db = bool(source_table or source_query)
+    source_label = extraction_spec or source_table or source_query or csv_path or "unknown"
+
     logger.info("=" * 60)
     logger.info("ETL ENGINE STARTED  run=%s  batch=%s", run_id[:8], batch_id[:8])
-    logger.info("Source: %s", csv_path)
+    if use_extraction_spec:
+        logger.info("Source: %s  Mode: EXTRACTION_SPEC", extraction_spec)
+    else:
+        logger.info("Source: %s  Mode: %s", source_label, "DATABASE" if use_db else "CSV")
     if dry_run:
         logger.info("Mode: DRY RUN (no database writes)")
 
-    # Idempotency check
-    if not dry_run and not force:
-        prev = check_already_loaded(csv_path)
+    # Idempotency check (skip for extraction-spec mode — it's a pre-processor)
+    if not dry_run and not force and not use_extraction_spec:
+        prev = check_already_loaded(source_label)
         if prev:
             logger.warning(
-                "IDEMPOTENCY GUARD: File already loaded (batch=%s). Use --force to re-process.", prev[:8]
+                "IDEMPOTENCY GUARD: Source already loaded (batch=%s). Use --force to re-process.", prev[:8]
             )
             return {"run_id": run_id, "batch_id": batch_id, "status": "SKIPPED_DUPLICATE", "previous_batch_id": prev}
 
     # ------------------------------------------------------------------
-    # PHASE 1: EXTRACT
+    # PHASE 0 (OPTIONAL): Dynamic Extractor pre-processor
     # ------------------------------------------------------------------
-    logger.info("--- Phase 1/4: EXTRACT ---")
+    if use_extraction_spec:
+        logger.info("--- Phase 0/4: DYNAMIC EXTRACTOR ---")
+        spec_path = os.path.join(_PROJECT_ROOT, extraction_spec)
+
+        engine = get_sync_engine()  # Synchronous engine for Dynamic Extractor
+        metadata = MetaData()
+
+        extractor = ExtractionExecutor(
+            engine=engine,
+            metadata=metadata,
+            engine_version="2.1",
+        )
+        extraction_result = extractor.execute(spec_path)
+
+        if extraction_result.status == "FAILED":
+            logger.error("Dynamic Extractor FAILED: %s", extraction_result.errors)
+            return {"run_id": run_id, "batch_id": batch_id, "status": "FAILED",
+                    "error": extraction_result.errors}
+
+        df = extraction_result.valid_df
+        total_rows = len(df)
+
+        logger.info(
+            "  Extractor: %d rows extracted, %d valid, %d rejected (DLQ)",
+            extraction_result.rows_extracted,
+            extraction_result.rows_valid,
+            extraction_result.rows_rejected,
+        )
+
+        if df.empty:
+            logger.error("No valid records from extraction spec. Aborting.")
+            return {"status": "FAILED", "error": "No valid records from Dynamic Extractor"}
+
+        # DLQ entries could be persisted here — skipped for now
+        if extraction_result.dlq_entries:
+            logger.warning(
+                "  %d records routed to DLQ (not yet persisted — DLQ table pending)",
+                len(extraction_result.dlq_entries),
+            )
+
+    # ------------------------------------------------------------------
+    # PHASE 1: EXTRACT (standard mode — skipped if extraction spec used)
+    # ------------------------------------------------------------------
+    if not use_extraction_spec:
+        logger.info("--- Phase 1/4: EXTRACT ---")
+
+    # Load config (needed for both modes)
     config = ETLConfig.load(
         config_path=os.path.join(_PROJECT_ROOT, "etl", "config", "etl_config.yaml")
     )
 
-    connector_config = ConnectorConfig(
-        source_type=SourceType.CSV,
-        source_name="Customer Transactions CSV",
-        file_path=csv_path,
-    )
-    connector = create_connector(connector_config)
-    await connector.connect()
+    if not use_extraction_spec:
+        if use_db:
+            connector_config = ConnectorConfig(
+                source_type=SourceType.POSTGRESQL,
+                source_name=source_table or "Custom SQL Query",
+                host=settings.postgres_host,
+                port=settings.postgres_port,
+                database=settings.postgres_db,
+                username=settings.postgres_user,
+                password=settings.postgres_password,
+                table_name=source_table,
+                query=source_query,
+            )
+        else:
+            connector_config = ConnectorConfig(
+                source_type=SourceType.CSV,
+                source_name="Customer Transactions CSV",
+                file_path=csv_path,
+            )
+        connector = create_connector(connector_config)
+        await connector.connect()
 
-    all_data: list[pd.DataFrame] = []
-    async for dataset in connector.extract():
-        all_data.append(dataset.data)
-        logger.info("  Chunk: %s rows, %s columns", f"{dataset.row_count:,}", len(dataset.column_names))
+        all_data: list[pd.DataFrame] = []
+        async for dataset in connector.extract():
+            all_data.append(dataset.data)
+            logger.info("  Chunk: %s rows, %s columns", f"{dataset.row_count:,}", len(dataset.column_names))
 
-    df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
-    total_rows = len(df)
-    logger.info("  Total extracted: %s rows", f"{total_rows:,}")
+        df = pd.concat(all_data, ignore_index=True) if all_data else pd.DataFrame()
+        total_rows = len(df)
+        logger.info("  Total extracted: %s rows", f"{total_rows:,}")
 
-    if df.empty:
-        logger.error("No data extracted. Aborting.")
-        return {"status": "FAILED", "error": "No data in CSV"}
+        if df.empty:
+            logger.error("No data extracted. Aborting.")
+            return {"status": "FAILED", "error": "No data returned from source"}
 
-    # Schema drift check — fail loudly on unexpected columns (regulated banking)
+        await connector.disconnect()
+
+    # Schema drift check — common to both extraction modes
     _validate_schema(df, config.expected_columns, mode=config.schema_mode,
-                     source_name=os.path.basename(csv_path))
-
-    await connector.disconnect()
+                     source_name=source_label)
 
     # ------------------------------------------------------------------
     # PHASE 2: VALIDATE
@@ -619,12 +716,12 @@ async def run_etl_pipeline(
                     reason_map[result.record_index] = "; ".join(rule_ids)
 
         clean_records = transformed_df.to_dict(orient="records") if not transformed_df.empty else []
-        rows_loaded, rows_rescued = bulk_insert_clean(clean_records, batch_id)
+        rows_loaded, rows_rescued = bulk_insert_clean(clean_records, batch_id, config)
         logger.info("  Clean loaded: %s", f"{rows_loaded:,}")
 
         rejected_records = invalid_df.to_dict(orient="records") if not invalid_df.empty else []
         rejected_reasons = [reason_map.get(idx, "Validation failed") for idx in sorted(invalid_indices)]
-        reject_count = bulk_insert_rejected(rejected_records, batch_id, rejected_reasons)
+        reject_count = bulk_insert_rejected(rejected_records, batch_id, rejected_reasons, config)
         logger.info("  Rejected: %s", f"{reject_count:,}")
 
         # Invariant checks
@@ -632,6 +729,7 @@ async def run_etl_pipeline(
             total_input=total_rows, rows_loaded=rows_loaded,
             reject_count=reject_count, rows_rescued=rows_rescued,
             quality_score=validation_report.quality_score, batch_id=batch_id,
+            rejected_table=config.target_rejected_table,
         )
         for issue in issues:
             if "CRITICAL" in issue or "FAILURE" in issue:
@@ -640,10 +738,11 @@ async def run_etl_pipeline(
                 logger.warning(issue)
 
         # Audit
-        file_hash = _compute_file_hash(csv_path)
+        file_hash = _compute_file_hash(csv_path) if csv_path else hashlib.sha256(source_label.encode()).hexdigest()
+        audit_source_type = "CSV" if csv_path else "POSTGRESQL"
         audit_ok = write_audit_record(
             run_id=run_id, batch_id=batch_id,
-            source_type="CSV", source_name=os.path.basename(csv_path),
+            source_type=audit_source_type, source_name=source_label,
             pipeline_name="etl_full_pipeline",
             started_at=started_at, duration_seconds=time.monotonic() - start_time,
             rows_received=total_rows,
@@ -655,7 +754,7 @@ async def run_etl_pipeline(
             errors_count=validation_report.total_errors,
             quality_score=validation_report.quality_score,
             status="COMPLETED", triggered_by=triggered_by,
-            tags={"run_id": run_id, "csv_path": csv_path, "file_hash": file_hash},
+            tags={"run_id": run_id, "source": source_label, "file_hash": file_hash},
         )
         if not audit_ok:
             logger.error("Failed to write audit record")
@@ -686,20 +785,63 @@ async def run_etl_pipeline(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Absa Bank Zambia -- ETL Engine Runner")
-    parser.add_argument("--csv", default=os.path.join(_PROJECT_ROOT, "scripts", "etl_validation_customers.csv"))
+    parser.add_argument(
+        "--source-table",
+        default=None,
+        help="Database table to extract from (e.g., 'public.customer_transactions'). Uses PostgreSQL connector.",
+    )
+    parser.add_argument(
+        "--source-query",
+        default=None,
+        help="Custom SQL query for extraction. Overrides --source-table.",
+    )
+    parser.add_argument(
+        "--csv",
+        default=None,
+        help="CSV file path (fallback mode when --source-table is not used)",
+    )
+    parser.add_argument(
+        "--extraction-spec",
+        default=None,
+        help="Path to YAML extraction spec for the Dynamic Extractor pre-processor (e.g., 'etl/config/extraction_specs/customer_360.yaml')",
+    )
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--force", action="store_true", help="Re-process even if file was already loaded")
+    parser.add_argument("--force", action="store_true", help="Re-process even if source was already loaded")
     args = parser.parse_args()
 
-    if not os.path.exists(args.csv):
+    # Determine extraction mode
+    use_extraction_spec = bool(args.extraction_spec)
+    use_db = bool(args.source_table or args.source_query)
+    use_csv = bool(args.csv)
+
+    if not use_extraction_spec and not use_db and not use_csv:
+        logger.error("No source specified. Use --extraction-spec, --source-table, --source-query, or --csv.")
+        sys.exit(1)
+
+    if use_extraction_spec and (use_db or use_csv):
+        logger.error("Cannot combine --extraction-spec with --source-table/--source-query/--csv.")
+        sys.exit(1)
+
+    if use_db and use_csv:
+        logger.error("Cannot use both --source-table/--source-query and --csv. Choose one.")
+        sys.exit(1)
+
+    if use_csv and not os.path.exists(args.csv):
         logger.error("CSV file not found: %s", args.csv)
         sys.exit(1)
 
     import asyncio
-    result = asyncio.run(run_etl_pipeline(args.csv, dry_run=args.dry_run, force=args.force))
+    result = asyncio.run(run_etl_pipeline(
+        csv_path=args.csv,
+        source_table=args.source_table,
+        source_query=args.source_query,
+        extraction_spec=args.extraction_spec,
+        dry_run=args.dry_run,
+        force=args.force,
+    ))
 
     if result["status"] == "SKIPPED_DUPLICATE":
-        logger.info("File already processed. Use --force to re-run.")
+        logger.info("Source already processed. Use --force to re-run.")
         sys.exit(0)
     if result["status"] not in ("COMPLETED", "COMPLETED_DRY_RUN"):
         sys.exit(1)

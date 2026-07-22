@@ -14,11 +14,18 @@ class FeatureSnapshot(BaseModel):
     txn_count_30d: int | None = None
     txn_count_90d: int | None = None
     txn_count_180d: int | None = None
+    txn_count_365d: int | None = None
     avg_days_between_txn: float | None = None
     total_amount_90d: float | None = None
     avg_amount_90d: float | None = None
     total_amount_180d: float | None = None
     amount_growth_ratio: float | None = None
+    credit_sum_30d: float | None = None
+    debit_sum_30d: float | None = None
+    credit_to_debit_ratio_90d: float | None = None
+    balance_trend_90d: str | None = None
+    has_salary_credit: bool | None = None
+    monthly_income_estimate: float | None = None
     distinct_channels_90d: int | None = None
     distinct_txn_types_90d: int | None = None
     dominant_channel: str | None = None
@@ -36,5 +43,6 @@ class ComputeBatchResponse(BaseModel):
     as_of_date: date
     customers_processed: int
     rows_upserted: int
+    phase2_updated: int = 0
     duration_seconds: float
     status: str = "COMPLETED"

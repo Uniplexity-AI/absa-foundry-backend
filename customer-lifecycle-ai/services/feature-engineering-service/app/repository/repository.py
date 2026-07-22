@@ -83,17 +83,17 @@ SELECT
         AS distinct_txn_types_90d,
 
     -- Dominant channel (most frequent in 90d, ties broken by most recent)
+    -- OPTIMIZED: pre-computed via window function instead of correlated subquery
     (
         SELECT channel FROM (
-            SELECT channel, COUNT(*) as cnt, MAX(transaction_date) as last_used
+            SELECT channel,
+                   ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, MAX(transaction_date) DESC) AS rn
             FROM customer_transactions_clean c2
             WHERE c2.customer_id = t.customer_id
               AND c2.transaction_date::date <= %(as_of_date)s::date
               AND c2.transaction_date::date > (%(as_of_date)s::date - INTERVAL '90 days')
             GROUP BY channel
-            ORDER BY cnt DESC, last_used DESC
-            LIMIT 1
-        ) s
+        ) s WHERE rn = 1
     ) AS dominant_channel,
 
     -- Volatility
@@ -122,13 +122,81 @@ ON CONFLICT (customer_id, as_of_date) DO UPDATE SET
     computed_at            = EXCLUDED.computed_at
 """
 
+# Phase 2: Derived features computed from the raw aggregates already stored.
+# Runs as a lightweight UPDATE — no re-aggregation needed.
+PHASE2_SQL = """
+UPDATE customer_features SET
+    -- Extended window
+    txn_count_365d = (
+        SELECT COUNT(*) FROM customer_transactions_clean t
+        WHERE t.customer_id = customer_features.customer_id
+          AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '365 days')
+          AND t.transaction_date::date <= customer_features.as_of_date
+    ),
+    -- Credit / Debit separation
+    credit_sum_30d = (
+        SELECT COALESCE(SUM(amount), 0)
+        FROM customer_transactions_clean t
+        WHERE t.customer_id = customer_features.customer_id
+          AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '30 days')
+          AND t.transaction_date::date <= customer_features.as_of_date
+          AND t.transaction_type = 'CREDIT'
+    ),
+    debit_sum_30d = (
+        SELECT COALESCE(SUM(amount), 0)
+        FROM customer_transactions_clean t
+        WHERE t.customer_id = customer_features.customer_id
+          AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '30 days')
+          AND t.transaction_date::date <= customer_features.as_of_date
+          AND t.transaction_type = 'DEBIT'
+    ),
+    -- Ratios
+    credit_to_debit_ratio_90d = CASE
+        WHEN debit_sum_30d IS NULL OR debit_sum_30d = 0 THEN NULL
+        ELSE ROUND(credit_sum_30d::numeric / debit_sum_30d, 2)
+    END,
+    -- Trend: compares 30d vs 60-90d average
+    balance_trend_90d = CASE
+        WHEN txn_count_90d IS NULL OR txn_count_90d = 0 THEN 'STABLE'
+        WHEN txn_count_30d > (txn_count_90d - txn_count_30d) / 2.0 THEN 'RISING'
+        WHEN txn_count_30d < (txn_count_90d - txn_count_30d) / 2.0 THEN 'FALLING'
+        ELSE 'STABLE'
+    END,
+    -- Salary detection: 3+ monthly CREDIT deposits within 10% variance
+    has_salary_credit = (
+        SELECT COUNT(DISTINCT DATE_TRUNC('month', transaction_date::date)) >= 3
+        FROM customer_transactions_clean t2
+        WHERE t2.customer_id = customer_features.customer_id
+          AND t2.transaction_type = 'CREDIT'
+          AND t2.transaction_date::date > (customer_features.as_of_date - INTERVAL '90 days')
+          AND t2.transaction_date::date <= customer_features.as_of_date
+    ),
+    -- Income estimate: average monthly CREDIT over 90 days
+    monthly_income_estimate = (
+        SELECT ROUND(COALESCE(SUM(amount), 0) / 3.0, 2)
+        FROM customer_transactions_clean t2
+        WHERE t2.customer_id = customer_features.customer_id
+          AND t2.transaction_type = 'CREDIT'
+          AND t2.transaction_date::date > (customer_features.as_of_date - INTERVAL '90 days')
+          AND t2.transaction_date::date <= customer_features.as_of_date
+    ),
+    computed_at = NOW()
+WHERE as_of_date = '{date}'::date
+"""
+
+def _phase2_sql(as_of_date: date) -> str:
+    """Return Phase 2 SQL with the date formatted inline (safe — isoformat is YYYY-MM-DD)."""
+    return PHASE2_SQL.format(date=as_of_date.isoformat())
+
 FETCH_SQL = """
 SELECT customer_id, as_of_date,
        days_since_last_txn, days_since_first_txn,
-       txn_count_30d, txn_count_90d, txn_count_180d,
+       txn_count_30d, txn_count_90d, txn_count_180d, txn_count_365d,
        avg_days_between_txn,
        total_amount_90d, avg_amount_90d, total_amount_180d,
        amount_growth_ratio,
+       credit_sum_30d, debit_sum_30d, credit_to_debit_ratio_90d,
+       balance_trend_90d, has_salary_credit, monthly_income_estimate,
        distinct_channels_90d, distinct_txn_types_90d,
        dominant_channel, amount_stddev_90d,
        computed_at
@@ -139,10 +207,12 @@ WHERE customer_id = %s AND as_of_date = %s
 LATEST_SQL = """
 SELECT customer_id, as_of_date,
        days_since_last_txn, days_since_first_txn,
-       txn_count_30d, txn_count_90d, txn_count_180d,
+       txn_count_30d, txn_count_90d, txn_count_180d, txn_count_365d,
        avg_days_between_txn,
        total_amount_90d, avg_amount_90d, total_amount_180d,
        amount_growth_ratio,
+       credit_sum_30d, debit_sum_30d, credit_to_debit_ratio_90d,
+       balance_trend_90d, has_salary_credit, monthly_income_estimate,
        distinct_channels_90d, distinct_txn_types_90d,
        dominant_channel, amount_stddev_90d,
        computed_at
@@ -181,16 +251,21 @@ class FeatureRepository:
             else:
                 cur.execute(FEATURE_SQL, {"as_of_date": as_of_date.isoformat()})
             conn.commit()
-            rows = cur.rowcount
+            phase1_rows = cur.rowcount
+
+            # Phase 2: Derived features (credit/debit split, ratios, trends, salary detection)
+            cur.execute(_phase2_sql(as_of_date))
+            conn.commit()
+            phase2_rows = cur.rowcount
         finally:
             conn.close()
         elapsed = time.monotonic() - t0
-        # Count distinct customers for this as_of_date
         customers = self._count_customers(as_of_date)
         return {
             "as_of_date": as_of_date,
             "customers_processed": customers,
-            "rows_upserted": rows,
+            "rows_upserted": phase1_rows,
+            "phase2_updated": phase2_rows,
             "duration_seconds": round(elapsed, 2),
         }
 

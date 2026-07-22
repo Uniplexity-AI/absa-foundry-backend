@@ -29,6 +29,10 @@ An enterprise-grade AI platform deployed inside a bank's internal infrastructure
 | **Challenger Model** | A new model being evaluated against the champion |
 | **Transition Matrix** | Markov chain matrix of state transition probabilities |
 | **CLV** | Customer Lifetime Value — predicted total future revenue |
+| **Dynamic Extractor** | Pre-ETL engine that unifies multi-table source data via YAML-driven SQL generation |
+| **Extraction Spec** | YAML file defining source tables, JOINs, field mappings, filters, and validation rules |
+| **DLQ** | Dead-Letter Queue (`audit.rejected_records`) — stores structurally-invalid records with diagnostics |
+| **Watermark** | Timestamp tracking the last successful incremental extraction for delta loads |
 
 ## Business Constraints
 
