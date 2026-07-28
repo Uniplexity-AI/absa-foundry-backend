@@ -42,10 +42,8 @@ CREATE TABLE iam.roles (
 INSERT INTO iam.roles (role_name, description) VALUES
     ('ADMIN',                'Full system access — user management, configuration, model deployment'),
     ('RELATIONSHIP_MANAGER', 'Dashboard with NBA for assigned customers'),
-    ('BRANCH_MANAGER',       'Portfolio-level analytics across branch'),
     ('DATA_SCIENTIST',       'Model training, evaluation, champion/challenger testing'),
-    ('OPERATIONS',           'System monitoring, pipeline orchestration, read-only dashboards'),
-    ('SERVICE_ACCOUNT',      'Machine-to-machine — ETL engine, prediction service, internal APIs');
+    ('OPERATIONS',           'System monitoring, pipeline orchestration, ETL dashboards');
 
 -- ===========================================================================
 -- User ↔ Role mapping

@@ -530,6 +530,8 @@ async def run_etl_pipeline(
     batch_id = str(uuid.uuid4())
     start_time = time.monotonic()
     started_at = datetime.now(timezone.utc)
+    extraction_result = None
+    extractor = None
 
     # Determine extraction mode
     use_extraction_spec = bool(extraction_spec)
@@ -590,12 +592,10 @@ async def run_etl_pipeline(
             logger.error("No valid records from extraction spec. Aborting.")
             return {"status": "FAILED", "error": "No valid records from Dynamic Extractor"}
 
-        # DLQ entries could be persisted here — skipped for now
+        # Persist rejected records to audit directory
         if extraction_result.dlq_entries:
-            logger.warning(
-                "  %d records routed to DLQ (not yet persisted — DLQ table pending)",
-                len(extraction_result.dlq_entries),
-            )
+            dlq_path = ExtractionExecutor.persist_dlq(extraction_result.dlq_entries)
+            logger.info("  %d records persisted to DLQ: %s", len(extraction_result.dlq_entries), dlq_path)
 
     # ------------------------------------------------------------------
     # PHASE 1: EXTRACT (standard mode — skipped if extraction spec used)
@@ -758,6 +758,13 @@ async def run_etl_pipeline(
         )
         if not audit_ok:
             logger.error("Failed to write audit record")
+        elif extraction_result and extractor:
+            # Advance incremental state only after the clean load and audit have
+            # both completed successfully.  This prevents data loss on retries.
+            extractor.commit_watermark(
+                extraction_result.dataset_name,
+                extraction_result.watermark_candidate,
+            )
 
     duration = time.monotonic() - start_time
     logger.info("=" * 60)

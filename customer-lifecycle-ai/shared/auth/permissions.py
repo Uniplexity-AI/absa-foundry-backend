@@ -3,6 +3,12 @@ Shared Auth Permissions — RBAC matrix and role-checking utilities.
 
 Defines which roles can access which routes. Used by the RBAC middleware
 in the API Gateway to enforce access control.
+
+4 Roles:
+    ADMIN                — Full system access
+    RELATIONSHIP_MANAGER — Customer dashboard + NBA
+    DATA_SCIENTIST       — Model training, evaluation
+    OPERATIONS           — System monitoring, ETL dashboards
 """
 
 from __future__ import annotations
@@ -19,15 +25,15 @@ class RoutePermission:
 
 
 # ===========================================================================
-# Permission Matrix
+# Permission Matrix — 4 Roles
 # ===========================================================================
 
 PERMISSIONS: list[RoutePermission] = [
     # ---- Auth (public) ----
-    RoutePermission("POST",  "/auth/login",    []),  # Public — no roles needed
+    RoutePermission("POST",  "/auth/login",    []),
     RoutePermission("POST",  "/auth/refresh",  []),
     RoutePermission("POST",  "/auth/logout",   []),
-    RoutePermission("GET",   "/auth/me",       []),  # Any authenticated user
+    RoutePermission("GET",   "/auth/me",       []),
 
     # ---- Admin — user management ----
     RoutePermission("GET",    "/admin/users",         ["ADMIN"]),
@@ -45,29 +51,31 @@ PERMISSIONS: list[RoutePermission] = [
     RoutePermission("POST",   "/admin/api-keys",      ["ADMIN"]),
     RoutePermission("DELETE", "/admin/api-keys/{id}", ["ADMIN"]),
 
-    # ---- Dashboard ----
-    RoutePermission("GET",  "/dashboard/customers",    ["ADMIN", "RELATIONSHIP_MANAGER", "BRANCH_MANAGER"]),
-    RoutePermission("GET",  "/dashboard/customers/{id}", ["ADMIN", "RELATIONSHIP_MANAGER", "BRANCH_MANAGER"]),
-    RoutePermission("POST", "/dashboard/recommendations", ["ADMIN", "RELATIONSHIP_MANAGER", "BRANCH_MANAGER"]),
-    RoutePermission("GET",  "/dashboard/branch-summary", ["ADMIN", "BRANCH_MANAGER"]),
-    RoutePermission("GET",  "/dashboard/health-scores",  ["ADMIN", "RELATIONSHIP_MANAGER", "BRANCH_MANAGER"]),
+    # ---- Dashboard — RM + ADMIN ----
+    RoutePermission("GET",  "/dashboard/customers",       ["ADMIN", "RELATIONSHIP_MANAGER"]),
+    RoutePermission("GET",  "/dashboard/customers/{id}",  ["ADMIN", "RELATIONSHIP_MANAGER"]),
+    RoutePermission("POST", "/dashboard/recommendations", ["ADMIN", "RELATIONSHIP_MANAGER"]),
+    RoutePermission("GET",  "/dashboard/health-scores",   ["ADMIN", "RELATIONSHIP_MANAGER"]),
 
-    # ---- Models — Data Scientists ----
-    RoutePermission("GET",  "/models/registry",     ["ADMIN", "DATA_SCIENTIST", "OPERATIONS"]),
-    RoutePermission("POST", "/models/train",        ["ADMIN", "DATA_SCIENTIST"]),
+    # ---- Models — Data Scientists + ADMIN ----
+    RoutePermission("GET",  "/models/registry",        ["ADMIN", "DATA_SCIENTIST"]),
+    RoutePermission("POST", "/models/train",            ["ADMIN", "DATA_SCIENTIST"]),
     RoutePermission("GET",  "/models/training-history", ["ADMIN", "DATA_SCIENTIST"]),
-    RoutePermission("POST", "/models/deploy",       ["ADMIN"]),
-    RoutePermission("POST", "/models/evaluate",     ["ADMIN", "DATA_SCIENTIST"]),
+    RoutePermission("POST", "/models/deploy",           ["ADMIN"]),
+    RoutePermission("POST", "/models/evaluate",         ["ADMIN", "DATA_SCIENTIST"]),
 
-    # ---- Monitoring — Operations ----
-    RoutePermission("GET",  "/monitoring/health",   ["ADMIN", "OPERATIONS"]),
-    RoutePermission("GET",  "/monitoring/metrics",  ["ADMIN", "OPERATIONS"]),
+    # ---- Monitoring — Operations + ADMIN ----
+    RoutePermission("GET",  "/monitoring/health",    ["ADMIN", "OPERATIONS"]),
+    RoutePermission("GET",  "/monitoring/metrics",   ["ADMIN", "OPERATIONS"]),
     RoutePermission("GET",  "/monitoring/pipelines", ["ADMIN", "OPERATIONS"]),
 
-    # ---- Internal API — Service Accounts only (API key auth) ----
-    RoutePermission("POST", "/internal/predict",    ["SERVICE_ACCOUNT"]),
-    RoutePermission("POST", "/internal/features",   ["SERVICE_ACCOUNT"]),
-    RoutePermission("POST", "/internal/etl-trigger", ["SERVICE_ACCOUNT"]),
+    # ---- ETL — Operations + ADMIN ----
+    RoutePermission("GET",  "/api/etl/**", ["ADMIN", "OPERATIONS"]),
+
+    # ---- Feature Engineering — Data Scientists + ADMIN ----
+    RoutePermission("POST", "/features/compute-batch",   ["ADMIN", "DATA_SCIENTIST"]),
+    RoutePermission("GET",  "/features/{customer_id}",   ["ADMIN", "DATA_SCIENTIST"]),
+    RoutePermission("GET",  "/features/{customer_id}/latest", ["ADMIN", "DATA_SCIENTIST"]),
 ]
 
 

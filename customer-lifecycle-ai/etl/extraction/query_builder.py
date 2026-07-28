@@ -23,6 +23,7 @@ from etl.extraction.config_models import (
     FilterSpec,
     JoinSpec,
     JoinType,
+    PreAggregationSpec,
 )
 
 
@@ -40,11 +41,11 @@ class DynamicQueryBuilder:
             result = conn.execute(query)
     """
 
-    # Map join types to SQLAlchemy parameters
+    # Map join types to SQLAlchemy (isouter, is_full).  RIGHT is handled
+    # specially by swapping operands since SQLAlchemy join() only does LEFT.
     _JOIN_METHODS: dict[JoinType, tuple[bool, bool]] = {
         JoinType.INNER: (False, False),
         JoinType.LEFT: (True, False),
-        JoinType.RIGHT: (True, False),  # full=True handled separately
         JoinType.FULL: (True, True),
     }
 
@@ -57,12 +58,28 @@ class DynamicQueryBuilder:
         """
         self._engine = engine
         self._metadata = metadata
+        self._current_config: ExtractionConfigSpec | None = None  # Set during build()
 
-    def build(self, config: ExtractionConfigSpec) -> Select:
+    def _check_trusted(self, feature: str) -> None:
+        """Raise if the current config is untrusted and uses a raw-SQL feature."""
+        if self._current_config and not self._current_config.trusted_config:
+            raise QueryBuildError(
+                f"{feature} requires trusted_config=True. "
+                f"Raw SQL expressions are not allowed in untrusted configs."
+            )
+
+    def build(
+        self,
+        config: ExtractionConfigSpec,
+        last_watermark: datetime | None = None,
+    ) -> Select:
         """Build a SQLAlchemy Select statement from an extraction config.
 
         Args:
             config: Validated extraction configuration.
+            last_watermark: Last successful extraction timestamp.
+                If incremental is enabled and this is None (first run),
+                falls back to config.incremental.lookback_minutes.
 
         Returns:
             A SQLAlchemy Select statement ready for execution.
@@ -70,6 +87,7 @@ class DynamicQueryBuilder:
         Raises:
             QueryBuildError: If a table, column, or alias cannot be resolved.
         """
+        self._current_config = config
         prim = config.primary_entity
         alias_map: dict[str, sa.Table] = {}
 
@@ -83,23 +101,41 @@ class DynamicQueryBuilder:
             col = primary_table.c[f.field]
             columns.append(col.label(f.output_name))
 
+        # ---- Build pre-aggregation CTEs ----
+        cte_list: list = []
+        for pa in config.pre_aggregations:
+            cte = self._build_pre_aggregation_cte(pa)
+            cte_list.append(cte)
+            alias_map[pa.alias] = cte
+
         # ---- Process JOINs ----
         joined = primary_table
         for join_spec in config.joins:
-            sec_table = self._resolve_table(join_spec.table, join_spec.alias)
-            alias_map[join_spec.alias] = sec_table
+            # Check if this is a CTE reference or a real table
+            if join_spec.alias in alias_map and isinstance(alias_map[join_spec.alias], sa.CTE):
+                sec_table = alias_map[join_spec.alias]
+            else:
+                sec_table = self._resolve_table(join_spec.table, join_spec.alias)
+                alias_map[join_spec.alias] = sec_table
 
             # Build ON clause from multiple conditions
             on_clause = self._build_on_clause(join_spec, alias_map)
 
-            is_outer, is_full = self._JOIN_METHODS[join_spec.join_type]
-            joined = joined.join(sec_table, onclause=on_clause, isouter=is_outer, full=is_full)
+            if join_spec.join_type == JoinType.RIGHT:
+                # SQLAlchemy join() only does LEFT OUTER.
+                # To get RIGHT: swap operands — sec_table LEFT JOIN joined.
+                joined = sec_table.join(joined, onclause=on_clause, isouter=True)
+            else:
+                is_outer, is_full = self._JOIN_METHODS[join_spec.join_type]
+                joined = joined.join(sec_table, onclause=on_clause, isouter=is_outer, full=is_full)
 
             for f in join_spec.select_fields:
                 col = sec_table.c[f.field]
                 columns.append(col.label(f.output_name))
 
-        # ---- Calculated fields (SQL expressions) ----
+        # ---- Calculated fields (SQL expressions — trusted config only) ----
+        if config.calculated_fields:
+            self._check_trusted("calculated_fields")
         for cf in config.calculated_fields:
             columns.append(sa.literal_column(cf.expression).label(cf.name))
 
@@ -110,6 +146,7 @@ class DynamicQueryBuilder:
             if len(parts) == 2 and parts[0] in alias_map:
                 agg_col = alias_map[parts[0]].c[parts[1]]
             else:
+                self._check_trusted(f"aggregation field '{agg.field}'")
                 agg_col = text(agg.field)
             agg_expr = self._build_aggregation(agg.function, agg_col, agg.distinct)
             columns.append(agg_expr.label(agg.alias))
@@ -133,7 +170,12 @@ class DynamicQueryBuilder:
 
         # ---- Incremental watermark ----
         if config.incremental.enabled:
-            stmt = self._apply_incremental_filter(stmt, config, alias_map)
+            # Include the source value in the result so the executor can advance
+            # state to the maximum *observed* value after downstream publication.
+            watermark_col = self._resolve_column(config.incremental.watermark_column, alias_map)
+            columns.append(watermark_col.label("_extraction_watermark"))
+            stmt = stmt.with_only_columns(*columns)
+            stmt = self._apply_incremental_filter(stmt, config, alias_map, last_watermark)
 
         return stmt
 
@@ -218,6 +260,58 @@ class DynamicQueryBuilder:
         if function not in _map:
             raise QueryBuildError(f"Unsupported aggregation: {function.value}")
         return _map[function]
+
+    # ------------------------------------------------------------------
+    # Pre-Aggregation CTE
+    # ------------------------------------------------------------------
+
+    def _build_pre_aggregation_cte(self, pa: PreAggregationSpec):
+        """Build a CTE that pre-aggregates a side table to prevent row multiplication.
+
+        Generates:
+            WITH {name} AS (
+                SELECT {group_by_cols}, {agg_exprs}
+                FROM {from_table}
+                WHERE {filters}
+                GROUP BY {group_by_cols}
+            )
+        """
+        # Resolve source table
+        src_table = self._resolve_table(pa.from_table, pa.alias)
+
+        # Build GROUP BY columns
+        group_cols = []
+        for gb in pa.group_by:
+            parts = gb.split(".")
+            if len(parts) == 2 and parts[0] == pa.alias:
+                group_cols.append(src_table.c[parts[1]])
+            else:
+                group_cols.append(text(gb))
+
+        # Build aggregation expressions
+        agg_exprs = []
+        for agg in pa.aggregations:
+            parts = agg.field.split(".")
+            if len(parts) == 2 and parts[0] == pa.alias:
+                agg_col = src_table.c[parts[1]]
+            else:
+                agg_col = text(agg.field)
+            agg_expr = self._build_aggregation(agg.function, agg_col, agg.distinct)
+            agg_exprs.append(agg_expr.label(agg.alias))
+
+        # Build CTE select
+        cte_select = select(*group_cols, *agg_exprs)
+
+        # Apply filters within CTE
+        pa_alias_map = {pa.alias: src_table}
+        for flt in pa.filters:
+            cte_select = self._apply_filter(cte_select, flt, pa_alias_map)
+
+        # Apply GROUP BY
+        for gb_col in group_cols:
+            cte_select = cte_select.group_by(gb_col)
+
+        return cte_select.cte(pa.name)
 
     # ------------------------------------------------------------------
     # Filters — 22 operators
@@ -313,10 +407,12 @@ class DynamicQueryBuilder:
         if op == FilterOperator.DATE_SUB:
             return col - text(f"INTERVAL '{value}'")
 
-        # Subqueries
+        # Subqueries (trusted config only — raw SQL via text())
         if op == FilterOperator.EXISTS:
+            self._check_trusted("EXISTS filter")
             return sa.exists(text(value))
         if op == FilterOperator.NOT_EXISTS:
+            self._check_trusted("NOT_EXISTS filter")
             return ~sa.exists(text(value))
 
         raise QueryBuildError(f"Unsupported filter operator: {op.value}")
@@ -348,12 +444,22 @@ class DynamicQueryBuilder:
         stmt: Select,
         config: ExtractionConfigSpec,
         alias_map: dict[str, sa.Table],
+        last_watermark: datetime | None = None,
     ) -> Select:
-        """Append WHERE watermark_column > last_extracted watermark."""
+        """Append WHERE watermark_column > last_watermark.
+
+        Uses the persisted watermark from a previous successful run.
+        On first run (last_watermark is None), falls back to:
+            now() - lookback_minutes
+        as a safety window.
+        """
         inc = config.incremental
         col = self._resolve_column(inc.watermark_column, alias_map)
 
-        # Get watermark from store (placeholder — real impl queries etl.extraction_watermarks)
-        watermark = datetime.now(timezone.utc) - timedelta(minutes=inc.lookback_minutes)
+        if last_watermark is not None:
+            watermark = last_watermark
+        else:
+            # First run — use lookback as a safety window
+            watermark = datetime.now(timezone.utc) - timedelta(minutes=inc.lookback_minutes)
 
         return stmt.where(col > watermark)

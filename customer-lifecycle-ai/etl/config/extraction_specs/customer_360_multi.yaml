@@ -69,56 +69,68 @@ primary_entity:
         type: "str"
         required: true
 
-# ---- Joins ----
+# ---- Pre-aggregation CTEs (avoids row multiplication) ----
+# Transactions and interactions are pre-aggregated per customer BEFORE
+# joining to customers.  A flat join would multiply rows:
+#   1 customer × 5 txns × 3 interactions = 15 rows (COUNT/SUM inflated 3×)
+# With CTEs: 1 customer × 1 txn_agg × 1 intr_agg = 1 row (accurate).
+pre_aggregations:
+  - name: "txn_agg"
+    from_table: "public.raw_transactions"
+    alias: "txn"
+    aggregations:
+      - function: COUNT
+        field: "transaction_id"
+        alias: transaction_count
+      - function: SUM
+        field: "amount"
+        alias: total_spent
+      - function: AVG
+        field: "amount"
+        alias: avg_transaction_value
+      - function: MAX
+        field: "transaction_date"
+        alias: last_transaction_date
+    group_by:
+      - "txn.customer_id"
+
+  - name: "intr_agg"
+    from_table: "public.raw_interactions"
+    alias: "intr"
+    aggregations:
+      - function: COUNT
+        field: "interaction_id"
+        alias: interaction_count
+    group_by:
+      - "intr.customer_id"
+
+# ---- Joins (CTEs referenced as virtual tables) ----
 joins:
-  - table: "public.raw_transactions"
+  - table: "txn_agg"
     alias: "txn"
     join_type: "left"
     "on":
       - left: cust.customer_id
         right: txn.customer_id
-    select_fields: []
+    select_fields:
+      - field: "transaction_count"
+        alias: "transaction_count"
+      - field: "total_spent"
+        alias: "total_spent"
+      - field: "avg_transaction_value"
+        alias: "avg_transaction_value"
+      - field: "last_transaction_date"
+        alias: "last_transaction_date"
 
-  - table: "public.raw_interactions"
+  - table: "intr_agg"
     alias: "intr"
     join_type: "left"
     "on":
       - left: cust.customer_id
         right: intr.customer_id
-    select_fields: []
-
-# ---- Aggregations (computed from joined tables) ----
-aggregations:
-  - function: COUNT
-    field: "txn.transaction_id"
-    alias: transaction_count
-
-  - function: SUM
-    field: "txn.amount"
-    alias: total_spent
-
-  - function: AVG
-    field: "txn.amount"
-    alias: avg_transaction_value
-
-  - function: MAX
-    field: "txn.transaction_date"
-    alias: last_transaction_date
-
-  - function: COUNT
-    field: "intr.interaction_id"
-    alias: interaction_count
-
-group_by:
-  - "cust.customer_id"
-  - "cust.activation_date"
-  - "cust.branch_code"
-  - "cust.country"
-  - "cust.customer_type"
-  - "cust.onboarding_channel"
-  - "cust.date_of_birth"
-  - "cust.gender"
-  - "cust.status"
+    select_fields:
+      - field: "interaction_count"
+        alias: "interaction_count"
 
 # ---- Calculated fields (SQL expressions) ----
 calculated_fields:

@@ -228,6 +228,55 @@ class AggregationSpec(BaseModel):
 
 
 # ===========================================================================
+# Pre-Aggregation CTEs (Section 11.1 — fixes multi-table overcount)
+# ===========================================================================
+
+class PreAggregationSpec(BaseModel):
+    """A standalone aggregation CTE computed BEFORE joining to the main query.
+
+    CRITICAL: When multiple tables are joined to the primary entity and
+    aggregations reference columns from those joined tables, flat JOINs
+    create row multiplication (tx × interaction per customer).  Pre-
+    aggregation CTEs eliminate this by aggregating each side-table
+    independently before the join.
+
+    Example:
+        pre_aggregations:
+          - name: "txn_agg"
+            from_table: "public.raw_transactions"
+            alias: "txn"
+            aggregations:
+              - function: COUNT
+                field: "transaction_id"
+                alias: transaction_count
+            group_by: ["txn.customer_id"]
+    """
+    model_config = {"extra": "forbid"}
+
+    name: str = Field(description="CTE name (referenced in joins.table)")
+    from_table: str = Field(description="Source table, e.g. 'public.raw_transactions'")
+    alias: str = Field(description="SQL alias for columns, e.g. 'txn'")
+    aggregations: list[AggregationSpec] = Field(
+        description="Aggregations to compute in this CTE",
+    )
+    group_by: list[str] = Field(
+        description="GROUP BY columns, e.g. ['txn.customer_id']",
+    )
+    filters: list[FilterSpec] = Field(
+        default_factory=list,
+        description="Optional filters applied within the CTE",
+    )
+
+    @model_validator(mode="after")
+    def _check_has_aggregations_and_group_by(self) -> "PreAggregationSpec":
+        if not self.aggregations:
+            raise ValueError(f"Pre-aggregation '{self.name}' has no aggregations")
+        if not self.group_by:
+            raise ValueError(f"Pre-aggregation '{self.name}' has no group_by")
+        return self
+
+
+# ===========================================================================
 # Calculated Fields (Section 12)
 # ===========================================================================
 
@@ -342,6 +391,13 @@ class ExtractionConfigSpec(BaseModel):
     )
     description: str | None = Field(default=None, description="Human-readable description")
 
+    # Trust level — gates raw-SQL features (calculated_fields, EXISTS, etc.)
+    # Set to False for user-authored or externally-supplied configs.
+    trusted_config: bool = Field(
+        default=True,
+        description="If False, raw SQL expressions (calculated_fields, EXISTS) are rejected",
+    )
+
     # Versioning (Section 7)
     versioning: VersioningSpec | None = Field(
         default=None,
@@ -352,6 +408,12 @@ class ExtractionConfigSpec(BaseModel):
     primary_entity: EntitySpec = Field(description="Driving table for extraction")
     joins: list[JoinSpec] = Field(default_factory=list, description="Secondary entities to join")
     filters: list[FilterSpec] = Field(default_factory=list, description="WHERE clause filters")
+
+    # Pre-aggregation CTEs — prevents row multiplication from multi-table JOINs
+    pre_aggregations: list[PreAggregationSpec] = Field(
+        default_factory=list,
+        description="CTEs pre-aggregated before joins (no row multiplication)",
+    )
 
     # Advanced features
     aggregations: list[AggregationSpec] = Field(
@@ -385,4 +447,19 @@ class ExtractionConfigSpec(BaseModel):
     def _check_aggregations_have_group_by(self) -> ExtractionConfigSpec:
         if self.aggregations and not self.group_by:
             raise ValueError("Aggregations specified but 'group_by' is empty")
+        cte_names = [cte.name for cte in self.pre_aggregations]
+        cte_aliases = [cte.alias for cte in self.pre_aggregations]
+        if len(cte_names) != len(set(cte_names)):
+            raise ValueError("Pre-aggregation CTE names must be unique")
+        if len(cte_aliases) != len(set(cte_aliases)):
+            raise ValueError("Pre-aggregation CTE aliases must be unique")
+        unknown_cte_joins = [
+            join.table for join in self.joins
+            if join.table in cte_names and join.alias not in cte_aliases
+        ]
+        if unknown_cte_joins:
+            raise ValueError(
+                "A CTE join must use the alias declared by its pre-aggregation: "
+                + ", ".join(sorted(set(unknown_cte_joins)))
+            )
         return self

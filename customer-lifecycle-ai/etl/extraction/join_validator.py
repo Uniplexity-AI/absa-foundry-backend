@@ -1,178 +1,154 @@
-"""
-ETL Extraction Join Validator — pre-query join integrity checks.
-
-Validates every configured join before query generation. If validation fails,
-query generation never starts — preventing runtime SQL errors.
-
-Validates: table existence, schema existence, alias uniqueness, column existence,
-type compatibility, indexed foreign keys, cross-join prohibition, cyclic joins.
-
-Section 8 of dynamic-extractor-spec.md.
-"""
+"""Pre-query validation for physical-table and pre-aggregation CTE joins."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 import sqlalchemy as sa
-from sqlalchemy import inspect, MetaData, text
+from sqlalchemy import MetaData, inspect
 
-from etl.extraction.config_models import ExtractionConfigSpec, JoinSpec
+from etl.extraction.config_models import ExtractionConfigSpec, PreAggregationSpec
 
 
 @dataclass
 class JoinValidationReport:
-    """Result of join validation. is_valid=True means all checks passed."""
     is_valid: bool = True
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
 class JoinValidator:
-    """Validates join integrity against the live database schema."""
+    """Validate join aliases, source columns, and physical-table indexes.
+
+    Pre-aggregation CTEs are virtual relations: they are not looked up as
+    database tables, but their emitted group-by and aggregate columns are
+    validated against the extraction spec.
+    """
 
     def __init__(self, engine: sa.Engine, metadata: MetaData) -> None:
-        """Initialize with a SQLAlchemy engine and MetaData for reflection.
-
-        Args:
-            engine: Connected SQLAlchemy engine.
-            metadata: Bound MetaData for table reflection.
-        """
-        self._engine = engine
-        self._metadata = metadata
         self._inspector = inspect(engine)
 
     def validate(self, config: ExtractionConfigSpec) -> JoinValidationReport:
-        """Run all join validations against the extraction config.
-
-        Args:
-            config: Loaded extraction configuration.
-
-        Returns:
-            JoinValidationReport with errors and warnings.
-        """
         report = JoinValidationReport()
-        seen_aliases: set[str] = {config.primary_entity.alias}
-        join_graph: dict[str, set[str]] = {}
-
-        # Validate primary entity
         self._check_table(config.primary_entity.table, "primary_entity", report)
 
+        aliases = {config.primary_entity.alias: config.primary_entity.table}
+        ctes = {cte.alias: cte for cte in config.pre_aggregations}
+        cte_names = {cte.name for cte in config.pre_aggregations}
+
         for join in config.joins:
-            self._validate_single_join(join, seen_aliases, join_graph, report)
+            if join.alias in aliases:
+                report.errors.append(f"Duplicate alias '{join.alias}' in join to '{join.table}'")
+                continue
+            if join.table in cte_names:
+                if join.alias not in ctes or ctes[join.alias].name != join.table:
+                    report.errors.append(
+                        f"CTE '{join.table}' must be joined using its declared alias"
+                    )
+            else:
+                self._check_table(join.table, f"join '{join.alias}'", report)
 
-        # Cyclic detection
-        if self._has_cycle(join_graph):
-            report.errors.append(
-                f"Cyclic join dependency detected in graph: {join_graph}"
-            )
+            for condition in join.on:
+                self._check_condition(condition.left, condition.right, aliases, ctes, report)
 
-        report.is_valid = len(report.errors) == 0
+            if join.table not in cte_names:
+                self._check_join_indexes(join, report)
+            aliases[join.alias] = join.table
+
+        report.is_valid = not report.errors
         return report
 
-    # ------------------------------------------------------------------
-    # Private
-    # ------------------------------------------------------------------
-
-    def _validate_single_join(
-        self,
-        join: JoinSpec,
-        seen_aliases: set[str],
-        join_graph: dict[str, set[str]],
-        report: JoinValidationReport,
-    ) -> None:
-        """Run all checks for a single join specification."""
-        # Alias uniqueness
-        if join.alias in seen_aliases:
-            report.errors.append(f"Duplicate alias '{join.alias}' in join to '{join.table}'")
-        seen_aliases.add(join.alias)
-
-        # Table existence
-        self._check_table(join.table, f"join '{join.alias}'", report)
-
-        # Column existence & type compatibility
-        for condition in join.on:
-            self._check_join_condition(condition.left, condition.right, report)
-
-        # Index check (warning only)
-        self._check_indexes(join, report)
-
     def _check_table(self, table_ref: str, context: str, report: JoinValidationReport) -> None:
-        """Verify a table exists in the database."""
-        parts = table_ref.split(".")
-        if len(parts) == 2:
-            schema, table = parts
-        else:
-            schema, table = "public", parts[0]
-
-        schemas = self._inspector.get_schema_names()
-        if schema not in schemas:
+        schema, table = self._split_table(table_ref)
+        if schema not in self._inspector.get_schema_names():
             report.errors.append(f"[{context}] Schema '{schema}' does not exist")
             return
-
-        tables = self._inspector.get_table_names(schema=schema)
-        if table not in tables:
+        if table not in self._inspector.get_table_names(schema=schema):
             report.errors.append(f"[{context}] Table '{schema}.{table}' does not exist")
 
-    def _check_join_condition(
+    def _check_condition(
         self,
-        left_ref: str,
-        right_ref: str,
+        left: str,
+        right: str,
+        aliases: dict[str, str],
+        ctes: dict[str, PreAggregationSpec],
         report: JoinValidationReport,
     ) -> None:
-        """Verify both sides of a join condition reference valid columns."""
-        for ref, side in [(left_ref, "left"), (right_ref, "right")]:
-            parts = ref.split(".")
-            if len(parts) != 2:
-                report.errors.append(f"Invalid column reference '{ref}' — expected 'alias.column'")
-                continue
+        left_type = self._column_type(left, aliases, ctes, report)
+        right_type = self._column_type(right, aliases, ctes, report)
+        if left_type and right_type and not self._types_compatible(left_type, right_type):
+            report.warnings.append(
+                f"Join type mismatch: '{left}' ({left_type}) vs '{right}' ({right_type})"
+            )
 
-            alias, column = parts
-            # We can't fully resolve aliases without building the query, but we check format
-            # Full resolution happens in the QueryBuilder
+    def _column_type(
+        self,
+        reference: str,
+        aliases: dict[str, str],
+        ctes: dict[str, PreAggregationSpec],
+        report: JoinValidationReport,
+    ) -> str | None:
+        try:
+            alias, column = reference.split(".")
+        except ValueError:
+            report.errors.append(f"Invalid column reference '{reference}' — expected 'alias.column'")
+            return None
 
-    def _check_indexes(self, join: JoinSpec, report: JoinValidationReport) -> None:
-        """Check if join columns have appropriate indexes (warning only)."""
+        if alias in ctes:
+            cte = ctes[alias]
+            grouped = {field.rsplit(".", 1)[-1] for field in cte.group_by}
+            aggregated = {aggregation.alias for aggregation in cte.aggregations}
+            if column not in grouped | aggregated:
+                report.errors.append(f"CTE '{cte.name}' does not emit column '{column}'")
+            # Aggregate types are database-specific. Type comparison is skipped.
+            if column in aggregated:
+                return None
+            table_ref = cte.from_table
+        else:
+            table_ref = aliases.get(alias)
+            if table_ref is None:
+                report.errors.append(f"Unknown or forward-referenced alias '{alias}'")
+                return None
+
+        schema, table = self._split_table(table_ref)
+        try:
+            columns = self._inspector.get_columns(table_name=table, schema=schema)
+        except Exception as exc:
+            report.errors.append(f"Cannot inspect '{schema}.{table}': {exc}")
+            return None
+        for item in columns:
+            if item["name"] == column:
+                return str(item["type"]).lower()
+        report.errors.append(f"Column '{column}' not found in '{schema}.{table}'")
+        return None
+
+    def _check_join_indexes(self, join, report: JoinValidationReport) -> None:
+        schema, table = self._split_table(join.table)
+        try:
+            indexes = self._inspector.get_indexes(table_name=table, schema=schema)
+        except Exception:
+            return
+        indexed = {column for index in indexes for column in index.get("column_names", [])}
         for condition in join.on:
-            for ref in (condition.left, condition.right):
-                parts = ref.split(".")
-                if len(parts) != 2:
-                    continue
-                alias, column = parts
-                # For the joined table, try to resolve the real table name
-                table_name = join.table.replace(".", "_")
-                try:
-                    indexes = self._inspector.get_indexes(
-                        table_name=table_name.split("_")[-1] if "_" in table_name else table_name,
+            for reference in (condition.left, condition.right):
+                alias, column = reference.split(".", 1)
+                if alias == join.alias and column not in indexed:
+                    report.warnings.append(
+                        f"Join column '{reference}' has no index on '{schema}.{table}'"
                     )
-                    has_index = any(column in idx.get("column_names", []) for idx in indexes)
-                    if not has_index:
-                        report.warnings.append(
-                            f"Join column '{ref}' may not have an index — consider adding one"
-                        )
-                except Exception:
-                    pass  # Table may use schema prefix, skip index check
 
-    def _has_cycle(self, graph: dict[str, set[str]]) -> bool:
-        """DFS-based cycle detection in join dependency graph."""
-        WHITE, GRAY, BLACK = 0, 1, 2
-        color: dict[str, int] = {}
+    @staticmethod
+    def _split_table(reference: str) -> tuple[str, str]:
+        parts = reference.split(".")
+        return (parts[0], parts[1]) if len(parts) == 2 else ("public", parts[0])
 
-        for node in graph:
-            color[node] = WHITE
-
-        def dfs(node: str) -> bool:
-            color[node] = GRAY
-            for neighbor in graph.get(node, set()):
-                if color.get(neighbor) == GRAY:
-                    return True
-                if color.get(neighbor) == WHITE and dfs(neighbor):
-                    return True
-            color[node] = BLACK
-            return False
-
-        for node in graph:
-            if color.get(node) == WHITE:
-                if dfs(node):
-                    return True
-        return False
+    @staticmethod
+    def _types_compatible(left: str, right: str) -> bool:
+        families = (
+            {"integer", "bigint", "smallint", "serial", "bigserial"},
+            {"real", "double precision", "numeric", "decimal", "float"},
+            {"character varying", "varchar", "char", "character", "text", "uuid"},
+            {"date", "timestamp without time zone", "timestamp with time zone", "datetime"},
+            {"boolean", "bool"},
+        )
+        return left == right or any(left in family and right in family for family in families)

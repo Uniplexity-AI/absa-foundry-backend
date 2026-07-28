@@ -17,7 +17,7 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from gateway.routes import auth_routes, admin_routes, api_key_routes
+from gateway.routes import auth_routes, admin_routes, api_key_routes, etl_routes, feature_routes
 from shared.config.settings import settings
 
 # ---------------------------------------------------------------------------
@@ -62,10 +62,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # RBAC — role-based access control (after CORS, before routes)
+    from gateway.middleware.rbac import rbac_middleware as _rbac
+    @app.middleware("http")
+    async def rbac_middleware(request, call_next):
+        await _rbac(request)
+        return await call_next(request)
+
     # ---- Routes ----
     app.include_router(auth_routes.router)
     app.include_router(admin_routes.router)
     app.include_router(api_key_routes.router)
+    app.include_router(etl_routes.router)
+    app.include_router(feature_routes.router)
 
     # ---- Health check ----
     @app.get("/health")
