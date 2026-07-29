@@ -66,13 +66,17 @@ def test_join_validator_accepts_cte_join(monkeypatch) -> None:
     assert report.is_valid, report.errors
 
 
-def test_watermark_store_round_trip_and_rejects_corruption(tmp_path: Path) -> None:
+def test_watermark_store_round_trip_and_corruption_recovery(tmp_path: Path) -> None:
     store = WatermarkStore(tmp_path / "watermarks.json")
     watermark = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
 
     store.set("customer_360", watermark)
-
     assert store.get("customer_360") == watermark
+
+    # Corrupt JSON is treated as empty (first-run recovery), not a crash
     (tmp_path / "watermarks.json").write_text("not json", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="Cannot read watermark store"):
-        store.get("customer_360")
+    assert store.get("customer_360") is None  # Treated as first run
+
+    # Re-set after corruption works
+    store.set("customer_360", watermark)
+    assert store.get("customer_360") == watermark

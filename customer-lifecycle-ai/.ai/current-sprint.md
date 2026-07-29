@@ -1,53 +1,60 @@
 # Current Sprint — PoC (90-Day)
 
-**Sprint Status:** PoC — Month 1: Data Foundation (Near Complete)
+**Sprint Status:** PoC — Month 2: AI Services (Layer 1 Complete, Layer 2 Next)
 **Branch:** `poc-90day` (active) | Reference: `architecture-target-full` (frozen)
-**Target:** Stakeholder demo-ready with ETL + Dynamic Extractor + Auth + Gateway
+**Last Updated:** 2026-07-29
 
----
 
-## Active Phase: Demo Preparation
+## Active Phase: AI Services — Layer 1 Complete
 
-ETL engine, Dynamic Extractor, and Auth system are production-hardened. Focus: stakeholder demo, then Feature Store + service layer.
+Customer State Service is live on port 8003 with real customer data. 15/15 state engine boundary tests, 6/6 Markov engine tests, 7 API endpoints, full data pipeline verified end-to-end. Next: Prediction Service (Layer 2).
 
-## Branch Strategy
+### Completed Today (2026-07-29)
 
-| Branch | Purpose |
-|---|---|
-| `poc-90day` | **Active** — lean subset for 90-day PoC delivery |
-| `architecture-target-full` | **Frozen reference** — full 8-service design for post-PoC rollout |
-| `mukoma` | Original development branch |
+- [x] **Customer State Service** — 13 files implemented from scaffolded stubs
+- [x] State Engine: 4-priority rule-based classifier, 15 boundary tests
+- [x] Markov Engine: 4×4 transition matrix, steady-state, cold-start handling
+- [x] State + Journey Repositories: psycopg2 sync, 3× DB retry
+- [x] API: 7 endpoints (compute, get, timeline, portfolio, markov/matrix, markov/predict, health)
+- [x] Gateway proxy: httpx forwarder with 502/504 handling
+- [x] DDL: `customer_states` + `state_transitions` tables in etl_clean
+- [x] Seed script: 4,998 customers × 3 dates = 14,994 states, 1,058 transitions
+- [x] Verification: `verify_feature_to_state.py` — per-customer classification trace
+- [x] **Behaviour Generator Bug Fix**: `%(name)d` → `%(name)s` in psycopg2 params
+- [x] **4 Clean Tables Created**: `accounts_clean`, `loans_clean`, `cards_clean`, `digital_engagement_clean`
+- [x] **ID Mapping**: `customer_id_mapping` table — 7,832 cross-references
+- [x] **13 New Feature Columns**: All populated across 3 PoC dates
+- [x] Design doc: `docs/architecture/customer-state-service.md` — 17 decisions
+- [x] PROGRESS.md updated to reflect current state
 
-See [ARCHITECTURE.md](../ARCHITECTURE.md) for recovery commands.
 
 ## What's Done
 
-### ETL Engine
-- [x] ETL pipeline end-to-end (Extract → Validate → Transform → Load → Audit)
-- [x] Config-driven `target` section — same engine runs customers, transactions, or interactions
-- [x] Schema drift detection (strict mode), invariant checks, idempotency guard
-- [x] Bulk inserts: 16,000+ rows/s, 100% quality on 15,200-row customer dataset
-- [x] `customers_clean` in etl_clean database (15,200 rows from raw_customers)
-- [x] Source DB has 4 tables: raw_customers, raw_transactions, raw_interactions, customer_transactions
+### Data Layer
+- [x] ETL engine end-to-end, 9 extraction specs, 22 filter operators
+- [x] 9 clean tables in etl_clean across 15 source tables
+- [x] Per-spec target table + transform configuration
+- [x] Feature Engineering: 56 features, 7 domain generators, 3 verified dates
 
-### Dynamic Extractor (9 files, fully implemented)
-- [x] `etl/extraction/` — config_models, query_builder, join_validator, schema_factory, business_rules, streaming, executor, version_guard
-- [x] 22 filter operators, multi-column JOINs, aggregations (SUM/COUNT/AVG/MIN/MAX), calculated fields
-- [x] Wired into `run_etl.py` via `--extraction-spec` flag as Phase 0
-- [x] `customer_360.yaml` — Single-table: 15,200 rows, 100% quality, 2s runtime
-- [x] `customer_360_multi.yaml` — 3-table JOIN (customers + transactions + interactions) with 5 aggregations + 2 calculated fields
+### Layer 1 — Customer State Service (NEW)
+- [x] State classification: 4-priority rules, 15/15 boundary tests
+- [x] Markov Chain: 4×4 matrix, steady-state, cold-start, 6/6 tests
+- [x] API live on port 8003: 7 endpoints
+- [x] Real data verified: 4,998 customers, portfolio breakdown, customer-level traces
 
-### Authentication (Phases 1-3 Complete — 17 files)
-- [x] LDAP/AD authenticator, JWT service (create/verify/refresh/blacklist)
-- [x] RBAC matrix: 30 rules across 6 roles (Admin, RM, Branch Manager, Data Scientist, Operations, Service Account)
-- [x] API key service: `clp_sk_*` format, SHA-256 hashing, scoped access
-- [x] Rate limiting: Redis sliding window, 3 default rules
-- [x] Account lockout: 5 failed attempts → 15-minute lock, exponential backoff
-- [x] Password policy: 8+ chars, uppercase, digit
-- [x] Audit trail: PostgreSQL `iam.auth_audit` — every login/logout/refresh persisted
-- [x] Gateway: 14 routes, logging middleware, CORS, health check
-- [x] IAM schema: 7 tables, 6 seeded roles
-- [x] `seed_iam.py`: admin user (admin/Admin123!) with ADMIN role + 4 service account API keys
+### Infrastructure
+- [x] PostgreSQL 18: etl_clean with all tables
+- [x] ETL Engine: production-hardened
+- [x] Feature Engineering Service: port 8002
+- [x] Customer State Service: port 8003 (NEW)
+- [x] API Gateway: port 8080 with auth + RBAC
+
+
+## Next Up
+
+1. **Prediction Service (Layer 2)** — XGBoost churn prob + Health Score → backfills customer_states.health_score
+2. **Gateway: register customer_state routes** in main gateway router
+3. **Frontend: Vue 3 RM Dashboard** — Customer Detail, State Timeline, Health Score gauge
 
 ### Documentation
 - [x] `docs/architecture/etl/dynamic-extractor-spec.md` — 18 sections

@@ -1,0 +1,64 @@
+# Digital Engagement — Login/app usage per customer
+# Pre-aggregates digital_engagement per customer for login frequency + platform preference.
+# Unlocks: eng_login_count_30d, eng_digital_platform_preference, eng_avg_session_duration_30d
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/digital_engagement.yaml
+
+version: "1.0"
+dataset_name: "digital_engagement"
+trusted_config: true
+description: "Per-customer digital engagement: login frequency, platform, session depth."
+
+primary_entity:
+  table: "public.digital_engagement"
+  alias: "eng"
+  select_fields:
+    - field: "engagement_id"
+      alias: "engagement_id"
+      validation: { type: "str", required: true }
+    - field: "customer_id"
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "login_date"
+      alias: "login_date"
+      validation: { type: "datetime", required: true }
+    - field: "platform"
+      alias: "platform"
+      validation: { type: "str", required: false }
+    - field: "session_duration_seconds"
+      alias: "session_duration_seconds"
+      validation: { type: "float", required: false }
+    - field: "actions_count"
+      alias: "actions_count"
+      validation: { type: "float", required: false }
+
+# Transform: dates are text → datetime; durations/counts are text → float
+transform:
+  type_casts:
+    login_date: datetime
+    session_duration_seconds: float
+    actions_count: float
+  standardization:
+    - field_name: platform
+      mappings:
+        Mobile: MOBILE
+        mobile: MOBILE
+        Web: WEB
+        web: WEB
+        USSD: USSD
+        ussd: USSD
+        App: MOBILE
+        app: MOBILE
+      default_value: UNKNOWN
+
+# Target: engagement data → digital_engagement_clean
+target:
+  clean_table: digital_engagement_clean
+  data_columns:
+    - engagement_id
+    - customer_id
+    - login_date
+    - platform
+    - session_duration_seconds
+    - actions_count

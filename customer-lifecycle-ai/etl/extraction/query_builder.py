@@ -10,6 +10,7 @@ Sections 4.2, 9, 10, 11, 12, 13 of dynamic-extractor-spec.md.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
@@ -40,6 +41,8 @@ class DynamicQueryBuilder:
         with engine.connect() as conn:
             result = conn.execute(query)
     """
+
+    logger = logging.getLogger("etl.extraction.query_builder")
 
     # Map join types to SQLAlchemy (isouter, is_full).  RIGHT is handled
     # specially by swapping operands since SQLAlchemy join() only does LEFT.
@@ -88,6 +91,14 @@ class DynamicQueryBuilder:
             QueryBuildError: If a table, column, or alias cannot be resolved.
         """
         self._current_config = config
+
+        # Reject raw-SQL features early if config is untrusted
+        if config.calculated_fields and not config.trusted_config:
+            self._check_trusted("calculated_fields")
+        for flt in config.filters:
+            if flt.operator in (FilterOperator.EXISTS, FilterOperator.NOT_EXISTS, FilterOperator.DATE_ADD, FilterOperator.DATE_SUB):
+                self._check_trusted(f"{flt.operator.value} filter")
+
         prim = config.primary_entity
         alias_map: dict[str, sa.Table] = {}
 
@@ -177,6 +188,11 @@ class DynamicQueryBuilder:
             stmt = stmt.with_only_columns(*columns)
             stmt = self._apply_incremental_filter(stmt, config, alias_map, last_watermark)
 
+        DynamicQueryBuilder.logger.debug(
+            "Query built: %d joins, %d filters, %d pre-aggs, %d calc fields",
+            len(config.joins), len(config.filters),
+            len(config.pre_aggregations), len(config.calculated_fields),
+        )
         return stmt
 
     # ------------------------------------------------------------------
@@ -401,10 +417,16 @@ class DynamicQueryBuilder:
         if op == FilterOperator.REGEX:
             return col.op("~")(value)
 
-        # Date arithmetic
+        # Date arithmetic (trusted config — raw SQL interpolation)
         if op == FilterOperator.DATE_ADD:
+            self._check_trusted("DATE_ADD filter")
+            if not self._is_safe_interval(value):
+                raise QueryBuildError(f"DATE_ADD unsafe interval: {value!r}")
             return col + text(f"INTERVAL '{value}'")
         if op == FilterOperator.DATE_SUB:
+            self._check_trusted("DATE_SUB filter")
+            if not self._is_safe_interval(value):
+                raise QueryBuildError(f"DATE_SUB unsafe interval: {value!r}")
             return col - text(f"INTERVAL '{value}'")
 
         # Subqueries (trusted config only — raw SQL via text())
@@ -434,6 +456,19 @@ class DynamicQueryBuilder:
             raise QueryBuildError(
                 f"Column '{col_name}' not found on table alias '{alias}'"
             )
+
+    @staticmethod
+    def _is_safe_interval(value: Any) -> bool:
+        """Check that an interval string is safe for SQL interpolation.
+
+        Allowed patterns: '30 days', '1 hour', '90 minutes', '6 months'.
+        Rejects anything with quotes, semicolons, or multi-statement patterns
+        that could be used for SQL injection via DATE_ADD/DATE_SUB filters.
+        """
+        import re
+        if not isinstance(value, str):
+            return False
+        return bool(re.fullmatch(r"-?\d+\s+\w+", value))
 
     # ------------------------------------------------------------------
     # Incremental extraction

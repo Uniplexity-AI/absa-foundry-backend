@@ -247,11 +247,14 @@ def run_phase1(date_str: str):
 
 
 def run_generators(date_str: str):
-    """Run all 4 Phase 2 generators for the given date."""
+    """Run all 7 domain generators for the given date."""
     from app.features.customer.generator import CustomerProfileGenerator
     from app.features.behaviour.generator import BehaviourGenerator
     from app.features.financial.generator import FinancialGenerator
     from app.features.channel.generator import ChannelGenerator
+    from app.features.temporal.generator import TemporalGenerator
+    from app.features.risk.generator import RiskGenerator
+    from app.features.relationship.generator import RelationshipGenerator
 
     conn = _conn()
     try:
@@ -260,6 +263,9 @@ def run_generators(date_str: str):
             ("behaviour", BehaviourGenerator),
             ("financial", FinancialGenerator),
             ("channel", ChannelGenerator),
+            ("temporal", TemporalGenerator),
+            ("risk", RiskGenerator),
+            ("relationship", RelationshipGenerator),
         ]:
             gen = GenCls(conn)
             gen.generate(date.fromisoformat(date_str))

@@ -8,6 +8,7 @@ directly into production.
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 
@@ -19,6 +20,8 @@ from etl.schemas.staging_schemas import (
     StagingLoadStatus,
     StagingTable,
 )
+
+logger = logging.getLogger("etl.staging")
 from etl.staging.repository import StagingRepository
 
 
@@ -156,7 +159,8 @@ class StagingService:
     def _normalize_columns(df: pd.DataFrame, table: StagingTable) -> pd.DataFrame:
         """Normalize DataFrame columns to match staging ORM attributes.
 
-        Strips the table prefix and lowercases. E.g., 'StgCustomer.customer_id' → 'customer_id'
+        Strips the table prefix and lowercases. E.g., 'StgCustomer.customer_id' → 'customer_id'.
+        Also applies known column name mappings for common variations.
 
         Args:
             df: Source DataFrame.
@@ -165,7 +169,52 @@ class StagingService:
         Returns:
             DataFrame with normalized column names.
         """
-        # Simple lowercase normalization
+        # Known column name mappings (source → standardized)
+        _COLUMN_ALIASES: dict[str, str] = {
+            "transaction_amount": "amount",
+            "amount": "amount",
+            "txn_amount": "amount",
+            "amount_raw": "amount",
+            "transaction_channel": "channel",
+            "channel": "channel",
+            "transaction_type": "transaction_type",
+            "type": "transaction_type",
+            "transaction_date": "transaction_date",
+            "date": "transaction_date",
+            "account_id": "account_id",
+            "customer_id": "customer_id",
+            "branch_code": "branch_code",
+            "branch": "branch_code",
+            "currency": "currency",
+            "currency_code": "currency",
+            "transaction_id": "transaction_id",
+            "source_id": "transaction_id",
+            "merchant_category": "merchant_category",
+            # New source tables (accounts, loans, cards, engagement)
+            "cust_ref": "customer_id",
+            "dob": "date_of_birth",
+            "fullname": "full_name",
+            "branchcode": "branch_code",
+            "kyctier": "kyc_tier",
+            "customerid": "customer_id",
+            "login_date": "last_login_date",
+            "opened_date": "account_created_date",
+            "origination_date": "loan_origination_date",
+            "issued_date": "card_issued_date",
+            "expiry_date": "card_expiry_date",
+        }
+
         df = df.copy()
         df.columns = [c.lower().replace(" ", "_") for c in df.columns]
+
+        # Apply known aliases
+        renamed = {}
+        for col in df.columns:
+            stripped = col.split(".")[-1] if "." in col else col
+            if stripped in _COLUMN_ALIASES:
+                renamed[col] = _COLUMN_ALIASES[stripped]
+        if renamed:
+            logger.info("  Column normalization: %s", renamed)
+            df = df.rename(columns=renamed)
+
         return df

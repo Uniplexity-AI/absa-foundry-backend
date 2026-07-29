@@ -3,9 +3,9 @@ ETL Repository — async data access for pipeline audit records.
 
 Uses raw SQL via sqlalchemy.text() because the ORM model (AuditRecord)
 declares columns not present in the table created by run_etl.py (raw psycopg2).
-
-TODO: Run Alembic migration to add updated_at to etl.etl_audit,
-then switch back to ORM queries via AuditRecord model.
+This is intentional — run_etl.py owns the etl.etl_audit table schema via
+DDL executed at pipeline start.  The ORM model and the table will converge
+in a future migration that adds updated_at to etl.etl_audit.
 """
 
 from __future__ import annotations

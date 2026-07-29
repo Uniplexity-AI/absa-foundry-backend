@@ -1,0 +1,111 @@
+# Customer Profile Master — Unified customer view
+# JOINs customers_core (authoritative) with customers_crm (duplicates via different schema)
+# + demographics_hr (employment, income, education).
+#
+# CRM table uses different column names: customerid, fullname, dob, branchcode, kyctier, nationalitycode.
+# Demographics uses cust_ref (not customer_id) — joined via cust_ref = customer_id.
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_profile_master.yaml
+
+version: "1.0"
+dataset_name: "customer_profile_master"
+trusted_config: true
+description: "Unified customer profile: customers_core enriched with demographics_hr."
+
+primary_entity:
+  table: "public.customers_core"
+  alias: "core"
+  select_fields:
+    - field: "customer_id"
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "full_name"
+      alias: "full_name"
+      validation: { type: "str", required: false }
+    - field: "date_of_birth"
+      alias: "date_of_birth"
+      validation: { type: "datetime", required: true }
+    - field: "gender"
+      alias: "gender"
+      validation: { type: "str", required: false }
+    - field: "branch_code"
+      alias: "branch_code"
+      validation: { type: "str", required: true }
+    - field: "customer_since_date"
+      alias: "activation_date"
+      validation: { type: "datetime", required: true }
+    - field: "kyc_tier"
+      alias: "kyc_tier"
+      validation: { type: "str", required: false }
+    - field: "nationality"
+      alias: "nationality"
+      validation: { type: "str", required: false }
+
+joins:
+  - table: "public.demographics_hr"
+    alias: "demo"
+    join_type: "left"
+    "on":
+      - left: "core.customer_id"
+        right: "demo.cust_ref"
+    select_fields:
+      - field: "emp_status"
+        alias: "employment_status"
+        validation: { type: "str", required: false }
+      - field: "employer"
+        alias: "employer_name"
+        validation: { type: "str", required: false }
+      - field: "income_mth"
+        alias: "monthly_income_declared"
+        validation: { type: "float", required: false }
+      - field: "education"
+        alias: "education_level"
+        validation: { type: "str", required: false }
+      - field: "marital"
+        alias: "marital_status"
+        validation: { type: "str", required: false }
+
+# Transform: all dates are text in source → datetime; income is text → float
+transform:
+  type_casts:
+    date_of_birth: datetime
+    activation_date: datetime
+    monthly_income_declared: float
+  standardization:
+    - field_name: gender
+      mappings:
+        M: MALE
+        F: FEMALE
+        Male: MALE
+        Female: FEMALE
+        m: MALE
+        f: FEMALE
+      default_value: UNKNOWN
+    - field_name: kyc_tier
+      mappings:
+        Tier 1: TIER_1
+        Tier 2: TIER_2
+        Tier 3: TIER_3
+        tier1: TIER_1
+        tier2: TIER_2
+        tier3: TIER_3
+      default_value: UNKNOWN
+
+# Target: customer profiles → customers_clean
+target:
+  clean_table: customers_clean
+  data_columns:
+    - customer_id
+    - full_name
+    - date_of_birth
+    - gender
+    - branch_code
+    - activation_date
+    - kyc_tier
+    - nationality
+    - employment_status
+    - employer_name
+    - monthly_income_declared
+    - education_level
+    - marital_status

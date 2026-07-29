@@ -14,7 +14,10 @@
       "path": "./champion/churn_prediction/",
       "status": "placeholder",
       "version": null,
-      "description": "Champion churn prediction model (XGBoost/LightGBM)"
+      "description": "Champion churn prediction model (XGBoost/LightGBM)",
+      "leakage_features_excluded": [],
+      "training_features": [],
+      "calibrator": null
     },
     "clv_prediction": {
       "path": "./champion/clv_prediction/",
@@ -46,5 +49,6 @@
   },
   "training_history": {
     "description": "Training run logs, hyperparameter tuning history, and model lineage records."
-  }
+  },
+  "_contract": "training_features in champion.churn_prediction defines the exact column order for inference. It is written by scripts/train_models.py at training time. The ChurnPredictor reads it from here. The API passes the full 56-feature dict; ChurnPredictor._dict_to_vector() extracts only training_features. Never hard-code feature names. A mismatch between training and inference column order produces silently wrong predictions."
 }

@@ -199,6 +199,21 @@ class FilterSpec(BaseModel):
             raise ValueError(f"Composite filter '{self.operator.value}' requires 'conditions'")
         if not is_composite and self.field is None:
             raise ValueError(f"Filter '{self.operator.value}' requires 'field'")
+
+        # BETWEEN requires {min, max} dict
+        if self.operator == FilterOperator.BETWEEN:
+            if not isinstance(self.value, dict) or "min" not in self.value or "max" not in self.value:
+                raise ValueError(
+                    f"BETWEEN filter requires value={{min: ..., max: ...}}, got: {self.value!r}"
+                )
+
+        # IN/NOT_IN require a list
+        if self.operator in (FilterOperator.IN, FilterOperator.NOT_IN):
+            if not isinstance(self.value, list):
+                raise ValueError(
+                    f"{self.operator.value} filter requires a list value, got: {type(self.value).__name__}"
+                )
+
         return self
 
 
@@ -347,6 +362,79 @@ class StreamingSpec(BaseModel):
 
 
 # ===========================================================================
+# ETL Target Configuration (Section 19 — where cleaned data lands)
+# ===========================================================================
+
+class TargetSpec(BaseModel):
+    """Declares which target clean table this spec feeds and which columns to write.
+
+    Each extraction spec maps to ONE clean table in etl_clean. The ETL
+    bulk_insert_clean function uses this to dynamically build INSERT statements.
+    """
+    model_config = {"extra": "forbid"}
+
+    clean_table: str = Field(
+        description="Target table in etl_clean, e.g. 'accounts_clean'",
+    )
+    rejected_table: str = Field(
+        default="",
+        description="Rejected-records table (defaults to <clean_table>_rejected)",
+    )
+    data_columns: list[str] = Field(
+        description="Columns in the clean table to populate from extracted data",
+    )
+    meta_columns: list[str] = Field(
+        default_factory=lambda: ["loaded_at", "batch_id"],
+        description="ETL metadata columns appended to each row",
+    )
+
+    @model_validator(mode="after")
+    def _default_rejected_table(self) -> "TargetSpec":
+        if not self.rejected_table:
+            self.rejected_table = f"{self.clean_table}_rejected"
+        return self
+
+
+# ===========================================================================
+# Transform Overrides (Section 19 — per-dataset type casts & standardization)
+# ===========================================================================
+
+class StandardizationMappingSpec(BaseModel):
+    """A single value mapping rule for categorical standardization."""
+    model_config = {"extra": "forbid"}
+
+    field_name: str = Field(description="Column to standardize, e.g. 'transaction_type'")
+    mappings: dict[str, str] = Field(description="source_value → canonical_value, e.g. DR→DEBIT")
+    default_value: str | None = Field(default=None, description="Fallback if no mapping matches")
+    case_sensitive: bool = Field(default=False)
+    trim_whitespace: bool = Field(default=True)
+
+
+class TransformOverridesSpec(BaseModel):
+    """Per-dataset transform configuration embedded in the extraction spec.
+
+    The Dynamic Extractor handles column selection and renaming (via aliases),
+    but type casting and value standardization need to happen in the transform phase.
+    This section declares those rules so run_etl.py can merge them into the
+    TransformationConfig before the transform phase runs.
+    """
+    model_config = {"extra": "forbid"}
+
+    type_casts: dict[str, str] = Field(
+        default_factory=dict,
+        description="Column → target type: str, int, float, bool, datetime",
+    )
+    drop_columns: list[str] = Field(
+        default_factory=list,
+        description="Columns to drop after transformation",
+    )
+    standardization: list[StandardizationMappingSpec] = Field(
+        default_factory=list,
+        description="Categorical value standardization rules",
+    )
+
+
+# ===========================================================================
 # Business Rules (Section 18)
 # ===========================================================================
 
@@ -392,9 +480,10 @@ class ExtractionConfigSpec(BaseModel):
     description: str | None = Field(default=None, description="Human-readable description")
 
     # Trust level — gates raw-SQL features (calculated_fields, EXISTS, etc.)
-    # Set to False for user-authored or externally-supplied configs.
+    # Defaults to False for production safety.  Internal specs must explicitly
+    # opt in with `trusted_config: true`.
     trusted_config: bool = Field(
-        default=True,
+        default=False,
         description="If False, raw SQL expressions (calculated_fields, EXISTS) are rejected",
     )
 
@@ -441,6 +530,18 @@ class ExtractionConfigSpec(BaseModel):
     streaming: StreamingSpec = Field(
         default_factory=StreamingSpec,
         description="Streaming/pagination configuration",
+    )
+
+    # Per-dataset transform overrides (type casts, standardization)
+    transform: TransformOverridesSpec | None = Field(
+        default=None,
+        description="Transform-phase type casts and standardizations for this dataset",
+    )
+
+    # ETL target configuration — where cleaned data lands in etl_clean
+    target: TargetSpec | None = Field(
+        default=None,
+        description="Target clean table and column mapping for ETL bulk insert",
     )
 
     @model_validator(mode="after")

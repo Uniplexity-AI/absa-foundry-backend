@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 
 import sqlalchemy as sa
 from sqlalchemy import MetaData, inspect
 
 from etl.extraction.config_models import ExtractionConfigSpec, PreAggregationSpec
+
+logger = logging.getLogger("etl.extraction.join_validator")
 
 
 @dataclass
@@ -56,6 +59,8 @@ class JoinValidator:
             aliases[join.alias] = join.table
 
         report.is_valid = not report.errors
+        if report.warnings:
+            logger.warning("Join validation: %d warning(s) — %s", len(report.warnings), report.warnings[0] if len(report.warnings) == 1 else f"{len(report.warnings)} issues")
         return report
 
     def _check_table(self, table_ref: str, context: str, report: JoinValidationReport) -> None:

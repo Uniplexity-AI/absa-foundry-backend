@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
+import time as _time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -142,137 +143,162 @@ class ExtractionExecutor:
 
         logger.info("Extraction started: %s (batch=%s)", spec.dataset_name, batch_id[:8])
 
-        try:
-            # ---- 2. Version check ----
-            self._version_guard.check(spec)
-            logger.info("  Version check: OK")
+        MAX_RETRIES = 3
+        RETRY_BASE_DELAY = 2.0  # doubles each retry
 
-            # ---- 3. Join validation ----
-            join_report = self._join_validator.validate(spec)
-            if not join_report.is_valid:
-                result.status = "FAILED"
-                result.errors = join_report.errors
-                logger.error("  Join validation FAILED: %s", join_report.errors)
-                return result
-            for warn in join_report.warnings:
-                logger.warning("  Join warning: %s", warn)
-            logger.info("  Join validation: OK")
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                # ---- 2. Version check ----
+                self._version_guard.check(spec)
+                logger.info("  Version check: OK")
 
-            # ---- 4. Build query (with incremental watermark if enabled) ----
-            last_watermark: datetime | None = None
-            if spec.incremental.enabled:
-                last_watermark = self._watermarks.get(spec.dataset_name)
-                if last_watermark:
-                    logger.info("  Incremental: resuming from %s", last_watermark.isoformat())
-                else:
-                    logger.info("  Incremental: first run, using %d-min lookback",
-                                spec.incremental.lookback_minutes)
+                # ---- 3. Join validation ----
+                join_report = self._join_validator.validate(spec)
+                if not join_report.is_valid:
+                    result.status = "FAILED"
+                    result.errors = join_report.errors
+                    logger.error("  Join validation FAILED: %s", join_report.errors)
+                    return result
+                for warn in join_report.warnings:
+                    logger.warning("  Join warning: %s", warn)
+                logger.info("  Join validation: OK")
 
-            query = self._query_builder.build(spec, last_watermark=last_watermark)
-            logger.info("  Query built: OK")
+                # ---- 4. Build query (with incremental watermark if enabled) ----
+                last_watermark: datetime | None = None
+                if spec.incremental.enabled:
+                    last_watermark = self._watermarks.get(spec.dataset_name)
+                    if last_watermark:
+                        logger.info("  Incremental: resuming from %s", last_watermark.isoformat())
+                    else:
+                        logger.info("  Incremental: first run, using %d-min lookback",
+                                    spec.incremental.lookback_minutes)
 
-            # ---- 5. Stream & validate (memory-safe with disk staging) ----
-            validation_model = DynamicSchemaFactory.create_model(spec)
+                query = self._query_builder.build(spec, last_watermark=last_watermark)
+                logger.info("  Query built: OK")
 
-            # Use spec.streaming config (fixes Issue 4 — was always 10,000 default)
-            batch_size = spec.streaming.batch_size if spec.streaming.enabled else 10000
-            streaming = StreamingExtractor(self._engine, batch_size=batch_size)
+                # ---- 5. Stream & validate (memory-safe with disk staging) ----
+                validation_model = DynamicSchemaFactory.create_model(spec)
 
-            # Buffer accumulates up to batch_size, then flushes to disk (fixes Issue 3)
-            buffer: list[dict[str, Any]] = []
-            dlq_entries: list[DLQEntry] = []
-            total_rows = 0
-            total_valid = 0
-            watermark_candidate: datetime | None = None
-            staging_path: Path | None = None
-            staging_file: Any = None
+                # Use spec.streaming config (fixes Issue 4 — was always 10,000 default)
+                batch_size = spec.streaming.batch_size if spec.streaming.enabled else 10000
+                streaming = StreamingExtractor(self._engine, batch_size=batch_size)
 
-            for chunk in streaming.stream(query):
-                total_rows += len(chunk)
-                for record in chunk:
-                    if spec.incremental.enabled:
-                        candidate = self._as_utc_datetime(record.get("_extraction_watermark"))
-                        if candidate and (watermark_candidate is None or candidate > watermark_candidate):
-                            watermark_candidate = candidate
-                    # Tier 1: Structural validation
-                    try:
-                        validated = validation_model.model_validate(record)
-                        record_validated = validated.model_dump()
-                    except ValidationError as ve:
-                        dlq_entries.append(self._build_dlq(
-                            spec, batch_id, record, "HARD",
-                            "ERR_STRUCTURAL_SCHEMA_VALIDATION", ve.errors(),
-                        ))
-                        continue
+                # Buffer accumulates up to batch_size, then flushes to disk (fixes Issue 3)
+                buffer: list[dict[str, Any]] = []
+                chunk_files: list[Path] = []
+                dlq_entries: list[DLQEntry] = []
+                total_rows = 0
+                total_valid = 0
+                watermark_candidate: datetime | None = None
+                staging_dir = Path(tempfile.gettempdir()) / f"etl_{spec.dataset_name}_{batch_id[:8]}"
+                staging_dir.mkdir(parents=True, exist_ok=True)
+                chunk_idx = 0
 
-                    # Tier 2: Business rules
-                    if spec.business_rules:
-                        rules_report = self._rule_engine.evaluate_all(
-                            spec.business_rules, record_validated,
-                        )
-                        if not rules_report.passed:
+                for chunk in streaming.stream(query):
+                    total_rows += len(chunk)
+                    for record in chunk:
+                        if spec.incremental.enabled:
+                            candidate = self._as_utc_datetime(record.get("_extraction_watermark"))
+                            if candidate and (watermark_candidate is None or candidate > watermark_candidate):
+                                watermark_candidate = candidate
+                        # Tier 1: Structural validation
+                        try:
+                            validated = validation_model.model_validate(record)
+                            record_validated = validated.model_dump()
+                        except ValidationError as ve:
                             dlq_entries.append(self._build_dlq(
                                 spec, batch_id, record, "HARD",
-                                "ERR_BUSINESS_RULE",
-                                [{"rule": r.rule_id, "message": r.message}
-                                 for r in rules_report.errors],
+                                "ERR_STRUCTURAL_SCHEMA_VALIDATION", ve.errors(),
                             ))
                             continue
-                        for w in rules_report.warnings:
-                            record_validated[f"_warning_{w.rule_id}"] = w.message
 
-                    buffer.append(record_validated)
-                    total_valid += 1
+                        # Tier 2: Business rules
+                        if spec.business_rules:
+                            rules_report = self._rule_engine.evaluate_all(
+                                spec.business_rules, record_validated,
+                            )
+                            if not rules_report.passed:
+                                dlq_entries.append(self._build_dlq(
+                                    spec, batch_id, record, "HARD",
+                                    "ERR_BUSINESS_RULE",
+                                    [{"rule": r.rule_id, "message": r.message}
+                                     for r in rules_report.errors],
+                                ))
+                                continue
+                            for w in rules_report.warnings:
+                                record_validated[f"_warning_{w.rule_id}"] = w.message
 
-                    # Flush buffer to disk when full — constant memory regardless of dataset size
-                    if len(buffer) >= batch_size:
-                        if staging_path is None:
-                            staging_path = Path(tempfile.gettempdir()) / f"etl_{spec.dataset_name}_{batch_id[:8]}.parquet"
-                        staging_file = self._flush_buffer(
-                            buffer, staging_path, staging_file, is_first=(total_valid <= batch_size),
-                        )
-                        buffer.clear()
+                        buffer.append(record_validated)
+                        total_valid += 1
 
-            # Final flush of remaining buffer
-            if buffer:
-                if staging_path is None:
-                    staging_path = Path(tempfile.gettempdir()) / f"etl_{spec.dataset_name}_{batch_id[:8]}.parquet"
-                staging_file = self._flush_buffer(
-                    buffer, staging_path, staging_file, is_first=(staging_file is None),
+                        # Flush buffer to disk when full — constant memory regardless of dataset size
+                        if len(buffer) >= batch_size:
+                            chunk_path = staging_dir / f"chunk_{chunk_idx:06d}.parquet"
+                            pd.DataFrame(buffer).to_parquet(chunk_path, index=False)
+                            chunk_files.append(chunk_path)
+                            chunk_idx += 1
+                            buffer.clear()
+
+                # Final flush of remaining buffer
+                if buffer:
+                    chunk_path = staging_dir / f"chunk_{chunk_idx:06d}.parquet"
+                    pd.DataFrame(buffer).to_parquet(chunk_path, index=False)
+                    chunk_files.append(chunk_path)
+
+                # Read all chunks back (O(n) total I/O — each chunk written & read once)
+                if chunk_files:
+                    result.valid_df = pd.concat(
+                        [pd.read_parquet(f) for f in sorted(chunk_files)],
+                        ignore_index=True,
+                    )
+                    result.valid_df = result.valid_df.drop(columns=["_extraction_watermark"], errors="ignore")
+                    result.valid_path = str(staging_dir)
+                elif buffer:
+                    result.valid_df = pd.DataFrame(buffer)
+                else:
+                    result.valid_df = pd.DataFrame()
+
+                # ---- Build result ----
+                result.rows_extracted = total_rows
+                result.rows_valid = total_valid
+                result.rows_rejected = len(dlq_entries)
+                result.dlq_entries = dlq_entries
+                result.watermark_candidate = watermark_candidate
+                result.status = "COMPLETED" if result.rows_rejected == 0 else "PARTIAL"
+                result.duration_seconds = (datetime.now(timezone.utc) - t_start).total_seconds()
+
+                logger.info(
+                    "Extraction complete: %s — %d extracted, %d valid, %d rejected (%.1fs)",
+                    spec.dataset_name, total_rows,
+                    result.rows_valid, result.rows_rejected,
+                    result.duration_seconds,
                 )
+                break  # Success — exit retry loop
 
-            # If data was staged to disk, read back into DataFrame for backward compat
-            if staging_path and staging_path.exists():
-                result.valid_df = pd.read_parquet(staging_path)
-                result.valid_df = result.valid_df.drop(columns=["_extraction_watermark"], errors="ignore")
-                result.valid_path = str(staging_path)
-            elif buffer:
-                result.valid_df = pd.DataFrame(buffer)
+            except sa.exc.OperationalError as e:
+                if attempt < MAX_RETRIES:
+                    delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.warning(
+                        "  DB connection lost (attempt %d/%d), retrying in %.1fs: %s",
+                        attempt, MAX_RETRIES, delay, e,
+                    )
+                    _time.sleep(delay)
+                else:
+                    result.status = "FAILED"
+                    result.errors.append(f"DB connection failed after {MAX_RETRIES} retries: {e}")
+                    logger.error("Extraction FAILED after retries: %s", e)
 
-            # ---- Build result ----
-            result.rows_extracted = total_rows
-            result.rows_valid = total_valid
-            result.rows_rejected = len(dlq_entries)
-            result.dlq_entries = dlq_entries
-            result.watermark_candidate = watermark_candidate
-            result.status = "COMPLETED" if result.rows_rejected == 0 else "PARTIAL"
-            result.duration_seconds = (datetime.now(timezone.utc) - t_start).total_seconds()
+            except (IncompatibleSpecError, QueryBuildError) as e:
+                result.status = "FAILED"
+                result.errors.append(str(e))
+                logger.error("Extraction FAILED: %s", e)
+                break
 
-            logger.info(
-                "Extraction complete: %s — %d extracted, %d valid, %d rejected (%.1fs)",
-                spec.dataset_name, total_rows,
-                result.rows_valid, result.rows_rejected,
-                result.duration_seconds,
-            )
-
-        except (IncompatibleSpecError, QueryBuildError) as e:
-            result.status = "FAILED"
-            result.errors.append(str(e))
-            logger.error("Extraction FAILED: %s", e)
-        except Exception as e:
-            result.status = "FAILED"
-            result.errors.append(f"{type(e).__name__}: {e}")
-            logger.exception("Extraction FAILED with unexpected error")
+            except Exception as e:
+                result.status = "FAILED"
+                result.errors.append(f"{type(e).__name__}: {e}")
+                logger.exception("Extraction FAILED with unexpected error")
+            break
 
         return result
 
@@ -337,49 +363,24 @@ class ExtractionExecutor:
         return ExtractionConfigSpec.model_validate(data)
 
     @staticmethod
-    def _flush_buffer(
-        buffer: list[dict[str, Any]],
-        path: Path,
-        existing_file: Any,
-        *,
-        is_first: bool = False,
-    ) -> Any:
-        """Write or append a chunk of validated records to a Parquet staging file.
-
-        Uses pandas to write Parquet.  On first call, creates the file.
-        On subsequent calls, appends by reading, concatenating, and rewriting.
-        For very large datasets (>10M rows), consider switching to PyArrow
-        native append or writing partitioned files.
-
-        Args:
-            buffer: List of validated record dicts to flush.
-            path: Target Parquet file path.
-            existing_file: Unused (kept for future PyArrow native writer).
-            is_first: True if this is the first chunk written.
-
-        Returns:
-            The file path (for chaining).
-        """
-        chunk_df = pd.DataFrame(buffer)
-        if is_first:
-            chunk_df.to_parquet(path, index=False)
-        else:
-            existing_df = pd.read_parquet(path)
-            pd.concat([existing_df, chunk_df], ignore_index=True).to_parquet(path, index=False)
-        return path
-
-    @staticmethod
     def _as_utc_datetime(value: Any) -> datetime | None:
-        """Normalise database timestamp values for watermark comparison."""
+        """Normalise database timestamp values for watermark comparison.
+
+        Returns None (instead of raising) for unsupported types so that
+        a single bad row does not crash the entire extraction.
+        """
         if value is None:
             return None
-        if isinstance(value, pd.Timestamp):
-            value = value.to_pydatetime()
-        if isinstance(value, str):
-            value = datetime.fromisoformat(value)
-        if not isinstance(value, datetime):
-            raise TypeError(f"Unsupported watermark value type: {type(value).__name__}")
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        try:
+            if isinstance(value, pd.Timestamp):
+                value = value.to_pydatetime()
+            if isinstance(value, str):
+                value = datetime.fromisoformat(value)
+            if not isinstance(value, datetime):
+                return None
+            return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+        except (ValueError, TypeError, OverflowError):
+            return None
 
     @staticmethod
     def _build_dlq(

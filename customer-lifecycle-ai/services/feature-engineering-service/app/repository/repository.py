@@ -2,15 +2,15 @@
 Feature Engineering Repository — Point-in-time SQL aggregation.
 
 Computes customer features from customer_transactions_clean using
-a single SQL query per as_of_date. All queries enforce:
-  transaction_date <= as_of_date
+single-pass SQL. All queries enforce: transaction_date <= as_of_date
 preventing data leakage in downstream ML training.
 
-Uses psycopg2 (sync) for direct DB access — matches ETL pattern.
+Uses psycopg2 (sync) with connection timeouts and TCP keepalives.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import date, datetime, timezone
 
@@ -18,6 +18,8 @@ import psycopg2
 from psycopg2 import extras
 
 from shared.config.settings import settings
+
+logger = logging.getLogger("feature_engineering.repository")
 
 
 FEATURE_SQL = """
@@ -181,12 +183,8 @@ UPDATE customer_features SET
           AND t2.transaction_date::date <= customer_features.as_of_date
     ),
     computed_at = NOW()
-WHERE as_of_date = '{date}'::date
+WHERE as_of_date = %(as_of_date)s::date
 """
-
-def _phase2_sql(as_of_date: date) -> str:
-    """Return Phase 2 SQL with the date formatted inline (safe — isoformat is YYYY-MM-DD)."""
-    return PHASE2_SQL.format(date=as_of_date.isoformat())
 
 FETCH_SQL = """
 SELECT customer_id, as_of_date,
@@ -226,8 +224,21 @@ LIMIT 1
 class FeatureRepository:
     """Computes and retrieves point-in-time customer features."""
 
+    _CONNECT_TIMEOUT = 10
+
     def __init__(self) -> None:
         self._conn_str = settings.database_target_url_sync
+
+    def _connect(self) -> psycopg2.extensions.connection:
+        """Open a connection with timeout and TCP keepalives."""
+        return psycopg2.connect(
+            self._conn_str,
+            connect_timeout=self._CONNECT_TIMEOUT,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+        )
 
     def compute_batch(self, as_of_date: date) -> dict:
         """Compute features for all customers as of a given date."""
@@ -239,7 +250,7 @@ class FeatureRepository:
 
     def _compute(self, as_of_date: date, customer_ids: list[str] | None = None) -> dict:
         t0 = time.monotonic()
-        conn = psycopg2.connect(self._conn_str)
+        conn = self._connect()
         try:
             cur = conn.cursor()
             if customer_ids:
@@ -254,7 +265,7 @@ class FeatureRepository:
             phase1_rows = cur.rowcount
 
             # Phase 2: Derived features (credit/debit split, ratios, trends, salary detection)
-            cur.execute(_phase2_sql(as_of_date))
+            cur.execute(PHASE2_SQL, {"as_of_date": as_of_date})
             conn.commit()
             phase2_rows = cur.rowcount
         finally:
@@ -271,7 +282,7 @@ class FeatureRepository:
 
     def get_features(self, customer_id: str, as_of_date: date) -> dict | None:
         """Fetch a specific feature snapshot. Returns None if not found."""
-        conn = psycopg2.connect(self._conn_str)
+        conn = self._connect()
         try:
             cur = conn.cursor(cursor_factory=extras.RealDictCursor)
             cur.execute(FETCH_SQL, (customer_id, as_of_date))
@@ -282,7 +293,7 @@ class FeatureRepository:
 
     def get_latest(self, customer_id: str) -> dict | None:
         """Fetch the most recent feature snapshot for a customer."""
-        conn = psycopg2.connect(self._conn_str)
+        conn = self._connect()
         try:
             cur = conn.cursor(cursor_factory=extras.RealDictCursor)
             cur.execute(LATEST_SQL, (customer_id,))
@@ -293,7 +304,7 @@ class FeatureRepository:
 
     def _count_customers(self, as_of_date: date) -> int:
         """Count customers with features for a given as_of_date."""
-        conn = psycopg2.connect(self._conn_str)
+        conn = self._connect()
         try:
             cur = conn.cursor()
             cur.execute(

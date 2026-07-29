@@ -36,10 +36,14 @@ import hashlib
 import json
 import logging
 import os
+import re
+import signal
 import sys
 import time
 import uuid
 from datetime import datetime, timezone
+
+import yaml
 
 # --- Path setup (safe for both import and direct execution) ---
 
@@ -86,22 +90,113 @@ if sys.platform == "win32":
         pass
 
 # --- Constants ---
-BATCH_SIZE = 5000
+BATCH_SIZE = int(os.getenv("ETL_BATCH_SIZE", "5000"))
 QUALITY_WARN_THRESHOLD = 90.0
 QUALITY_ERROR_THRESHOLD = 70.0
+DB_CONNECT_TIMEOUT = 10  # seconds
+DB_RETRY_MAX = 3
+DB_RETRY_DELAY = 1.0  # seconds base, doubles each retry
+
+def _derive_expected_columns_from_spec(spec_data: dict) -> list[str]:
+    """Derive expected column names from an extraction spec's select_fields.
+
+    Walks the primary_entity and all joins to collect output column names
+    (using alias if present, otherwise field name). Pre-aggregation CTE aliases
+    are only included when referenced by a join.
+
+    Args:
+        spec_data: Parsed YAML spec as a dict.
+
+    Returns:
+        List of expected column names in the extracted DataFrame.
+    """
+    cols: list[str] = []
+
+    # Primary entity
+    for sf in spec_data.get("primary_entity", {}).get("select_fields", []):
+        cols.append(sf.get("alias", sf.get("field", "unknown")))
+
+    # Joined entities
+    for join in spec_data.get("joins", []):
+        for sf in join.get("select_fields", []):
+            cols.append(sf.get("alias", sf.get("field", "unknown")))
+
+    # Pre-aggregation CTEs: only count aliases that are referenced by a join
+    cte_aliases_by_name: dict[str, list[str]] = {}
+    for cte in spec_data.get("pre_aggregations", []):
+        cte_aliases_by_name[cte["name"]] = [agg["alias"] for agg in cte.get("aggregations", [])]
+
+    for join in spec_data.get("joins", []):
+        join_table = join.get("table", "")
+        if join_table in cte_aliases_by_name:
+            for sf in join.get("select_fields", []):
+                cols.append(sf.get("alias", sf.get("field", "unknown")))
+
+    return cols
+
+
+# Safe table name pattern — prevents SQL injection via YAML config
+_SAFE_TABLE_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)?$")
+
+
+def _validate_table_name(name: str, context: str) -> None:
+    """Validate a table name against a safe pattern to prevent SQL injection.
+
+    Only allows schema-qualified identifiers like 'customers_clean' or
+    'public.customer_transactions_clean'.  Quotes, semicolons, comments,
+    and other SQL metacharacters are rejected.
+
+    Raises:
+        ValueError: If the table name is unsafe.
+    """
+    if not _SAFE_TABLE_RE.match(name):
+        raise ValueError(
+            f"Unsafe table name '{name}' in {context}. "
+            f"Expected pattern: schema.table_name or table_name (alphanumeric + underscore only)"
+        )
 
 
 # ===========================================================================
-# Database Helpers
+# Database Helpers (with connection pooling, timeouts, and retry)
 # ===========================================================================
+
+def _db_connect_kwargs() -> dict:
+    """Return connection kwargs with timeouts and TCP keepalives."""
+    return {
+        "connect_timeout": DB_CONNECT_TIMEOUT,
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 3,
+    }
 
 
 def get_source_conn() -> psycopg2.extensions.connection:
-    return psycopg2.connect(settings.database_url_sync)
+    return psycopg2.connect(settings.database_url_sync, **_db_connect_kwargs())
 
 
 def get_target_conn() -> psycopg2.extensions.connection:
-    return psycopg2.connect(settings.database_target_url_sync)
+    return psycopg2.connect(settings.database_target_url_sync, **_db_connect_kwargs())
+
+
+def _retry_db_op(op: callable, description: str, max_retries: int = DB_RETRY_MAX) -> Any:
+    """Retry a DB operation with exponential backoff on transient errors."""
+    last_exc = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return op()
+        except psycopg2.errors.DeadlockDetected as e:
+            last_exc = e
+        except psycopg2.errors.SerializationFailure as e:
+            last_exc = e
+        except psycopg2.OperationalError as e:
+            last_exc = e
+        if attempt < max_retries:
+            delay = DB_RETRY_DELAY * (2 ** (attempt - 1))
+            logger.warning("%s failed (attempt %d/%d), retrying in %.1fs: %s",
+                           description, attempt, max_retries, delay, last_exc)
+            time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
 
 
 def _compute_file_hash(file_path: str) -> str:
@@ -114,9 +209,10 @@ def _compute_file_hash(file_path: str) -> str:
 
 def check_already_loaded(file_path: str) -> str | None:
     """Check if a source file was already successfully loaded.
-    Returns the previous batch_id if found, None otherwise."""
-    conn = get_target_conn()
+    Returns the previous batch_id if found, None otherwise.
+    Logs and returns None on DB errors — caller can decide whether to re-process."""
     try:
+        conn = get_target_conn()
         cur = conn.cursor()
         file_hash = _compute_file_hash(file_path)
         file_name = os.path.basename(file_path)
@@ -128,10 +224,14 @@ def check_already_loaded(file_path: str) -> str | None:
         )
         row = cur.fetchone()
         return row[0] if row else None
-    except Exception:
+    except psycopg2.Error as e:
+        logger.warning("check_already_loaded failed (DB error): %s — proceeding with extraction", e)
         return None
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def write_audit_record(
@@ -156,18 +256,24 @@ def write_audit_record(
     error_message: str | None = None,
     tags: dict | None = None,
 ) -> bool:
-    """Write a compliance-grade audit record to etl.etl_audit. Returns True on success."""
-    try:
-        conn = get_target_conn()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO etl.etl_audit (
-                audit_id, batch_id, source_type, source_name, pipeline_name,
-                started_at, completed_at, duration_seconds,
-                rows_received, rows_valid, rows_rejected, rows_loaded, rows_skipped,
-                duplicates_detected, warnings_count, errors_count, quality_score,
-                status, error_message, triggered_by, tags
+    """Write a compliance-grade audit record to etl.etl_audit with retry.
+
+    Returns True on success.  Retries up to DB_RETRY_MAX times on transient
+    errors (deadlock, serialization, connection loss).  Callers MUST check
+    the return value — audit failure is a compliance gap.
+    """
+    for attempt in range(1, DB_RETRY_MAX + 1):
+        try:
+            conn = get_target_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO etl.etl_audit (
+                    audit_id, batch_id, source_type, source_name, pipeline_name,
+                    started_at, completed_at, duration_seconds,
+                    rows_received, rows_valid, rows_rejected, rows_loaded, rows_skipped,
+                    duplicates_detected, warnings_count, errors_count, quality_score,
+                    status, error_message, triggered_by, tags
             ) VALUES (
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
@@ -185,13 +291,32 @@ def write_audit_record(
                 json.dumps(tags) if tags else None,
             ),
         )
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        logger.error("Failed to write audit record: %s", e)
-        return False
+            conn.commit()
+            conn.close()
+            return True
+        except psycopg2.Error as e:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            if attempt < DB_RETRY_MAX and _is_transient_db_error(e):
+                delay = DB_RETRY_DELAY * (2 ** (attempt - 1))
+                logger.warning("Audit write failed (attempt %d/%d), retrying in %.1fs: %s",
+                               attempt, DB_RETRY_MAX, delay, e)
+                time.sleep(delay)
+            else:
+                logger.error("Failed to write audit record after %d attempts: %s", attempt, e)
+                return False
+    return False
 
+
+def _is_transient_db_error(exc: Exception) -> bool:
+    """Check if a DB error is transient (retryable)."""
+    return isinstance(exc, (
+        psycopg2.errors.DeadlockDetected,
+        psycopg2.errors.SerializationFailure,
+        psycopg2.OperationalError,
+    ))
 
 # ===========================================================================
 # Bulk Insert (batched, high-performance with execute_values)
@@ -211,6 +336,8 @@ def bulk_insert_clean(records: list[dict], batch_id: str, config) -> tuple[int, 
     table_columns = data_columns + meta_columns
     clean_table = config.target_clean_table
     rejected_table = config.target_rejected_table
+    _validate_table_name(clean_table, "target.clean_table")
+    _validate_table_name(rejected_table, "target.rejected_table")
 
     conn = get_target_conn()
     inserted = 0
@@ -229,12 +356,15 @@ def bulk_insert_clean(records: list[dict], batch_id: str, config) -> tuple[int, 
                 for rec in chunk
             ]
             try:
-                extras.execute_values(
-                    cur,
-                    f"INSERT INTO {clean_table} ({col_names}) VALUES %s",
-                    values,
-                    template=f"({placeholders})",
-                    page_size=BATCH_SIZE,
+                _retry_db_op(
+                    lambda: extras.execute_values(
+                        cur,
+                        f"INSERT INTO {clean_table} ({col_names}) VALUES %s",
+                        values,
+                        template=f"({placeholders})",
+                        page_size=BATCH_SIZE,
+                    ),
+                    f"Batch insert ({len(chunk)} rows)",
                 )
                 conn.commit()
                 inserted += len(chunk)
@@ -247,9 +377,12 @@ def bulk_insert_clean(records: list[dict], batch_id: str, config) -> tuple[int, 
                             tuple(rec.get(c) for c in data_columns)
                             + _build_meta_tuple(rec, meta_columns, now, batch_id)
                         )
-                        cur.execute(
-                            f"INSERT INTO {clean_table} ({col_names}) VALUES ({placeholders})",
-                            row_vals,
+                        _retry_db_op(
+                            lambda: cur.execute(
+                                f"INSERT INTO {clean_table} ({col_names}) VALUES ({placeholders})",
+                                row_vals,
+                            ),
+                            "Row insert",
                         )
                         conn.commit()
                         inserted += 1
@@ -315,6 +448,7 @@ def bulk_insert_rejected(
     data_columns = config.target_data_columns
     table_columns = data_columns + ["rejection_reason", "rejected_at", "batch_id"]
     rejected_table = config.target_rejected_table
+    _validate_table_name(rejected_table, "target.rejected_table")
 
     conn = get_target_conn()
     inserted = 0
@@ -608,6 +742,58 @@ async def run_etl_pipeline(
         config_path=os.path.join(_PROJECT_ROOT, "etl", "config", "etl_config.yaml")
     )
 
+    # Merge extraction spec transform overrides into TransformationConfig
+    if use_extraction_spec:
+        spec_path = os.path.join(_PROJECT_ROOT, extraction_spec)
+        with open(spec_path) as f:
+            spec_data = yaml.safe_load(f)
+        spec_transform = spec_data.get("transform")
+        if spec_transform:
+            transforms = spec_transform
+            tr = config.transformation
+
+            # Merge type_casts from spec
+            if "type_casts" in transforms:
+                for col, dtype in transforms["type_casts"].items():
+                    tr.type_casts[col] = dtype
+                logger.info("  Merged %d type_casts from extraction spec", len(transforms["type_casts"]))
+
+            # Merge drop_columns from spec
+            if "drop_columns" in transforms:
+                tr.drop_columns.extend(transforms["drop_columns"])
+                logger.info("  Merged %d drop_columns from extraction spec", len(transforms["drop_columns"]))
+
+            # Merge standardization rules from spec
+            if "standardization" in transforms:
+                from etl.schemas.transformation_schemas import StandardizationRule
+                for i, rule_data in enumerate(transforms["standardization"]):
+                    rule = StandardizationRule(
+                        rule_id=f"spec_{spec_data['dataset_name']}_{i}",
+                        field_name=rule_data["field_name"],
+                        mappings=rule_data["mappings"],
+                        default_value=rule_data.get("default_value"),
+                        case_sensitive=rule_data.get("case_sensitive", False),
+                        trim_whitespace=rule_data.get("trim_whitespace", True),
+                    )
+                    tr.standardization_rules.append(rule)
+                logger.info("  Merged %d standardization rules from extraction spec",
+                            len(transforms["standardization"]))
+
+        # Merge target table configuration from spec
+        spec_target = spec_data.get("target")
+        if spec_target:
+            config.target_clean_table = spec_target["clean_table"]
+            config.target_rejected_table = spec_target.get(
+                "rejected_table", f"{spec_target['clean_table']}_rejected"
+            )
+            config.target_data_columns = spec_target["data_columns"]
+            config.target_meta_columns = spec_target.get("meta_columns", ["loaded_at", "batch_id"])
+            logger.info("  Target table: %s (%d data columns)",
+                        config.target_clean_table, len(config.target_data_columns))
+
+    # Re-read spec_path (was set inside the if block above; reassign for schema check)
+    spec_path_for_schema = os.path.join(_PROJECT_ROOT, extraction_spec) if use_extraction_spec else None
+
     if not use_extraction_spec:
         if use_db:
             connector_config = ConnectorConfig(
@@ -646,7 +832,13 @@ async def run_etl_pipeline(
         await connector.disconnect()
 
     # Schema drift check — common to both extraction modes
-    _validate_schema(df, config.expected_columns, mode=config.schema_mode,
+    # For extraction spec mode, derive expected columns from the spec's select fields
+    if use_extraction_spec:
+        expected_cols = _derive_expected_columns_from_spec(spec_data)
+        logger.info("  Schema check: using %d columns from extraction spec", len(expected_cols))
+    else:
+        expected_cols = config.expected_columns
+    _validate_schema(df, expected_cols, mode=config.schema_mode,
                      source_name=source_label)
 
     # ------------------------------------------------------------------
@@ -783,6 +975,25 @@ async def run_etl_pipeline(
         "rows_rescued": rows_rescued, "quality_score": validation_report.quality_score,
         "duration_seconds": duration,
     }
+
+
+# ===========================================================================
+# Graceful Shutdown
+# ===========================================================================
+
+_shutdown_requested = False
+
+
+def _on_signal(signum: int, frame: object) -> None:
+    """Handle SIGTERM/SIGINT — flag shutdown after current batch completes."""
+    global _shutdown_requested
+    if not _shutdown_requested:
+        logger.warning("Signal %d received — finishing current batch, then shutting down", signum)
+        _shutdown_requested = True
+
+
+signal.signal(signal.SIGTERM, _on_signal)
+signal.signal(signal.SIGINT, _on_signal)
 
 
 # ===========================================================================

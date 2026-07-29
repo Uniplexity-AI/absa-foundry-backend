@@ -10,6 +10,7 @@ Section 4.3 of dynamic-extractor-spec.md.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
@@ -21,6 +22,8 @@ from etl.extraction.config_models import (
     FieldType,
     SelectFieldSpec,
 )
+
+logger = logging.getLogger("etl.extraction.schema_factory")
 
 # Map config field types to Python types.
 # DATETIME maps to `object` to accept date, datetime, and string values
@@ -56,13 +59,23 @@ class DynamicSchemaFactory:
             A dynamically generated Pydantic BaseModel subclass.
         """
         field_defs: dict[str, Any] = {}
+        seen_names: dict[str, str] = {}  # field_name → source (for collision detection)
 
         # Primary entity fields
-        field_defs.update(cls._build_fields(config.primary_entity.select_fields))
+        for name, defn in cls._build_fields(config.primary_entity.select_fields).items():
+            field_defs[name] = defn
+            seen_names[name] = f"primary_entity.{config.primary_entity.alias}"
 
-        # Join entity fields
+        # Join entity fields — warn on overwrite
         for join in config.joins:
-            field_defs.update(cls._build_fields(join.select_fields))
+            for name, defn in cls._build_fields(join.select_fields).items():
+                if name in seen_names:
+                    logger.warning(
+                        "Field collision: '%s' from join '%s' overwrites field from %s",
+                        name, join.alias, seen_names[name],
+                    )
+                field_defs[name] = defn
+                seen_names[name] = f"join.{join.alias}"
 
         # Calculated fields (treated as optional since they're derived)
         for cf in config.calculated_fields:
@@ -74,6 +87,10 @@ class DynamicSchemaFactory:
             field_defs[agg.alias] = (float | int | None, Field(default=None))
 
         model_name = f"{config.dataset_name.title().replace('_', '')}Model"
+        logger.info(
+            "Schema created: %s (%d fields from %d entities)",
+            model_name, len(field_defs), 1 + len(config.joins),
+        )
         return create_model(model_name, **field_defs)
 
     # ------------------------------------------------------------------

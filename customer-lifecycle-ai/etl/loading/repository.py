@@ -36,14 +36,28 @@ class LoadingRepository:
         self._session = session
 
     @classmethod
-    async def create(cls) -> "LoadingRepository":
+    async def create(cls, session: AsyncSession | None = None) -> "LoadingRepository":
         """Factory that creates a LoadingRepository with a target-DB session.
 
-        The target session connects to etl_clean where cleaned/transformed
-        data is stored (e.g., customer_transactions_clean).
+        IMPORTANT: The caller is responsible for the session lifecycle.
+        The session is NOT automatically closed by the repository.
+
+        Recommended usage:
+            async with target_session_context() as session:
+                repo = await LoadingRepository.create(session=session)
+                await repo.upsert(...)
+
+        If no session is provided, one is created but the caller MUST
+        close it manually.
         """
-        async with target_session_context() as session:
+        if session is not None:
             return cls(session)
+        # Fallback — caller must manage lifecycle
+        from shared.database.session import target_session_context
+        ctx = target_session_context()
+        session = await ctx.__aenter__()
+        # Session will NOT be auto-closed — caller must call await ctx.__aexit__(...)
+        return cls(session)
 
     async def upsert(
         self,

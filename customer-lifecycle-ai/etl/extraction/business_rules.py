@@ -13,6 +13,7 @@ Section 18 of dynamic-extractor-spec.md.
 from __future__ import annotations
 
 import ast
+import logging
 import operator as py_op
 from dataclasses import dataclass, field
 
@@ -20,6 +21,8 @@ from etl.extraction.config_models import (
     BusinessRuleSeverity,
     BusinessRuleSpec,
 )
+
+logger = logging.getLogger("etl.extraction.business_rules")
 
 
 @dataclass
@@ -135,8 +138,12 @@ class BusinessRuleEngine:
                 message=rule.message or f"Rule '{rule.name}' {'passed' if passed else 'failed'}",
             )
             report.results.append(result)
-            if not passed and rule.severity == BusinessRuleSeverity.ERROR:
-                report.passed = False
+            if not passed:
+                if rule.severity == BusinessRuleSeverity.ERROR:
+                    report.passed = False
+                    logger.debug("Rule '%s' FAILED: %s", rule.id, result.message)
+                elif rule.severity == BusinessRuleSeverity.WARNING:
+                    logger.debug("Rule '%s' WARNING: %s", rule.id, result.message)
         return report
 
     # ------------------------------------------------------------------

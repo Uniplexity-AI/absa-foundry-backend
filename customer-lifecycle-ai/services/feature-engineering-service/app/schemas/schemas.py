@@ -53,7 +53,7 @@ class FeatureSnapshot(BaseModel):
     behav_diversity_score: float | None = None
     behav_activity_consistency: float | None = None
     engagement_score: float | None = None
-    txn_frequency_trend: str | None = None
+    txn_frequency_trend: float | None = None
     inactivity_streak_days: int | None = None
 
     # -- Phase 2: Financial (Domain 3) --
@@ -92,6 +92,19 @@ class FeatureSnapshot(BaseModel):
     rel_has_loan: bool | None = None
     rel_has_savings: bool | None = None
     rel_products_owned: int | None = None
+
+    # -- Phase 3: Cards (Domain 5 extended) --
+    rel_has_card: bool | None = None
+    rel_card_count: int | None = None
+    rel_has_unactivated_card: bool | None = None
+    rel_card_expiring_30d: int | None = None
+    rel_card_types: int | None = None
+
+    # -- Phase 3: Digital Engagement (Domain 5 extended) --
+    eng_login_count_7d: int | None = None
+    eng_login_count_30d: int | None = None
+    eng_digital_platform_preference: str | None = None
+    eng_avg_session_duration_30d: float | None = None
 
 
 class ComputeBatchRequest(BaseModel):

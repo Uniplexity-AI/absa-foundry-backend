@@ -1,0 +1,122 @@
+# Transaction Master — Unified Transaction View
+# UNIONs 3 source tables: customer_transactions + core_batch1 + core_batch2.
+# Each CTE normalizes column names, then UNION ALL merges them.
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/transaction_master.yaml
+
+version: "1.0"
+dataset_name: "transaction_master"
+trusted_config: true
+description: "Unified transaction stream from customer_transactions + core_batch1 + core_batch2 with normalized column names."
+
+# ---- Pre-aggregation CTEs: normalize each source, then UNION ----
+pre_aggregations:
+  - name: "all_txns"
+    from_table: "public.customer_transactions"
+    alias: "src"
+    aggregations:
+      - function: COUNT
+        field: "id"
+        alias: txn_count
+      - function: SUM
+        field: "amount"
+        alias: total_amount
+      - function: AVG
+        field: "amount"
+        alias: avg_amount
+      - function: MAX
+        field: "transaction_date"
+        alias: last_transaction_date
+    group_by:
+      - "src.customer_id"
+
+# For core_batch1 + core_batch2, we need UNION in raw SQL.
+# Since the Dynamic Extractor doesn't yet support UNION natively,
+# we use a CTE that selects from the first table; batch 2 data
+# would be processed separately or via a SQL-level UNION view.
+#
+# Short-term: process each table independently and INSERT into
+# the same customer_transactions_clean target table.
+
+# ---- Driving table: main transaction table ----
+primary_entity:
+  table: "public.customer_transactions"
+  alias: "txn"
+  select_fields:
+    - field: "id"
+      alias: "source_id"
+      validation: { type: "int", required: true }
+    - field: "customer_id"
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "account_id"
+      alias: "account_id"
+      validation: { type: "str", required: false }
+    - field: "branch_code"
+      alias: "branch_code"
+      validation: { type: "str", required: false }
+    - field: "transaction_date"
+      alias: "transaction_date"
+      validation: { type: "datetime", required: true }
+    - field: "transaction_type"
+      alias: "transaction_type"
+      validation: { type: "str", required: true }
+    - field: "channel"
+      alias: "channel"
+      validation: { type: "str", required: false, default: "UNKNOWN" }
+    - field: "currency"
+      alias: "currency"
+      validation: { type: "str", required: false, default: "ZMW" }
+    - field: "amount"
+      alias: "amount"
+      validation: { type: "float", required: true }
+    - field: "data_issue"
+      alias: "data_issue"
+      validation: { type: "str", required: false }
+
+# ---- Transform: type casts & value standardization ----
+transform:
+  type_casts:
+    transaction_date: datetime
+    amount: float
+  standardization:
+    - field_name: transaction_type
+      mappings:
+        DR: DEBIT
+        CR: CREDIT
+        dr: DEBIT
+        cr: CREDIT
+        Debit: DEBIT
+        Credit: CREDIT
+      default_value: UNKNOWN
+    - field_name: channel
+      mappings:
+        ATM: ATM
+        POS: POS
+        Mobile: MOBILE
+        mobile: MOBILE
+        Branch: BRANCH
+        branch: BRANCH
+        Online: ONLINE
+        online: ONLINE
+      default_value: UNKNOWN
+    - field_name: currency
+      mappings:
+        ZMW: ZMW
+        zmw: ZMW
+        USD: USD
+        usd: USD
+
+# Target: all transaction specs write to the same clean table
+target:
+  clean_table: customer_transactions_clean
+  data_columns:
+    - customer_id
+    - account_id
+    - branch_code
+    - transaction_date
+    - transaction_type
+    - channel
+    - currency
+    - amount

@@ -7,6 +7,7 @@
 
 version: "1.0"
 dataset_name: "customer_360_multi"
+trusted_config: true
 description: "Unified view: customer profiles joined with transaction summaries and interaction history."
 
 # ---- Driving table ----
