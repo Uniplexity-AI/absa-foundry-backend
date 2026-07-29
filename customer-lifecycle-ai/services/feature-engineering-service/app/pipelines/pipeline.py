@@ -38,6 +38,66 @@ from app.features.relationship.generator import RelationshipGenerator
 logger = logging.getLogger("feature_engineering.pipeline")
 
 
+def _run_quality_check(repo: FeatureRepository, as_of_date: date) -> dict:
+    """Post-run: scan for dead features (ALL_ZERO or 100% NULL).
+
+    Returns a summary dict with flagged_features count and list.
+    Does NOT block the pipeline — failures are logged, not raised.
+    """
+    try:
+        conn = repo._connect()
+        cur = conn.cursor()
+        table = "customer_features"  # TODO: use shared config
+
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = %s AND table_schema = 'public' "
+            "AND data_type IN ('integer','bigint','smallint','numeric','real','double precision')",
+            (table,),
+        )
+        all_cols = {r[0] for r in cur.fetchall()}
+
+        skip = {"customer_id", "as_of_date", "created_at", "updated_at", "computed_at"}
+        flagged = []
+
+        for col in sorted(all_cols - skip):
+            cur.execute(f"""
+                SELECT
+                    COUNT(*) FILTER (WHERE "{col}" IS NULL) AS nulls,
+                    COUNT(*) FILTER (WHERE "{col}" = 0) AS zeros,
+                    COUNT(*) AS total
+                FROM {table}
+                WHERE as_of_date = %s
+            """, (as_of_date,))
+            nulls, zeros, total = cur.fetchone()
+            if total == 0:
+                continue
+            if nulls == total:
+                flagged.append({"feature": col, "issue": "ALL_NULL"})
+            elif zeros == total:
+                flagged.append({"feature": col, "issue": "ALL_ZERO"})
+
+        conn.close()
+
+        if flagged:
+            logger.warning(
+                "Quality check: %d dead features detected on %s: %s",
+                len(flagged), as_of_date,
+                ", ".join(f["feature"] for f in flagged[:10]),
+            )
+        else:
+            logger.info("Quality check: all features populated on %s", as_of_date)
+
+        return {
+            "scanned": len(all_cols) - len(skip),
+            "dead_features": len(flagged),
+            "flagged": flagged,
+        }
+    except Exception as e:
+        logger.warning("Quality check skipped: %s", e)
+        return {"scanned": 0, "dead_features": 0, "flagged": [], "error": str(e)}
+
+
 class FeaturePipeline:
     """Orchestrates all domain generators in dependency order."""
 
@@ -112,9 +172,13 @@ class FeaturePipeline:
         has_errors = any("error" in s for s in stages.values())
         logger.info("Pipeline complete: %s (%.1fs)", "PARTIAL" if has_errors else "COMPLETED", total_dur)
 
+        # ── Post-run: feature quality summary ──
+        quality = _run_quality_check(self._repo, effective_date)
+
         return {
             "as_of_date": effective_date.isoformat(),
             "status": "PARTIAL" if has_errors else "COMPLETED",
             "total_duration_seconds": total_dur,
             "stages": stages,
+            "quality": quality,
         }

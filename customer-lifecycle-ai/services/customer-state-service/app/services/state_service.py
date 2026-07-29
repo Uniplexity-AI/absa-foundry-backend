@@ -16,6 +16,7 @@ from app.services.transition_analyzer import TransitionAnalyzer
 from app.schemas.state import ComputeStatesResponse
 from app.schemas.transition import NextStatePrediction, TransitionMatrix
 from app.engines.markov.engine import MarkovEngine
+from shared.config.settings import settings as shared
 
 logger = logging.getLogger("customer_state.service")
 
@@ -27,8 +28,22 @@ class StateService:
         self._settings = Settings()
         self._state_repo = StateRepository()
         self._journey_repo = JourneyRepository()
+
+        # Validate schema mappings at startup
+        try:
+            conn = self._state_repo._connect()
+            warnings = shared.validate_schema_mappings(conn)
+            conn.close()
+        except Exception as e:
+            warnings = [f"Schema validation skipped (DB unavailable): {e}"]
+        for w in warnings:
+            logger.warning(w)
+
         self._engine = StateEngine(self._settings.state)
         self._transition_analyzer = TransitionAnalyzer()
+        self._features_table = shared.table_customer_features
+        self._cust_col = shared.col_customer_id
+        self._as_of_col = shared.col_as_of_date
 
     def compute_states(self, as_of_date: date_type | None = None) -> ComputeStatesResponse:
         """Classify all customers for a given date.
@@ -50,13 +65,13 @@ class StateService:
         try:
             cur = conn.cursor()
             cur.execute(
-                """
-                SELECT customer_id, as_of_date,
+                f"""
+                SELECT {self._cust_col}, {self._as_of_col},
                        days_since_last_txn, engagement_score,
                        rel_customer_status, risk_dormant_indicator,
                        txn_count_90d
-                FROM customer_features
-                WHERE as_of_date = %(d)s::date
+                FROM {self._features_table}
+                WHERE {self._as_of_col} = %(d)s::date
                 """,
                 {"d": effective_date},
             )

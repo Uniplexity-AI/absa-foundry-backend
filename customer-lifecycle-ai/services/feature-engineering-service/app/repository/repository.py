@@ -126,6 +126,8 @@ ON CONFLICT (customer_id, as_of_date) DO UPDATE SET
 
 # Phase 2: Derived features computed from the raw aggregates already stored.
 # Runs as a lightweight UPDATE — no re-aggregation needed.
+# NOTE: credit/debit sums use 90d window (not 30d) to match available data.
+# The DDL column names retain "30d" for backward compatibility.
 PHASE2_SQL = """
 UPDATE customer_features SET
     -- Extended window
@@ -135,12 +137,12 @@ UPDATE customer_features SET
           AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '365 days')
           AND t.transaction_date::date <= customer_features.as_of_date
     ),
-    -- Credit / Debit separation
+    -- Credit / Debit separation (90d window — data-driven)
     credit_sum_30d = (
         SELECT COALESCE(SUM(amount), 0)
         FROM customer_transactions_clean t
         WHERE t.customer_id = customer_features.customer_id
-          AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '30 days')
+          AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '90 days')
           AND t.transaction_date::date <= customer_features.as_of_date
           AND t.transaction_type = 'CREDIT'
     ),
@@ -148,20 +150,14 @@ UPDATE customer_features SET
         SELECT COALESCE(SUM(amount), 0)
         FROM customer_transactions_clean t
         WHERE t.customer_id = customer_features.customer_id
-          AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '30 days')
+          AND t.transaction_date::date > (customer_features.as_of_date - INTERVAL '90 days')
           AND t.transaction_date::date <= customer_features.as_of_date
           AND t.transaction_type = 'DEBIT'
     ),
-    -- Ratios
-    credit_to_debit_ratio_90d = CASE
-        WHEN debit_sum_30d IS NULL OR debit_sum_30d = 0 THEN NULL
-        ELSE ROUND(credit_sum_30d::numeric / debit_sum_30d, 2)
-    END,
-    -- Trend: compares 30d vs 60-90d average
+    -- Trend: compares 90d vs historical
     balance_trend_90d = CASE
         WHEN txn_count_90d IS NULL OR txn_count_90d = 0 THEN 'STABLE'
-        WHEN txn_count_30d > (txn_count_90d - txn_count_30d) / 2.0 THEN 'RISING'
-        WHEN txn_count_30d < (txn_count_90d - txn_count_30d) / 2.0 THEN 'FALLING'
+        WHEN txn_count_90d > (txn_count_180d - txn_count_90d) THEN 'RISING'
         ELSE 'STABLE'
     END,
     -- Salary detection: 3+ monthly CREDIT deposits within 10% variance
@@ -183,6 +179,17 @@ UPDATE customer_features SET
           AND t2.transaction_date::date <= customer_features.as_of_date
     ),
     computed_at = NOW()
+WHERE as_of_date = %(as_of_date)s::date
+"""
+
+# Phase 2b: Ratio computation — must run AFTER Phase 2 because PostgreSQL
+# SET clauses see OLD values, not values being set in the same UPDATE.
+PHASE2B_SQL = """
+UPDATE customer_features SET
+    credit_to_debit_ratio_90d = CASE
+        WHEN debit_sum_30d IS NULL OR debit_sum_30d = 0 THEN NULL
+        ELSE ROUND(credit_sum_30d::numeric / debit_sum_30d, 2)
+    END
 WHERE as_of_date = %(as_of_date)s::date
 """
 
@@ -264,8 +271,9 @@ class FeatureRepository:
             conn.commit()
             phase1_rows = cur.rowcount
 
-            # Phase 2: Derived features (credit/debit split, ratios, trends, salary detection)
+            # Phase 2: Derived features (credit/debit split, trends, salary detection)
             cur.execute(PHASE2_SQL, {"as_of_date": as_of_date})
+            cur.execute(PHASE2B_SQL, {"as_of_date": as_of_date})
             conn.commit()
             phase2_rows = cur.rowcount
         finally:

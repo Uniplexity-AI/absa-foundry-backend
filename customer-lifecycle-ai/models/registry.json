@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "Customer Lifecycle Prediction Model Registry",
   "version": "2.0.0",
   "description": "Central model registry for the Customer Lifecycle Prediction System with champion/challenger support",
@@ -50,5 +50,159 @@
   "training_history": {
     "description": "Training run logs, hyperparameter tuning history, and model lineage records."
   },
-  "_contract": "training_features in champion.churn_prediction defines the exact column order for inference. It is written by scripts/train_models.py at training time. The ChurnPredictor reads it from here. The API passes the full 56-feature dict; ChurnPredictor._dict_to_vector() extracts only training_features. Never hard-code feature names. A mismatch between training and inference column order produces silently wrong predictions."
+  "_contract": "training_features in champion.churn_prediction defines the exact column order for inference. It is written by scripts/train_models.py at training time. The ChurnPredictor reads it from here. The API passes the full 56-feature dict; ChurnPredictor._dict_to_vector() extracts only training_features. Never hard-code feature names. A mismatch between training and inference column order produces silently wrong predictions.",
+  "models": [
+    {
+      "model_id": "churn_v1",
+      "type": "churn",
+      "status": "champion",
+      "path": "champion/churn/xgboost_churn_v1.json",
+      "framework": "xgboost",
+      "version": 1,
+      "trained_at": "2026-07-29",
+      "training_dates": [
+        "2026-07-17",
+        "2026-07-22"
+      ],
+      "holdout_date": "2026-07-27",
+      "metrics": {
+        "auc": 0.7672,
+        "brier": 0.1892,
+        "ece": 0.2854,
+        "log_loss": 0.5663
+      },
+      "calibrator": null,
+      "feature_count_total": 80,
+      "feature_count_training": 65,
+      "leakage_features_excluded": [
+        "behav_activity_consistency",
+        "behav_inactive_days_90d",
+        "behav_recency_score",
+        "days_since_last_txn",
+        "engagement_score",
+        "inactivity_streak_days",
+        "rel_customer_status",
+        "risk_dormant_indicator",
+        "txn_frequency_trend"
+      ],
+      "dead_features_excluded": [
+        "behav_txn_count_7d",
+        "credit_to_debit_ratio_90d",
+        "prof_declared_vs_observed_income_ratio",
+        "temp_afternoon_activity_ratio_90d",
+        "temp_evening_activity_ratio_90d",
+        "temp_morning_activity_ratio_90d"
+      ],
+      "training_features": [
+        "age_years",
+        "amount_growth_ratio",
+        "amount_stddev_90d",
+        "avg_amount_90d",
+        "avg_days_between_txn",
+        "balance_trend_90d",
+        "behav_active_days_90d",
+        "behav_diversity_score",
+        "behav_frequency_score",
+        "chan_atm_ratio_90d",
+        "chan_branch_ratio_90d",
+        "chan_channel_entropy",
+        "chan_digital_adoption_score",
+        "chan_mobile_ratio_90d",
+        "computed_at",
+        "credit_sum_30d",
+        "customer_segment",
+        "customer_tenure_days",
+        "days_since_first_txn",
+        "debit_sum_30d",
+        "distinct_channels_90d",
+        "distinct_txn_types_90d",
+        "dominant_channel",
+        "eng_avg_session_duration_30d",
+        "eng_digital_platform_preference",
+        "eng_login_count_30d",
+        "eng_login_count_7d",
+        "fin_income_growth",
+        "fin_median_txn_amount_90d",
+        "fin_salary_consistency",
+        "fin_total_credit_90d",
+        "fin_total_debit_90d",
+        "has_salary_credit",
+        "id",
+        "monthly_income_estimate",
+        "onboarding_channel",
+        "prof_age_band",
+        "prof_education_level",
+        "prof_employment_status",
+        "prof_kyc_tier",
+        "prof_nationality",
+        "prof_primary_branch",
+        "rel_accounts_active",
+        "rel_card_count",
+        "rel_card_expiring_30d",
+        "rel_card_types",
+        "rel_has_card",
+        "rel_has_loan",
+        "rel_has_savings",
+        "rel_has_unactivated_card",
+        "rel_products_owned",
+        "risk_cash_heavy_ratio_90d",
+        "risk_high_value_txn_ratio_90d",
+        "risk_reversal_ratio_90d",
+        "risk_txn_volatility_90d",
+        "risk_unusual_channel_flag",
+        "temp_payday_activity_ratio_90d",
+        "temp_weekday_txn_ratio_90d",
+        "temp_weekend_txn_ratio_90d",
+        "total_amount_180d",
+        "total_amount_90d",
+        "txn_count_180d",
+        "txn_count_30d",
+        "txn_count_365d",
+        "txn_count_90d"
+      ],
+      "top_features": [
+        {
+          "name": "behav_frequency_score",
+          "importance": "0.0457"
+        },
+        {
+          "name": "eng_login_count_30d",
+          "importance": "0.041"
+        },
+        {
+          "name": "temp_weekday_txn_ratio_90d",
+          "importance": "0.0352"
+        },
+        {
+          "name": "fin_median_txn_amount_90d",
+          "importance": "0.035"
+        },
+        {
+          "name": "temp_payday_activity_ratio_90d",
+          "importance": "0.0322"
+        },
+        {
+          "name": "amount_growth_ratio",
+          "importance": "0.0304"
+        },
+        {
+          "name": "chan_digital_adoption_score",
+          "importance": "0.0296"
+        },
+        {
+          "name": "fin_total_credit_90d",
+          "importance": "0.0295"
+        },
+        {
+          "name": "age_years",
+          "importance": "0.029"
+        },
+        {
+          "name": "customer_tenure_days",
+          "importance": "0.0288"
+        }
+      ],
+      "notes": "PoC model \u2014 trained on account-closure-only labels (526 positives across ['2026-07-17', '2026-07-22']). AUC is directional, not precise. Probabilities are UNCALIBRATED ranking scores \u2014 do NOT treat churn_prob as a true probability. If AUC > 0.90, re-check for feature leakage. Calibration deferred to production (D12)."
+    }
+  ]
 }

@@ -18,6 +18,7 @@ from datetime import date
 import psycopg2
 
 from app.config.settings import Settings
+from shared.config.settings import settings as shared
 
 
 class BehaviourGenerator:
@@ -32,17 +33,27 @@ class BehaviourGenerator:
         self._conn = conn
         self._cfg = Settings().features
 
+        # Resolve schema mapping from shared config — change once for new data
+        self._txn_table = shared.table_transactions_clean
+        self._features_table = shared.table_customer_features
+        self._col_cust = shared.col_customer_id
+        self._col_date = shared.col_transaction_date
+        self._col_channel = shared.col_channel
+        self._col_txn_type = shared.col_transaction_type
+        self._col_as_of = shared.col_as_of_date
+
     def generate(self, as_of_date: date) -> dict:
         """Run all behaviour features in a single optimized UPDATE.
 
-        Uses a FROM-subquery that aggregates all transaction windows
-        in one pass, then writes 10 feature columns at once.
+        Table and column names are resolved from shared config at init time.
+        Data values use psycopg2 parameterization (%(name)s).
         """
         with self._conn.cursor() as cur:
             cfg = self._cfg
-            cur.execute(
-                """
-                UPDATE customer_features cf
+            # Build SQL with config-driven table/column names.
+            # Double-braces {{%(name)s}} preserve psycopg2 placeholders.
+            sql = f"""
+                UPDATE {self._features_table} cf
                 SET
                     behav_txn_count_7d       = agg.txn_count_7d,
                     behav_active_days_90d    = agg.active_days_90d,
@@ -54,7 +65,7 @@ class BehaviourGenerator:
                         )
                     )),
                     behav_frequency_score = LEAST(%(frequency_weight)s, GREATEST(0,
-                        (COALESCE(agg.txn_count_30d, 0)::float / %(max_freq_txn)s::float) * %(frequency_weight)s
+                        (COALESCE(agg.txn_count_freq_window, 0)::float / %(max_freq_txn)s::float) * %(frequency_weight)s
                     )),
                     behav_diversity_score = LEAST(%(diversity_weight)s, GREATEST(0,
                         (COALESCE(agg.channels, 0)::float / %(max_channels)s::float) * (%(diversity_weight)s::float / 2.0)
@@ -67,44 +78,46 @@ class BehaviourGenerator:
                             )
                         ))
                         + LEAST(%(frequency_weight)s, GREATEST(0,
-                            (COALESCE(agg.txn_count_30d, 0)::float / %(max_freq_txn)s::float) * %(frequency_weight)s
+                            (COALESCE(agg.txn_count_freq_window, 0)::float / %(max_freq_txn)s::float) * %(frequency_weight)s
                         ))
                         + LEAST(%(diversity_weight)s, GREATEST(0,
                             (COALESCE(agg.channels, 0)::float / %(max_channels)s::float) * (%(diversity_weight)s::float / 2.0)
                             + (COALESCE(agg.txn_types, 0)::float / %(max_types)s::float) * (%(diversity_weight)s::float / 2.0)
                         ))
                     )::numeric, 0),
-                    -- Legacy backward-compat columns
                     txn_frequency_trend = ROUND((COALESCE(agg.active_days_90d, 0)::float / %(consistency_window)s::float)::numeric, 2),
                     inactivity_streak_days = %(inactive_window)s - COALESCE(agg.active_days_90d, 0)
                 FROM (
                     SELECT
-                        t.customer_id,
-                        (%(d)s::date - MAX(t.transaction_date)::date)::int AS days_since_last,
+                        t.{self._col_cust},
+                        (%(d)s::date - MAX(t.{self._col_date})::date)::int AS days_since_last,
                         COUNT(*) FILTER (
-                            WHERE t.transaction_date::date > (%(d)s::date - INTERVAL '7 days')
+                            WHERE t.{self._col_date}::date > (%(d)s::date - INTERVAL '7 days')
                         ) AS txn_count_7d,
                         COUNT(*) FILTER (
-                            WHERE t.transaction_date::date > (%(d)s::date - INTERVAL '30 days')
-                        ) AS txn_count_30d,
-                        COUNT(DISTINCT t.transaction_date::date) FILTER (
-                            WHERE t.transaction_date::date > (%(d)s::date - INTERVAL '90 days')
+                            WHERE t.{self._col_date}::date > (%(d)s::date - INTERVAL '1 day' * %(freq_window_days)s::int)
+                        ) AS txn_count_freq_window,
+                        COUNT(DISTINCT t.{self._col_date}::date) FILTER (
+                            WHERE t.{self._col_date}::date > (%(d)s::date - INTERVAL '90 days')
                         ) AS active_days_90d,
-                        COUNT(DISTINCT t.channel) FILTER (
-                            WHERE t.transaction_date::date > (%(d)s::date - INTERVAL '90 days')
+                        COUNT(DISTINCT t.{self._col_channel}) FILTER (
+                            WHERE t.{self._col_date}::date > (%(d)s::date - INTERVAL '90 days')
                         ) AS channels,
-                        COUNT(DISTINCT t.transaction_type) FILTER (
-                            WHERE t.transaction_date::date > (%(d)s::date - INTERVAL '90 days')
+                        COUNT(DISTINCT t.{self._col_txn_type}) FILTER (
+                            WHERE t.{self._col_date}::date > (%(d)s::date - INTERVAL '90 days')
                         ) AS txn_types
-                    FROM customer_transactions_clean t
-                    WHERE t.transaction_date::date <= %(d)s::date
-                    GROUP BY t.customer_id
+                    FROM {self._txn_table} t
+                    WHERE t.{self._col_date}::date <= %(d)s::date
+                    GROUP BY t.{self._col_cust}
                 ) agg
-                WHERE cf.customer_id = agg.customer_id
-                  AND cf.as_of_date = %(d)s::date
-                """,
+                WHERE cf.{self._col_cust} = agg.{self._col_cust}
+                  AND cf.{self._col_as_of} = %(d)s::date
+                """
+            cur.execute(
+                sql,
                 {
                     "d": as_of_date,
+                    "freq_window_days": cfg.engagement_frequency_window_days,
                     "recency_weight": cfg.engagement_recency_weight,
                     "frequency_weight": cfg.engagement_frequency_weight,
                     "diversity_weight": cfg.engagement_diversity_weight,

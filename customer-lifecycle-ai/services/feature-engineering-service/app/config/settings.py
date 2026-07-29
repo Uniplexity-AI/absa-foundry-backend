@@ -16,6 +16,7 @@ class FeatureConfig(BaseSettings):
     engagement_diversity_weight: float = 25.0
     engagement_max_recency_days: int = 90
     engagement_max_frequency_txn: int = 30
+    engagement_frequency_window_days: int = 30  # 30 = 1mo, 90 = quarterly, 180 = semi-annual
     engagement_max_diversity_channels: int = 5
     engagement_max_diversity_types: int = 5
 

@@ -1,6 +1,4 @@
-﻿"""
-Prediction Service App module.
+﻿"""Prediction Service — Layer 2: Churn, CLV, Health Score.
 
-TODO:
-Implement module initialization.
+Prediction Intelligence per system-design.md §8.
 """
