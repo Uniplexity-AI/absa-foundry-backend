@@ -50,3 +50,23 @@ An enterprise-grade AI platform deployed inside a bank's internal infrastructure
 - **Docker Compose** for orchestration (no Kubernetes)
 - **No cloud-native services** — everything runs on bare metal/VMs
 - **Redis** is optional but recommended for caching
+
+## Python Environment
+
+- **Virtual environment:** `customer-lifecycle-ai/.venv` (CPython 3.12.0)
+- **Package manager:** `uv pip install` (NOT `pip install`)
+- **uv-managed Python:** `C:\Users\ADMIN\AppData\Roaming\uv\python\cpython-3.11.13\` — LOCKED, do not use for package installs
+- **Activate venv:** `.\.venv\Scripts\Activate.ps1`
+- **Service startup:** `uvicorn services.<name>.main:app --host 0.0.0.0 --port <port>`
+- **⚠️ NEVER use `curl` in PowerShell — use `Invoke-RestMethod`**
+- **⚠️ NEVER `pip install` into uv-managed Python — use `.venv` + `uv pip install`**
+
+### Service Port Map
+
+| Service | Port | Health Check |
+|---------|------|-------------|
+| Feature Engineering | 8002 | `Invoke-RestMethod http://100.82.12.85:8002/health` |
+| Customer State (L1) | 8003 | `Invoke-RestMethod http://100.82.12.85:8003/health` |
+| Prediction (L2) | 8004 | `Invoke-RestMethod http://100.82.12.85:8004/health` |
+| Decision Intel (L3) | 8005 | `Invoke-RestMethod http://100.82.12.85:8005/health` |
+| API Gateway | 8080 | `Invoke-RestMethod http://100.82.12.85:8080/health` |

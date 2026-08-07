@@ -44,6 +44,16 @@ def get_portfolio(
     return _service.get_portfolio_summary(as_of_date, branch_code)
 
 
+@router.get("", response_model=list[StateSnapshot])
+def list_all_states(
+    as_of_date: date = Query(..., description="Date for state snapshots"),
+    limit: int = Query(default=100, ge=1, le=500, description="Max rows"),
+    offset: int = Query(default=0, ge=0, description="Pagination offset"),
+) -> list[StateSnapshot]:
+    """List all customer state snapshots for a given date (paginated)."""
+    return _service.list_all_states(as_of_date, limit, offset)
+
+
 @router.get("/{customer_id}/timeline", response_model=StateTimeline)
 def get_timeline(
     customer_id: str,

@@ -181,6 +181,12 @@ class StateService:
         """Aggregate state counts."""
         return self._state_repo.get_portfolio_summary(as_of_date, branch_code)
 
+    def list_all_states(
+        self, as_of_date: date_type, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        """List all customer state snapshots for a given date (paginated)."""
+        return self._state_repo.list_all(as_of_date, limit, offset)
+
     # ------------------------------------------------------------------
     # Markov Chain
     # ------------------------------------------------------------------

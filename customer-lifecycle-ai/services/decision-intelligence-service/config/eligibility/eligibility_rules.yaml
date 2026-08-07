@@ -1,0 +1,62 @@
+# Decision & Insight Intelligence Platform — Eligibility Rules
+# Version: 1.0.0 | Date: 2026-08-07
+# Purpose: Regulatory, compliance, and credit policy checks.
+# These run BEFORE business rules or AI ranking.
+# If a customer is ineligible, the pipeline stops and returns the reason.
+
+rules:
+  - id: ELIG-001
+    name: "Minor Credit Restriction"
+    field: "context.age"
+    operator: "lt"
+    value: 18
+    action: "BLOCK_ALL_CREDIT"
+    reason: "Customer under 18 — credit products not available"
+
+  - id: ELIG-002
+    name: "AML Block"
+    field: "context.aml_flag"
+    operator: "eq"
+    value: true
+    action: "BLOCK_ALL_ACTIONS"
+    reason: "AML flag active — manual review required"
+
+  - id: ELIG-003
+    name: "KYC Expired"
+    field: "context.kyc_expired"
+    operator: "eq"
+    value: true
+    action: "BLOCK_SALES"
+    reason: "KYC expired — update required before offers"
+
+  - id: ELIG-004
+    name: "Marketing Opt-Out"
+    field: "context.marketing_opt_out"
+    operator: "eq"
+    value: true
+    action: "BLOCK_MARKETING"
+    reason: "Customer opted out of marketing communications"
+
+  - id: ELIG-005
+    name: "Credit Policy Restriction"
+    field: "context.credit_risk_rating"
+    operator: "eq"
+    value: "HIGH"
+    action: "BLOCK_CREDIT"
+    reason: "High credit risk — credit products not available"
+
+  - id: ELIG-006
+    name: "Loan Arrears Block"
+    field: "context.loan_in_arrears"
+    operator: "eq"
+    value: true
+    action: "BLOCK_CROSS_SELL"
+    reason: "Active loan in arrears — collections priority"
+
+  - id: ELIG-007
+    name: "Active Complaint Suppression"
+    field: "context.active_complaint"
+    operator: "eq"
+    value: true
+    action: "SUPPRESS_MARKETING"
+    reason: "Active complaint — suppress marketing until resolved"

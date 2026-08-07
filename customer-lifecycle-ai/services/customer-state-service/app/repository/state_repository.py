@@ -72,6 +72,15 @@ WHERE customer_id = ANY(%(customer_ids)s)
 ORDER BY customer_id, as_of_date DESC
 """
 
+LIST_ALL_SQL = """
+SELECT customer_id, as_of_date, state, classification_rules,
+       health_score, component_scores, computed_at
+FROM customer_states
+WHERE as_of_date = %(as_of_date)s
+ORDER BY customer_id
+LIMIT %(limit)s OFFSET %(offset)s
+"""
+
 
 class StateRepository:
     """Data access for customer_states table.
@@ -228,6 +237,20 @@ class StateRepository:
                 "total_customers": total,
                 "by_state": by_state,
             }
+        finally:
+            conn.close()
+
+    def list_all(self, as_of_date, limit: int = 100, offset: int = 0) -> list[dict]:
+        """List all customer states for a given date with pagination."""
+        conn = self._connect()
+        try:
+            cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cur.execute(LIST_ALL_SQL, {
+                "as_of_date": as_of_date,
+                "limit": limit,
+                "offset": offset,
+            })
+            return [dict(r) for r in cur.fetchall()]
         finally:
             conn.close()
 

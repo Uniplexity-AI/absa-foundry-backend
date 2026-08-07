@@ -105,22 +105,24 @@ Health Score = (churn_weight × (1 - churn_prob)) + (clv_weight × clv_percentil
 ```
 Weights configured via `HEALTH_SCORE_CHURN_WEIGHT`, `HEALTH_SCORE_CLV_WEIGHT`, `HEALTH_SCORE_BEHAVIOUR_WEIGHT`.
 
-## Layer 3 — Decision Intelligence Service (`decision-intelligence-service`)
+## Layer 3 — Decision & Insight Intelligence Platform (DESIGN PHASE)
 
-**Purpose:** Generate Next Best Action (NBA) recommendations.
+**Purpose:** The bank's central intelligence layer. Answers *Why? What? Who? When? What next? What if?* — serving Executive Management, Marketing, Retail Banking, Relationship Managers, and Business Banking.
 
-**Data Flow:**
-1. Receives health score, churn probability, and CLV from Layer 2
-2. Evaluates business rules against customer profile
-3. Generates ranked NBA recommendations
-4. Publishes recommendations to Dashboard Service
+**Six engines, one platform:**
 
-**Key Modules:**
-- `rule_engine/` — Business rule definitions and evaluation engine
-- `nba/` — NBA generation, ranking, and prioritization
-- `reinforcement_learning/` — RL-based optimization (FUTURE — not yet implemented)
+| Engine | Answers | Consumers |
+|--------|---------|-----------|
+| **Churn Intelligence** | "Why are customers leaving?" | Executive, Marketing |
+| **Customer Intelligence** | "What is happening to this customer?" | Retail, RM |
+| **Decision Engine** | "What should the bank do?" (NBA) | Retail, RM, Marketing |
+| **Recommendation Engine** | "What product should we offer?" (NBO) | Retail, RM, Marketing |
+| **Forecast Engine** | "What will happen?" | Executive, Marketing |
+| **Insight Engine** | "Explain this to me" (LLM) | All stakeholders |
 
-**DO NOT** hardcode rules. Rules must be configurable and auditable.
+**Architecture Doc:** `docs/architecture/decision-intelligence-platform-v3.md`
+
+**Status:** Design complete. Phase 1 implementation: Foundation + Decision + Customer Intel + Recommendation (heuristic) + Churn Intel + Forecast (basic).
 
 ## Supporting Services
 

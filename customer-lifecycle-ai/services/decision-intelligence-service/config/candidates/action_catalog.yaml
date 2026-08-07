@@ -1,0 +1,44 @@
+# Decision & Insight Intelligence Platform — Action Catalog
+# Version: 1.0.0 | Date: 2026-08-07
+# Purpose: Defines all possible actions the bank can take.
+# The Action Generation Engine produces every candidate from this catalog.
+# Ranking, eligibility, and business rules filter them down to the Top-N.
+# NOT just product offers — banks spend more time on operational actions.
+
+actions:
+  retention:           # Churn prevention actions
+    - RETENTION_CALL
+    - FEE_WAIVER
+    - INTEREST_RATE_REVIEW
+    - LOYALTY_REWARD
+    - PRIORITY_SUPPORT
+    - BRANCH_VISIT
+
+  cross_sell:          # Revenue generation / product deepening
+    - OFFER_PERSONAL_LOAN
+    - OFFER_CREDIT_CARD
+    - OFFER_MORTGAGE
+    - OFFER_INSURANCE
+    - OFFER_INVESTMENT
+    - OFFER_OVERDRAFT
+    - OFFER_FX_ACCOUNT
+
+  engagement:          # Digital adoption and activity boosting
+    - MOBILE_BANKING_ONBOARDING
+    - DIGITAL_CAMPAIGN
+    - SMS_CAMPAIGN
+    - EMAIL_CAMPAIGN
+    - SALARY_ACCOUNT_MIGRATION
+    - STANDING_ORDER_SETUP
+
+  service:             # Operational and compliance actions
+    - KYC_UPDATE
+    - FRAUD_INVESTIGATION
+    - COLLECTIONS_WORKFLOW
+    - MANUAL_REVIEW
+    - RM_CALL
+    - ESCALATE_TO_REGIONAL
+
+  passive:             # Deliberate non-actions
+    - NO_ACTION
+    - MONITOR_ONLY

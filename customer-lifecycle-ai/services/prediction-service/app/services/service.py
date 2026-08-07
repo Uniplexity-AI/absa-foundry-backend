@@ -55,7 +55,6 @@ class PredictionService:
             )
 
         self._churn = ChurnPredictor()
-        self._churn = ChurnPredictor()
         self._clv = CLVPredictor()
         self._health = HealthScorer(PredictionConfig())
         self._config = PredictionConfig()

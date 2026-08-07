@@ -1,0 +1,62 @@
+# Decision & Insight Intelligence Platform — Business Rules
+# Version: 1.0.0 | Date: 2026-08-07
+# Purpose: Deterministic banking logic. Controls HOW actions are prioritized,
+# not whether the customer qualifies (that's the Eligibility Engine).
+# All rules are YAML-configurable and version-controlled.
+
+rules:
+  - id: RULE-001
+    name: "Dormant Reactivation Only"
+    condition: "context.customer_state == 'DORMANT' AND context.state_duration_days > 180"
+    action: "ONLY_REACTIVATION"
+    description: "Long-dormant customers should only receive reactivation campaigns"
+    severity: HARD
+
+  - id: RULE-002
+    name: "VIP Escalation"
+    condition: "context.segment in ['AFFLUENT', 'CORPORATE']"
+    action: "ESCALATE_TO_RM"
+    description: "High-value customers must be handled by Relationship Managers"
+    severity: HARD
+
+  - id: RULE-003
+    name: "At-Risk Retention Priority"
+    condition: "context.customer_state == 'AT_RISK' AND context.churn_probability > 0.5"
+    action: "PRIORITIZE_RETENTION"
+    description: "Customers with elevated churn risk need retention actions first"
+    severity: HARD
+
+  - id: RULE-004
+    name: "Duplicate Product Exclusion"
+    condition: "False"
+    action: "REMOVE_CANDIDATE"
+    description: "Don't recommend products the customer already holds (handled by DecisionService._already_owns)"
+    severity: HARD
+
+  - id: RULE-005
+    name: "High-Value Cross-Sell"
+    condition: "context.clv_percentile > 0.8 AND context.health_score > 60"
+    action: "PRIORITIZE_CROSS_SELL"
+    description: "Healthy high-value customers are good cross-sell candidates"
+    severity: SOFT
+
+  - id: RULE-006
+    name: "Contact Frequency Guard"
+    condition: "context.contact_frequency_30d >= 3"
+    action: "REDUCE_OUTBOUND"
+    description: "Don't overwhelm customers with too many contacts"
+    severity: HARD
+
+  - id: RULE-007
+    name: "Churned No Marketing"
+    condition: "context.customer_state == 'CHURNED'"
+    action: "NO_MARKETING"
+    description: "Churned customers should not receive marketing communications"
+    severity: HARD
+
+  - id: RULE-008
+    name: "Low Engagement Digital Push"
+    condition: "(context.engagement_score or 0) < 30 AND (context.age or 99) < 65"
+    action: "PRIORITIZE_DIGITAL"
+    description: "Low-engagement, non-senior customers benefit from digital onboarding"
+    severity: SOFT

@@ -83,6 +83,31 @@ customer-lifecycle-ai/
 - `architecture.md` has the service responsibility boundaries
 - `skills/` has task-specific patterns
 - `standards/` has detailed conventions
+- `ABSA-KNOWLEDGE-BASE.md` has the consolidated reference
 - The `README.md` at the project root has the full overview
 
 **Do not guess. Read the relevant document.**
+
+---
+
+## .ai Directory Structure
+
+```
+.ai/
+├── README.md                 ← YOU ARE HERE
+├── project-context.md        What we're building, who uses it, domain terms
+├── current-sprint.md         Live sprint status, completed/remaining
+├── architecture.md           3-Layer AI system, service boundaries
+├── coding-standards.md       Python style, Pydantic, repository pattern
+├── terminal-patterns.md      18+ pre-flight checks, PowerShell/uv/DB fixes
+├── MEMORIES.md                Persistent agent memory bank — rules + learning ledger
+├── ABSA-KNOWLEDGE-BASE.md    Consolidated reference (everything in one doc)
+├── skills/
+│   ├── add-api-endpoint.md   FastAPI route creation
+│   ├── add-database-model.md DB schema/model creation
+│   ├── add-feature.md        Feature engineering
+│   ├── ml-model-training.md  XGBoost/LightGBM training
+│   └── writing-tests.md      Pytest patterns
+└── standards/
+    └── conventions.md        Naming and structure conventions
+```
