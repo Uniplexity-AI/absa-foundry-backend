@@ -20,7 +20,14 @@ load_dotenv(os.path.join(_project_root, ".env"))
 
 from fastapi import FastAPI
 
-from app.api.routes import router as decision_router, customer_intel_router, churn_intel_router, forecast_router
+from app.api.routes import (
+    router as decision_router,
+    customer_intel_router,
+    churn_intel_router,
+    forecast_router,
+    recommendation_router,
+    insight_router,
+)
 from app.schemas.schemas import PlatformHealth
 
 app = FastAPI(
@@ -33,6 +40,8 @@ app.include_router(decision_router)
 app.include_router(customer_intel_router)
 app.include_router(churn_intel_router)
 app.include_router(forecast_router)
+app.include_router(recommendation_router)
+app.include_router(insight_router)
 
 
 @app.get("/health", response_model=PlatformHealth)

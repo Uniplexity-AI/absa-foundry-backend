@@ -1,0 +1,97 @@
+# ABSA Reason Codes — YAML-driven thresholds and templates.
+# Insight Engine loads this at startup.
+# Generates structured, deterministic reason codes — no LLM needed.
+
+thresholds:
+  churn_probability:
+    high: 0.5
+    medium: 0.3
+  health_score:
+    low: 40.0
+    medium: 60.0
+  engagement_score:
+    low: 30.0
+  days_since_last_txn:
+    high: 60  # days — inactivity threshold
+  clv_percentile:
+    high: 0.7   # top 30% by CLV
+    low: 0.3    # bottom 30%
+
+reason_codes:
+  - code: CHURN_RISK_HIGH
+    severity: HIGH
+    category: RISK
+    condition: churn_probability > thresholds.churn_probability.high
+    template: "Churn probability is {value:.0%} — high risk of customer loss"
+
+  - code: CHURN_RISK_MODERATE
+    severity: MEDIUM
+    category: RISK
+    condition: churn_probability > thresholds.churn_probability.medium
+    template: "Churn probability is {value:.0%} — moderate risk"
+
+  - code: HEALTH_DECLINING
+    severity: HIGH
+    category: RISK
+    condition: health_score < thresholds.health_score.low
+    template: "Health score is {value:.0f}/100 — critical health decline"
+
+  - code: HEALTH_BELOW_AVERAGE
+    severity: MEDIUM
+    category: RISK
+    condition: health_score < thresholds.health_score.medium
+    template: "Health score is {value:.0f}/100 — below segment average"
+
+  - code: STATE_AT_RISK
+    severity: HIGH
+    category: RISK
+    condition: customer_state == "AT_RISK"
+    template: "Customer is in AT_RISK state — requires immediate attention"
+
+  - code: STATE_DORMANT
+    severity: HIGH
+    category: RISK
+    condition: customer_state == "DORMANT"
+    template: "Customer is DORMANT — reactivation campaign needed"
+
+  - code: STATE_CHURNED
+    severity: HIGH
+    category: RISK
+    condition: customer_state == "CHURNED"
+    template: "Customer has churned — win-back campaign or passive monitoring"
+
+  - code: HIGH_CLV
+    severity: MEDIUM
+    category: OPPORTUNITY
+    condition: clv_percentile > thresholds.clv_percentile.high
+    template: "Customer is in top {value:.0%} by CLV — prioritize retention"
+
+  - code: LOW_ENGAGEMENT
+    severity: MEDIUM
+    category: RISK
+    condition: engagement_score < thresholds.engagement_score.low
+    template: "Digital engagement score is {value:.0f}/100 — digital re-engagement recommended"
+
+  - code: INACTIVE_EXTENDED
+    severity: HIGH
+    category: RISK
+    condition: days_since_last_txn > thresholds.days_since_last_txn.high
+    template: "No transaction in {value} days — extended inactivity period"
+
+  - code: SALARY_ACTIVE
+    severity: LOW
+    category: OPPORTUNITY
+    condition: has_salary_credit == true
+    template: "Salary credit active — cross-sell and upsell opportunity"
+
+  - code: LOW_CLV
+    severity: LOW
+    category: NEUTRAL
+    condition: clv_percentile < thresholds.clv_percentile.low
+    template: "Customer is in bottom {value:.0%} by CLV — monitor, lower intervention priority"
+
+  - code: HEALTHY_STATE
+    severity: LOW
+    category: NEUTRAL
+    condition: customer_state == "ACTIVE" AND health_score > thresholds.health_score.medium
+    template: "Customer is ACTIVE with healthy score — routine monitoring sufficient"

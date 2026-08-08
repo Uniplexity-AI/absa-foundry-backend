@@ -1,0 +1,43 @@
+# ABSA Upsell Rules — YAML-driven.
+# Triggers: when customer holds a basic product, offer premium upgrade.
+# Recommendation Engine loads this at startup.
+
+rules:
+  - id: BASIC_TO_PREMIUM_SAVINGS
+    description: "Customer has Basic Savings → offer Premium Savings"
+    trigger:
+      product_held: "SAVINGS"
+      min_balance_zmw: 50000
+      min_tenure_months: 12
+    upgrade: PREMIUM_SAVINGS
+    boost: 0.30
+    reason: "Long-tenure high-balance savers are prime premium candidates"
+
+  - id: STANDARD_TO_GOLD_CARD
+    description: "Customer has Credit Card + Salary + High CLV → offer Gold Card"
+    trigger:
+      product_held: "CREDIT_CARD"
+      has_salary_credit: true
+      min_clv_percentile: 0.70
+    upgrade: GOLD_CREDIT_CARD
+    boost: 0.25
+    reason: "High-CLV salary customers upgrade to premium cards at 3.1x rate"
+
+  - id: PERSONAL_TO_HOME_LOAN
+    description: "Customer has Personal Loan + Good credit → offer Mortgage"
+    trigger:
+      product_held: "PERSONAL_LOAN"
+      credit_risk_low: true
+      min_age: 25
+    upgrade: MORTGAGE
+    boost: 0.20
+    reason: "Low-risk loan customers are mortgage-ready with proper age qualification"
+
+  - id: BASIC_TO_ADVANCED_INSURANCE
+    description: "Customer has Insurance + Family products → offer Advanced Insurance"
+    trigger:
+      product_held: "INSURANCE"
+      has_family_products: true
+    upgrade: ADVANCED_INSURANCE
+    boost: 0.25
+    reason: "Family product holders seek comprehensive coverage at 2.1x rate"

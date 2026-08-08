@@ -90,6 +90,141 @@ def get_trajectory(customer_id: str, as_of_date: date | None = Query(default=Non
             "score": ht.current_score if ht else 0}
 
 
+# ===========================================================================
+# Recommendation Engine (NBO)
+# ===========================================================================
+
+recommendation_router = APIRouter(prefix="/recommendations", tags=["recommendations"])
+
+from app.engines.recommendation_engine.product_propensity import ProductPropensityScorer
+from app.engines.recommendation_engine.cross_sell_logic import CrossSellLogic
+from app.engines.recommendation_engine.upsell_logic import UpsellLogic
+from app.engines.recommendation_engine.campaign_mapper import CampaignMapper
+from app.schemas.schemas import RecommendationResponse, CampaignTargetList
+
+_propensity = ProductPropensityScorer()
+_cross_sell = CrossSellLogic()
+_upsell = UpsellLogic()
+_campaigns = CampaignMapper()
+
+
+@recommendation_router.get("/{customer_id}", response_model=RecommendationResponse)
+def get_recommendations(
+    customer_id: str,
+    as_of_date: date = Query(...),
+) -> RecommendationResponse:
+    """Generate product recommendations for one customer."""
+    from app.context.builder import build_decision_context
+    ctx = build_decision_context(customer_id, as_of_date)
+
+    # Step 1: Base propensity scores
+    scored = _propensity.score(ctx)
+
+    # Step 2: Apply cross-sell rules
+    scored, cross_sell_applied = _cross_sell.apply(scored, ctx)
+
+    # Step 3: Apply upsell logic
+    scored = _upsell.apply(scored, ctx)
+
+    # Step 4: Map to campaigns
+    enriched = _campaigns.map_recommendations(scored, ctx)
+
+    return RecommendationResponse(
+        customer_id=customer_id,
+        as_of_date=as_of_date,
+        recommendations=[dict(r) for r in enriched],
+        cross_sell_rules_applied=cross_sell_applied,
+    )
+
+
+@recommendation_router.get("/campaigns/list", response_model=CampaignTargetList)
+def get_campaign_targets(
+    segment: str | None = Query(default=None),
+    limit: int = Query(default=1000),
+) -> CampaignTargetList:
+    """List active campaigns with target audience info."""
+    campaigns = _campaigns.get_campaign_target_list(segment, limit)
+    return CampaignTargetList(campaigns=campaigns, total_campaigns=len(campaigns))
+
+
+# ===========================================================================
+# Insight & Explanation Engine
+# ===========================================================================
+
+insight_router = APIRouter(prefix="/insights", tags=["insights"])
+
+from app.engines.insight_engine.reason_code_generator import ReasonCodeGenerator
+from app.engines.insight_engine.explanation_composer import ExplanationComposer
+from app.schemas.schemas import ExplanationResponse
+
+_reason_gen = ReasonCodeGenerator()
+_explainer = ExplanationComposer()
+
+
+@insight_router.get("/reason-codes/{customer_id}")
+def get_reason_codes(
+    customer_id: str,
+    as_of_date: date = Query(...),
+):
+    """Get structured reason codes for a customer."""
+    from app.context.builder import build_decision_context
+    ctx = build_decision_context(customer_id, as_of_date)
+    codes = _reason_gen.generate(ctx)
+    return {"customer_id": customer_id, "reason_codes": [c.model_dump() for c in codes]}
+
+
+@insight_router.get("/explain-decision/{decision_id}")
+def explain_decision(decision_id: str):
+    """Explain a previously computed decision."""
+    result = _explainer.explain(decision_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"No decision: {decision_id}")
+    return result
+
+
+@insight_router.get("/llm-explain/{customer_id}")
+def llm_explain_customer(
+    customer_id: str,
+    as_of_date: date = Query(...),
+):
+    """Generate LLM explanation for a customer's situation."""
+    from app.context.builder import build_decision_context
+    from app.engines.insight_engine.llm_gateway import LLMGateway
+
+    ctx = build_decision_context(customer_id, as_of_date)
+    llm = LLMGateway()
+
+    # Generate reason codes first (deterministic)
+    reason_codes = _reason_gen.generate(ctx)
+    code_names = [c.code for c in reason_codes]
+
+    # Get decision (NBA)
+    result = _service.compute_for_customer(customer_id, as_of_date)
+    top_action = result.top_actions[0].action if result and result.top_actions else "MONITOR"
+    top_action_score = result.top_actions[0].score if result and result.top_actions else 0
+
+    # Generate LLM explanation
+    explanation = llm.explain_decision(
+        customer_id=customer_id,
+        customer_state=ctx.customer_state,
+        health_score=ctx.health_score,
+        churn_probability=ctx.churn_probability,
+        top_action=f"{top_action} (score: {top_action_score:.0f})",
+        reason_codes=code_names,
+    )
+
+    return {
+        "customer_id": customer_id,
+        "as_of_date": as_of_date,
+        "llm_available": llm.is_available,
+        "model": "qwen2.5-coder:7b",
+        "deterministic_codes": [c.model_dump() for c in reason_codes],
+        "llm_explanation": explanation,
+        "top_action": top_action,
+        "top_action_score": top_action_score,
+    }
+
+
 @customer_intel_router.get("/{customer_id}", response_model=CustomerIntelligence)
 def get_customer_intelligence(
     customer_id: str,

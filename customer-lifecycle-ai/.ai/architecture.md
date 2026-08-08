@@ -1,153 +1,214 @@
-# Architecture — 3-Layer AI System
+# Architecture — ABSA Customer Lifecycle Platform
 
-> **Active branch:** `poc-90day` (lean subset) | **Reference:** `architecture-target-full` (complete)
-> PoC removes: HMM engine, RL engine, Kafka/Debezium/REST/SOAP connectors, orchestration service.
-> See [ARCHITECTURE.md](../ARCHITECTURE.md) for branch strategy and recovery commands.
+> **Active branch:** `poc-90day` (Phase 1 live)  
+> **Status:** Demo-ready — 5 services, 6 pages wired, 34/34 tests  
+> **Last updated:** 2026-08-07  
+> **Reference:** `docs/architecture/decision-intelligence-platform-v3.md` (full design)
 
-## Data Ingestion Tier (IMPLEMENTED — 9 modules)
+---
 
-Before data reaches the ETL engine, a **Dynamic Extractor, Unifier & Validation Engine** handles multi-table extraction from fragmented source schemas.
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│           Dynamic Extractor & Unifier (Pre-Processor)        │
-│  YAML Spec → Version Guard → Join Validator → Query Builder  │
-│  → Streaming Extraction → Pydantic v2 Validation             │
-│  → Business Rules Engine → DLQ (audit.rejected_records)      │
-│  Output: unified, structurally-valid DataFrame               │
-└────────────────────────────┬─────────────────────────────────┘
-                             │ unified DataFrame
-                             ▼
-┌──────────────────────────────────────────────────────────────┐
-│               ETL Engine (run_etl.py — existing)             │
-│  Schema Drift → Business Validation → Transform → Load       │
-│  Output: *_clean / *_rejected tables in etl_clean            │
-└──────────────────────────────────────────────────────────────┘
-```
-
-**Implementation:** `etl/extraction/` (9 files) | Wired via `--extraction-spec` flag | 2 YAML specs in `etl/config/extraction_specs/`
-
-### API Gateway (IMPLEMENTED — 17 auth files)
-
-```
-Gateway (:8080) → JWT Auth → RBAC → Rate Limit → API Key Auth → Logging
-Routes: /auth/*, /admin/*, /internal/*
-Auth: LDAP-ready, JWT + refresh tokens, 6 roles, Redis blacklist
-```
-
-## High-Level Architecture
+## 1. High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      API Gateway (8080)                      │
-│          Auth / Rate Limiting / Centralized Logging          │
-└──────────┬──────────┬──────────┬──────────┬─────────────────┘
-           │          │          │          │
-     ┌─────▼────┐┌───▼────┐┌───▼─────┐┌───▼──────┐
-     │ Layer 1  ││Layer 2 ││ Layer 3  ││ Supporting│
-     │Customer  ││Predict.││ Decision ││ Services  │
-     │ State    ││Service ││ Intel.   ││           │
-     │ Service  ││        ││ Service  ││           │
-     └────┬─────┘└───┬────┘└────┬─────┘└───────────┘
-          │          │          │
-          │  customer│  health  │
-          │  state   │  score   │
-          │          │  churn   │
-          └──────────► prob     │
-                     │  CLV     │
-                     └──────────►
+│                   API Gateway (:8080)                        │
+│      Auth / RBAC / Rate Limit / API Key / Logging            │
+│      15 routes proxying to all backend services              │
+└──────┬──────────┬──────────┬──────────┬─────────────────────┘
+       │          │          │          │
+ ┌─────▼────┐ ┌──▼─────┐ ┌─▼───────┐ ┌─▼──────────┐
+ │ Layer 1  │ │Layer 2 │ │Layer 3  │ │ Supporting  │
+ │ Customer │ │Predict.│ │Decision │ │ Services    │
+ │ State    │ │Service │ │Intel.   │ │             │
+ │ (:8003)  │ │(:8004) │ │(:8005)  │ │ (:8002)     │
+ │          │ │        │ │         │ │ Features    │
+ │ Markov   │ │XGBoost │ │9 engines│ │ ETL         │
+ │ Chain    │ │Churn   │ │YAML cfg │ │ PostgreSQL  │
+ └──────────┘ └────────┘ └─────────┘ └─────────────┘
 ```
 
-## Layer 1 — Customer State Service (`customer-state-service`)
+---
 
-**Purpose:** Track customer behavioural state using Markov Chains.
+## 2. Layer 1 — Customer State Service (:8003)
 
-**Data Flow:**
-1. Ingests customer transaction/behaviour data from Feature Store
-2. Computes Markov transition matrix from historical customer journeys
-3. Classifies each customer into a state: `Active`, `At Risk`, `Dormant`
-4. Publishes state labels and transition probabilities
+**Purpose:** Classify every customer into a discrete lifecycle state.
 
-**Key Modules:**
-- `engines/markov/` — Transition matrix computation, stationary distribution
-- `engines/hmm/` — Hidden Markov Model (FUTURE — not yet implemented)
-- `services/behaviour_profiler.py` — State classification and pattern extraction
+| Component | Description |
+|-----------|-------------|
+| State Engine | 4-priority rule-based classifier (Active → At Risk → Dormant → Churned) |
+| Markov Engine | 4×4 transition probability matrix, steady-state analysis |
+| Transition Analyzer | Detects state transitions between snapshots |
+| Repository | psycopg2 sync, batch upsert, idempotent ON CONFLICT |
 
-**DO NOT** put prediction logic here. This service only deals with state transitions.
+**API Endpoints:**
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/states/compute` | Classify all customers |
+| GET | `/states/portfolio` | Aggregate state counts |
+| GET | `/states` | Paginated list-all |
+| GET | `/{customer_id}` | Single snapshot |
+| GET | `/{customer_id}/timeline` | State history + transitions |
+| GET | `/markov/matrix` | 4×4 transition matrix |
+| GET | `/markov/predict/{id}` | Next-state prediction |
 
-## Layer 2 — Prediction Service (`prediction-service`)
+---
 
-**Purpose:** Unified prediction engine for churn, CLV, and health scoring.
+## 3. Layer 2 — Prediction Service (:8004)
 
-**Data Flow:**
-1. Receives customer state from Layer 1
-2. Receives features from Feature Store
-3. Runs churn prediction model (XGBoost or LightGBM, configured via env)
-4. Runs CLV prediction model (XGBoost or LightGBM, configured via env)
-5. Computes Health Score = weighted fusion of churn prob + CLV + behavioural state
-6. Publishes predictions to Layer 3
+**Purpose:** Score every customer with churn probability and health score.
 
-**Model Selection:**
-- `PREDICTION_MODEL_TYPE=xgboost` (or `lightgbm`) — controls which model framework is used
-- Both XGBoost and LightGBM implementations must exist; config determines which runs
+| Component | Description |
+|-----------|-------------|
+| Churn Predictor | XGBoost model, AUC 0.7672, 65 training features |
+| Health Scorer | Composite 0-100 from churn risk + CLV + behaviour |
+| Model Registry | Champion/challenger tracking |
 
-**Key Modules:**
-- `models/xgboost/` — XGBoost churn and CLV model implementations
-- `models/lightgbm/` — LightGBM churn and CLV model implementations
-- `services/health_score.py` — Composite health score calculator
-- `training/` — Model training and hyperparameter tuning pipelines
-- `evaluation/` — AUC-ROC, precision-recall, calibration metrics
-- `explainability/shap/` — SHAP value computation for every prediction
+**API Endpoints:**
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/predict/batch` | Score all 4,998 customers (2.8s) |
+| GET | `/predict/models` | Registered models with metrics |
+| GET | `/{customer_id}/churn` | Churn probability (0-1) |
+| GET | `/{customer_id}/health` | Health score breakdown |
+| GET | `/{customer_id}` | Full prediction |
 
-**Health Score Formula:**
+---
+
+## 4. Layer 3 — Decision & Insight Intelligence Platform v3.0 (:8005)
+
+The platform answers: *Why? What? Who? When? What next? What if?*
+
+### 4.1 The Six Engines
+
 ```
-Health Score = (churn_weight × (1 - churn_prob)) + (clv_weight × clv_percentile) + (behaviour_weight × state_score)
+┌─────────────────────────────────────────────────────────────────┐
+│              DECISION & INSIGHT INTELLIGENCE PLATFORM            │
+│                                                                 │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│  │  CHURN   │ │CUSTOMER  │ │ DECISION │ │RECOMMEND.│           │
+│  │  INTEL   │ │  INTEL   │ │  ENGINE  │ │  ENGINE  │           │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘           │
+│       │             │            │            │                  │
+│  ┌────┴─────────────┴────────────┴────────────┴────────┐       │
+│  │               SHARED FOUNDATION                      │       │
+│  │  Decision Context Builder | Policy & Rules (YAML)   │       │
+│  │  Decision Memory (Audit + Feedback Loop)            │       │
+│  └────────────────────────┬────────────────────────────┘       │
+│                           │                                     │
+│  ┌────────────────────────┴────────────────────────────┐       │
+│  │            INSIGHT & EXPLANATION LAYER               │       │
+│  │  FORECAST ENGINE | EXPLANATION ENGINE | INSIGHT ENG  │       │
+│  └─────────────────────────────────────────────────────┘       │
+└─────────────────────────────────────────────────────────────────┘
 ```
-Weights configured via `HEALTH_SCORE_CHURN_WEIGHT`, `HEALTH_SCORE_CLV_WEIGHT`, `HEALTH_SCORE_BEHAVIOUR_WEIGHT`.
 
-## Layer 3 — Decision & Insight Intelligence Platform (DESIGN PHASE)
+| Engine | Question | Phase 1 Status |
+|--------|----------|---------------|
+| **Churn Intelligence** | Why are customers leaving? | 🔨 Root cause, segment analysis |
+| **Customer Intelligence** | What's happening to this customer? | ✅ Health trajectory, lifecycle stage, alerts |
+| **Decision Engine** | What should the bank do? | ✅ NBA, ranking (LightGBM), strategy, routing, approval |
+| **Recommendation Engine** | What product to offer? | 🔨 NBO, cross-sell, campaign mapping |
+| **Forecast Engine** | What will happen? | 🔨 Churn forecast, revenue at risk |
+| **Insight Engine** | What does this mean? | 🔜 LLM explanations (Phase 3) |
 
-**Purpose:** The bank's central intelligence layer. Answers *Why? What? Who? When? What next? What if?* — serving Executive Management, Marketing, Retail Banking, Relationship Managers, and Business Banking.
+### 4.2 Decision Engine — 9 Sub-Engines (Implemented)
 
-**Six engines, one platform:**
+| # | Engine | Purpose |
+|---|--------|---------|
+| 1 | Eligibility Engine | YAML rules: AML, KYC, age, credit risk, complaints |
+| 2 | Business Rules Engine | YAML banking logic: VIP escalation, retention priority |
+| 3 | Action Generator | 25 actions across 5 categories (YAML catalog) |
+| 4 | Ranking Engine (heuristic) | YAML-configurable scoring weights + thresholds |
+| 5 | Ranking Engine (LightGBM) | ML model: 19 features, MAE 0.0015 |
+| 6 | Strategy Layer | Balanced / Retention First / Revenue First |
+| 7 | Optimization Engine | Multi-objective scoring |
+| 8 | Routing Engine | RM vs Digital vs Marketing channel selection |
+| 9 | Approval Workflow | Auto-execute vs human approval |
+| — | Composer | Assembles final DecisionPackage |
 
-| Engine | Answers | Consumers |
-|--------|---------|-----------|
-| **Churn Intelligence** | "Why are customers leaving?" | Executive, Marketing |
-| **Customer Intelligence** | "What is happening to this customer?" | Retail, RM |
-| **Decision Engine** | "What should the bank do?" (NBA) | Retail, RM, Marketing |
-| **Recommendation Engine** | "What product should we offer?" (NBO) | Retail, RM, Marketing |
-| **Forecast Engine** | "What will happen?" | Executive, Marketing |
-| **Insight Engine** | "Explain this to me" (LLM) | All stakeholders |
+### 4.3 YAML-Driven Configuration
 
-**Architecture Doc:** `docs/architecture/decision-intelligence-platform-v3.md`
+All business logic is in YAML — no hardcoded rules:
 
-**Status:** Design complete. Phase 1 implementation: Foundation + Decision + Customer Intel + Recommendation (heuristic) + Churn Intel + Forecast (basic).
+| Config File | Purpose |
+|-------------|---------|
+| `ranking/ranking_rules.yaml` | Scoring weights, thresholds per category |
+| `candidates/action_catalog.yaml` | 25 actions → 5 categories |
+| `policies/banking_rules.yaml` | 8 business rules (VIP, churned, dormant, etc.) |
+| `eligibility/eligibility_rules.yaml` | KYC, AML, age, credit risk checks |
 
-## Supporting Services
+---
 
-| Service | Responsibility |
-|---------|---------------|
-| `data-ingestion-service` | Replaced by `etl/` engine — removed from PoC (available on `architecture-target-full`) |
-| `feature-engineering-service` | Central Feature Store — computes and caches all ML features |
-| `model-management-service` | Champion/challenger registry, versioning, drift monitoring |
-| `dashboard-service` | Aggregates data for the RM dashboard frontend |
-| `orchestration-service` | Schedules pipelines, coordinates multi-service workflows |
+## 5. Feature Engineering Service (:8002)
 
-## Service Communication
+**Purpose:** Central feature store — 22 features per customer across 4,998 customers.
 
-- **Synchronous:** REST via API Gateway for real-time predictions
-- **Asynchronous:** Database-polling or Redis pub/sub for batch workflows
-- **Never:** Direct service-to-service calls bypassing the Gateway in production
+| Domain | Features |
+|--------|----------|
+| Transaction Behaviour | txn_count_30d/90d, total_amount_90d, days_since_last_txn |
+| Customer Profile | age_years, customer_tenure_days, customer_segment |
+| Product Holdings | product counts, has_salary_credit |
+| Engagement | engagement_score, digital_channel_usage |
 
-## Database Per-Service Strategy
+---
 
-While this is a monorepo, each service owns its **logical schema**:
-- `customer_data` — Data ingestion
-- `features` — Feature store
-- `customer_states` — Layer 1
-- `predictions` — Layer 2
-- `decisions` — Layer 3
-- `model_registry` — Model management
+## 6. API Gateway (:8080)
 
-Tables from one schema are **never written** by another service.
+15 routes registered:
+
+| Prefix | Proxied To | Routes |
+|--------|-----------|--------|
+| `/auth/*` | Gateway internal | Login, refresh, logout |
+| `/admin/*` | Gateway internal | Users, roles, API keys |
+| `/api/v1/customers/*` | State :8003 | Portfolio, list, detail, timeline |
+| `/api/v1/predictions/*` | Prediction :8004 + State :8003 | Churn, health, markov-matrix |
+| `/api/v1/models` | Prediction :8004 | Model registry |
+| `/api/etl/*` | PostgreSQL | ETL dashboard |
+| `/features/*` | Feature :8002 | Compute batch, snapshots |
+
+---
+
+## 7. ETL Pipeline
+
+```
+Raw Data (PostgreSQL)
+  → Dynamic Extractor (YAML spec → SQL → Parquet)
+    → Validate (schema + business rules)
+      → Transform (standardize + enrich)
+        → Load (customers_clean, accounts_clean, etc.)
+          → Audit (etl.etl_audit with quality scores)
+```
+
+- 11 extraction specs in `etl/config/extraction_specs/`
+- 15,200 rows loaded on latest run
+- 14 audit records with quality scores
+- 100% quality on latest run
+
+---
+
+## 8. Architecture Decision Records
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| ADR-001 | Six engines, one platform, shared foundation | DecisionContext built once, consumed by all |
+| ADR-002 | Churn Intelligence is portfolio-level | Per-customer churn is Prediction Service (L2) |
+| ADR-003 | Decision routing by stakeholder | Not every decision needs human intervention |
+| ADR-004 | Forecast separate from predictions | Enables scenario modeling |
+| ADR-005 | LLM explains, never decides | Deterministic engines produce decisions |
+| ADR-006 | YAML for all rules/catalogs/strategies | Audit-friendly, hot-reloadable |
+| ADR-007 | Decision Memory for closed-loop | Every decision → execution → outcome tracked |
+| ADR-008 | Single DecisionContext shared across engines | No engine queries upstream individually |
+
+---
+
+## 9. Phase 1 Delivery (Current)
+
+| Engine | Capabilities | Status |
+|--------|-------------|--------|
+| Foundation | Decision Context Builder, Policy Engine, Eligibility Engine, Decision Memory | ✅ |
+| Decision Engine | Action Gen, Heuristic Ranking, LightGBM, Strategy, Routing, Approval | ✅ |
+| Customer Intelligence | Health Trajectory, Lifecycle Stage, Behavioural Alerts | ✅ |
+| Recommendation Engine | Product Propensity (heuristic), Cross-sell Logic | 🔨 |
+| Churn Intelligence | Root Cause (aggregate SHAP), Segment Deterioration | 🔨 |
+| Forecast Engine | Churn Forecast, Revenue at Risk | 🔨 |
+| Insight Engine | Reason Code Generator | 🔜 Phase 3 |

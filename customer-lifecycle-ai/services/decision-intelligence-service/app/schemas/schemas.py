@@ -22,7 +22,7 @@ class DecisionContext(BaseModel):
     as_of_date: date
 
     # From State Service (L1, 8003)
-    customer_state: Literal["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
+    customer_state: Literal["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"] = "ACTIVE"
     state_duration_days: int = 0
     state_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     previous_state: str | None = None
@@ -218,4 +218,59 @@ class PlatformHealth(BaseModel):
     status: str = "healthy"
     service: str = "decision-intelligence-platform"
     version: str = "3.0.0"
+
+
+# ===========================================================================
+# Recommendation Engine (NBO)
+# ===========================================================================
+
+class ProductRecommendation(BaseModel):
+    """One product recommendation for a customer."""
+    product_id: str
+    product_name: str
+    propensity_score: float = Field(ge=0.0, le=1.0)
+    is_eligible: bool
+    is_upsell: bool = False
+    upgrade_from: str | None = None
+    reason_codes: list[str] = Field(default_factory=list)
+    campaign_id: str | None = None
+    campaign_name: str | None = None
+    channel: str | None = None
+
+
+class RecommendationResponse(BaseModel):
+    """Full product recommendation output for a single customer."""
+    customer_id: str
+    as_of_date: date
+    recommendations: list[ProductRecommendation] = Field(default_factory=list)
+    cross_sell_rules_applied: list[dict] = Field(default_factory=list)
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class CampaignTargetList(BaseModel):
+    """Campaign audience sizing response."""
+    campaigns: list[dict] = Field(default_factory=list)
+    total_campaigns: int = 0
+
+
+# ===========================================================================
+# Insight & Explanation Engine
+# ===========================================================================
+
+class ReasonCode(BaseModel):
+    """One structured reason code from the Reason Code Generator."""
+    code: str
+    severity: Literal["HIGH", "MEDIUM", "LOW"]
+    category: Literal["RISK", "OPPORTUNITY", "NEUTRAL"]
+    detail: dict = Field(default_factory=dict)
+
+
+class ExplanationResponse(BaseModel):
+    """Deterministic explanation of a decision package."""
+    decision_id: str
+    customer_id: str
+    top_reasons: list[ReasonCode] = Field(default_factory=list)
+    decision_summary: str = ""
+    confidence_factors: dict = Field(default_factory=dict)
+    computed_at: datetime = Field(default_factory=datetime.utcnow)
     upstream: dict = Field(default_factory=dict)

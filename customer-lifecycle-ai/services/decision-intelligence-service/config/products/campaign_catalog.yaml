@@ -1,0 +1,52 @@
+# ABSA Campaign Catalog — YAML-driven.
+# Maps products to active marketing campaigns.
+# Recommendation Engine loads this at startup.
+
+campaigns:
+  - id: PL_AUG_2026
+    name: "Personal Loan — August 2026 Promotion"
+    product: PERSONAL_LOAN
+    target_segments: ["MASS_MARKET", "MASS_AFFLUENT"]
+    channel: "DIGITAL"
+    priority: HIGH
+    active: true
+
+  - id: CC_ONBOARD_Q3
+    name: "Credit Card Onboarding — Q3 2026"
+    product: CREDIT_CARD
+    target_segments: ["MASS_MARKET", "MASS_AFFLUENT", "AFFLUENT"]
+    channel: "DIGITAL"
+    priority: HIGH
+    active: true
+
+  - id: MORTGAGE_AFFLUENT
+    name: "Mortgage — Affluent Segment"
+    product: MORTGAGE
+    target_segments: ["AFFLUENT", "SME"]
+    channel: "RM"
+    priority: MEDIUM
+    active: true
+
+  - id: INSURANCE_RETENTION
+    name: "Insurance Cross-Sell — Retention Bundle"
+    product: INSURANCE
+    target_segments: ["MASS_MARKET", "MASS_AFFLUENT", "AFFLUENT"]
+    channel: "DIGITAL"
+    priority: MEDIUM
+    active: true
+
+  - id: INVESTMENT_WEALTH
+    name: "Investment Products — Wealth Building"
+    product: INVESTMENT
+    target_segments: ["MASS_AFFLUENT", "AFFLUENT"]
+    channel: "RM"
+    priority: LOW
+    active: true
+
+  - id: FX_BUSINESS
+    name: "FX Services — Business Banking"
+    product: FX_SERVICES
+    target_segments: ["SME", "CORPORATE"]
+    channel: "RM"
+    priority: LOW
+    active: true

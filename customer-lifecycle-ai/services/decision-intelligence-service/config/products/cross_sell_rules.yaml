@@ -1,0 +1,56 @@
+# ABSA Cross-Sell Rules — YAML-driven.
+# Triggers: when customer holds certain products, boost other product scores.
+# Recommendation Engine loads this at startup.
+
+rules:
+  - id: SAVINGS_TO_CREDIT_CARD
+    description: "Customer has Savings + Salary → offer Credit Card"
+    trigger:
+      products_held: ["SAVINGS"]
+      has_salary_credit: true
+    target: CREDIT_CARD
+    boost: 0.25
+    reason: "Salary credit customers show 2.3x credit card uptake"
+
+  - id: SAVINGS_TO_PERSONAL_LOAN
+    description: "Customer has Savings + High balance → offer Personal Loan"
+    trigger:
+      products_held: ["SAVINGS"]
+      high_balance: true
+    target: PERSONAL_LOAN
+    boost: 0.20
+    reason: "High-balance savings customers are prime loan candidates"
+
+  - id: SALARY_TO_INSURANCE
+    description: "Customer has Salary → offer Insurance"
+    trigger:
+      has_salary_credit: true
+    target: INSURANCE
+    boost: 0.15
+    reason: "Income protection bundling increases retention by 18%"
+
+  - id: CURRENT_TO_FX
+    description: "Customer has Current Account + High income → offer FX"
+    trigger:
+      products_held: ["CURRENT_ACCOUNT"]
+      min_income_band: "HIGH"
+    target: FX_SERVICES
+    boost: 0.30
+    reason: "High-income current account holders frequently need FX services"
+
+  - id: LOAN_TO_INSURANCE
+    description: "Customer has Personal Loan → offer Insurance"
+    trigger:
+      products_held: ["PERSONAL_LOAN"]
+    target: INSURANCE
+    boost: 0.20
+    reason: "Loan holders benefit from credit life insurance"
+
+  - id: CARD_TO_INVESTMENT
+    description: "Customer has Credit Card + Affluent → offer Investment"
+    trigger:
+      products_held: ["CREDIT_CARD"]
+      min_segment: "MASS_AFFLUENT"
+    target: INVESTMENT
+    boost: 0.20
+    reason: "Affluent card holders show 1.8x investment product uptake"

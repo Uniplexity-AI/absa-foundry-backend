@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from gateway.routes import auth_routes, admin_routes, api_key_routes, etl_routes, feature_routes
 from gateway.routes import customer_routes, prediction_routes, models_routes
+from gateway.routes import recommendation_routes, insight_routes
 from shared.config.settings import settings
 
 # ---------------------------------------------------------------------------
@@ -79,6 +80,8 @@ def create_app() -> FastAPI:
     app.include_router(customer_routes.router)
     app.include_router(prediction_routes.router)
     app.include_router(models_routes.router)
+    app.include_router(recommendation_routes.router)
+    app.include_router(insight_routes.router)
 
     # ---- Health check ----
     @app.get("/health")

@@ -13,9 +13,9 @@ import httpx
 logger = logging.getLogger("decision.upstream")
 
 # Upstream service URLs
-FEATURE_SERVICE_URL = "http://100.82.12.85:8002"
-STATE_SERVICE_URL = "http://100.82.12.85:8003"
-PREDICTION_SERVICE_URL = "http://100.82.12.85:8004"
+FEATURE_SERVICE_URL = "http://localhost:8002"
+STATE_SERVICE_URL = "http://localhost:8003"
+PREDICTION_SERVICE_URL = "http://localhost:8004"
 
 TIMEOUT = 5.0  # seconds
 MAX_RETRIES = 2
