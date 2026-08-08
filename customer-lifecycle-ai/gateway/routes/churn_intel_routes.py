@@ -17,6 +17,10 @@ async def proxy_drivers(request: Request):
 async def proxy_segments(request: Request):
     return await _forward(request, "/churn-intel/segments")
 
+@router.get("/branches")
+async def proxy_branches(request: Request):
+    return await _forward(request, "/churn-intel/branches")
+
 async def _forward(request: Request, target_path: str) -> JSONResponse:
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:

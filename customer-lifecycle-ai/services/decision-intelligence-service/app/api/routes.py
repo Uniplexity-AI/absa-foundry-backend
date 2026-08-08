@@ -259,6 +259,14 @@ def get_segment_analysis(as_of_date: date | None = Query(default=None)):
     return {"as_of_date": as_of_date or date.today(), "segments": segments}
 
 
+@churn_intel_router.get("/branches")
+def get_branch_analysis(as_of_date: date | None = Query(default=None)):
+    """Branch-level churn performance rankings."""
+    from app.engines.churn_intelligence.branch_analyzer import analyze_branches
+    branches = analyze_branches(as_of_date)
+    return {"as_of_date": as_of_date or date.today(), "branches": branches}
+
+
 # ===========================================================================
 # Forecast
 # ===========================================================================
