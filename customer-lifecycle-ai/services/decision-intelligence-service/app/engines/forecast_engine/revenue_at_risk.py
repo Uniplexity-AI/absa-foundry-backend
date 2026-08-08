@@ -71,18 +71,16 @@ def forecast_revenue_at_risk(as_of_date: date | None = None, horizon_days: int =
 
 
 def _fallback(as_of_date: date, horizon_days: int) -> dict:
+    segments = [
+        {"segment": "CORPORATE", "projected_churn": 20, "avg_clv_zmw": 500000, "revenue_at_risk_zmw": 10000000.00},
+        {"segment": "AFFLUENT", "projected_churn": 102, "avg_clv_zmw": 75000, "revenue_at_risk_zmw": 7650000.00},
+        {"segment": "SME", "projected_churn": 48, "avg_clv_zmw": 120000, "revenue_at_risk_zmw": 5760000.00},
+        {"segment": "MASS_AFFLUENT", "projected_churn": 204, "avg_clv_zmw": 25000, "revenue_at_risk_zmw": 5100000.00},
+        {"segment": "MASS_MARKET", "projected_churn": 306, "avg_clv_zmw": 5000, "revenue_at_risk_zmw": 1530000.00},
+    ]
     return {
-        "as_of_date": str(as_of_date),
-        "horizon_days": horizon_days,
-        "total_customers": 4998,
-        "projected_churn": 680,
-        "total_revenue_at_risk_zmw": 12400000.00,
-        "by_segment": [
-            {"segment": "MASS_AFFLUENT", "projected_churn": 204, "avg_clv_zmw": 25000, "revenue_at_risk_zmw": 5100000.00},
-            {"segment": "MASS_MARKET", "projected_churn": 306, "avg_clv_zmw": 5000, "revenue_at_risk_zmw": 1530000.00},
-            {"segment": "AFFLUENT", "projected_churn": 102, "avg_clv_zmw": 75000, "revenue_at_risk_zmw": 7650000.00},
-            {"segment": "SME", "projected_churn": 48, "avg_clv_zmw": 120000, "revenue_at_risk_zmw": 5760000.00},
-            {"segment": "CORPORATE", "projected_churn": 20, "avg_clv_zmw": 500000, "revenue_at_risk_zmw": 10000000.00},
-        ],
-        "monthly_churn_cost_zmw": 4133333.33,
+        "as_of_date": str(as_of_date), "horizon_days": horizon_days,
+        "total_customers": 4998, "projected_churn": 680,
+        "total_revenue_at_risk_zmw": 30040000.00,
+        "by_segment": segments, "monthly_churn_cost_zmw": 10013333.33,
     }
