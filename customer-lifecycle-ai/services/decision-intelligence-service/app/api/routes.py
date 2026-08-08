@@ -33,6 +33,49 @@ def compute_batch(
     return _service.compute_batch(as_of_date, strategy, max_customers)
 
 
+@router.get("/digital-retention")
+def get_digital_retention(limit: int = Query(default=20)):
+    """Which customers can be retained digitally vs need RM attention?"""
+    from app.context.builder import build_decision_context
+    from app.engines.action_generator import ActionGenerator
+    from app.engines.ranking_engine import RankingEngine
+    from app.engines.routing_engine import RoutingEngine
+
+    action_gen = ActionGenerator(); ranker = RankingEngine(); router = RoutingEngine()
+    digital, rm_required = [], []
+    for cid in [f"CUST{i:05d}" for i in range(1, min(limit + 1, 500))]:
+        try:
+            ctx = build_decision_context(cid, date.today())
+            if ctx.kyc_expired or ctx.aml_flag: continue
+            candidates = action_gen.generate()
+            eligible = [c for c in candidates if c.category != "passive"]
+            if not eligible: continue
+            ranked = ranker.rank(eligible, ctx, top_n=3)
+            r = router.route(ranked[0], ctx)
+            entry = {"customer_id": cid, "state": ctx.customer_state, "health_score": ctx.health_score,
+                     "churn_probability": round(ctx.churn_probability, 3), "top_action": ranked[0].action,
+                     "segment": ctx.segment, "channel": r.channel, "reason": r.reason}
+            if r.channel in ("DIGITAL", "MARKETING"): digital.append(entry)
+            elif r.channel in ("RM_DIRECT", "RM_CALL"): rm_required.append(entry)
+        except Exception: pass
+
+    total = len(digital) + len(rm_required)
+    return {
+        "total_evaluated": min(limit + 1, 500),
+        "digital_retention_candidates": len(digital),
+        "rm_attention_required": len(rm_required),
+        "digital_customers": digital[:10],
+        "rm_customers": rm_required[:5],
+        "recommendation": f"Of evaluated: {len(digital)} digital-retainable, {len(rm_required)} need RM. Digital = ~{round(len(digital)/total*100) if total else 0}% workload reduction.",
+    }
+
+
+@router.get("/queue/{rm_id}")
+def get_queue(rm_id: str, limit: int = Query(default=20)):
+    batch = _service.compute_batch(None, "BALANCED", max_customers=limit)
+    return {"rm_id": rm_id, "queue_size": batch.decisions_generated, "limit": limit}
+
+
 @router.get("/{customer_id}", response_model=DecisionPackage)
 def get_decision(
     customer_id: str,
