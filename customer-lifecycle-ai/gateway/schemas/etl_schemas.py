@@ -77,3 +77,59 @@ class ETLDashboardResponse(BaseModel):
     total_runs: int
     page: int
     limit: int
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Batch Detail Schemas (GET /api/etl/runs/{runId})
+# ═══════════════════════════════════════════════════════════════════
+
+class RunDetail(BaseModel):
+    """Full audit record for a single run."""
+    id: int
+    run_id: str = Field(alias="runId")
+    batch_id: str | None = Field(default=None, alias="batchId")
+    status: str
+    pipeline_name: str | None = Field(default=None, alias="pipelineName")
+    triggered_by: str | None = Field(default=None, alias="triggeredBy")
+    started_at: str | None = Field(default=None, alias="startedAt")
+    completed_at: str | None = Field(default=None, alias="completedAt")
+    duration_seconds: float | None = Field(default=None, alias="durationSeconds")
+    duration: str
+    rows_received: int = Field(alias="rowsReceived")
+    rows_valid: int = Field(alias="rowsValid")
+    rows_loaded: int = Field(alias="rowsLoaded")
+    rows_rejected: int = Field(alias="rowsRejected")
+    rows_skipped: int = Field(default=0, alias="rowsSkipped")
+    duplicates_detected: int = Field(default=0, alias="duplicatesDetected")
+    warnings_count: int = Field(default=0, alias="warningsCount")
+    errors_count: int = Field(default=0, alias="errorsCount")
+    quality_score: float | None = Field(default=None, alias="qualityScore")
+    error_message: str | None = Field(default=None, alias="errorMessage")
+    source_type: str | None = Field(default=None, alias="sourceType")
+    source_name: str | None = Field(default=None, alias="sourceName")
+    sla_threshold: float = 95.0
+
+    model_config = {"populate_by_name": True}
+
+
+class ValidationDetail(BaseModel):
+    """Validation run summary for a batch."""
+    run_id: str | None = Field(default=None, alias="validationRunId")
+    status: str | None = None
+    total_records: int = 0
+    valid_records: int = 0
+    invalid_records: int = 0
+    duplicate_records: int = 0
+    total_errors: int = 0
+    total_warnings: int = 0
+    quality_score: float | None = None
+    error_by_category: dict | None = Field(default=None, alias="errorByCategory")
+    error_by_rule: dict | None = Field(default=None, alias="errorByRule")
+
+    model_config = {"populate_by_name": True}
+
+
+class ETLRunDetailResponse(BaseModel):
+    """Full batch detail: run + validation data."""
+    run: RunDetail
+    validation: ValidationDetail | None = None

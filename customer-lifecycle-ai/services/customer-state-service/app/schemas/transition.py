@@ -17,10 +17,10 @@ class TransitionRecord(BaseModel):
 
 
 class TransitionMatrix(BaseModel):
-    """4×4 Markov transition probability matrix with cold-start handling."""
+    """N×N Markov transition probability matrix with cold-start handling."""
     as_of_date: date
     window_days: int
-    states: list[str] = Field(default_factory=lambda: ["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"])
+    states: list[str] = Field(default_factory=lambda: ["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"])
     matrix: list[list[float | None]]  # null rows = insufficient data
     steady_state: dict[str, float] | None = None  # null if matrix degenerate
     warnings: list[dict] = Field(default_factory=list)

@@ -81,7 +81,7 @@ def generate(as_of_date: str):
           f"AT_RISK or DORMANT — need attention before they churn.")
     print(f"  {churned_n} ({churned_pct:.0f}%) have already churned.\n")
 
-    for state in ["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]:
+    for state in ["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"]:
         if state in state_data:
             r = state_data[state]
             pct = r["customers"] / total * 100
@@ -191,13 +191,13 @@ def generate(as_of_date: str):
             GROUP BY 1,2 ORDER BY 1,2
         """, (prev_date, as_of_date))
 
-        states = ["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
+        states = ["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"]
         matrix = {(r["f"], r["t"]): r["n"] for r in cur.fetchall()}
 
         print(f"  {prev_date} → {as_of_date}:")
         header = "From \\ To"
-        print(f"  {header:<12s} {'ACTIVE':>8s} {'AT_RISK':>8s} "
-              f"{'DORMANT':>8s} {'CHURNED':>8s}")
+        print(f"  {header:<12s} {'NEW':>8s} {'ACTIVE':>8s} {'GROWING':>8s} "
+              f"{'AT_RISK':>8s} {'DORMANT':>8s} {'CHURNED':>8s}")
         print(f"  {'-'*50}")
 
         for fs in states:

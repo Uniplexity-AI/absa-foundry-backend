@@ -29,7 +29,7 @@ FEATURES = [
     "health_score","churn_probability","clv_percentile","engagement_score",
     "tenure_months","age","days_since_last_txn","total_amount_90d",
     "has_salary_credit","txn_count_30d",
-    "st_active","st_at_risk","st_dormant","st_churned",
+    "st_new","st_active","st_growing","st_at_risk","st_dormant","st_churned",
     "act_retention","act_cross_sell","act_engagement","act_service","act_passive",
 ]
 

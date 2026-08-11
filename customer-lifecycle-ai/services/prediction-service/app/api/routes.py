@@ -15,8 +15,12 @@ from app.schemas.schemas import (
     CustomerHealth,
     CustomerPrediction,
     ModelsResponse,
+    PerformanceHistoryResponse,
+    FeatureDriftResponse,
+    PredictionLogResponse,
 )
 from app.services.service import PredictionService
+from app.services.monitoring import MonitoringService
 
 router = APIRouter(prefix="/predict", tags=["prediction"])
 _service = PredictionService()
@@ -83,6 +87,32 @@ def get_health(
             ),
         )
     return result
+
+
+_monitoring = MonitoringService()
+
+
+@router.get("/monitoring/performance-history", response_model=PerformanceHistoryResponse)
+def get_performance_history(
+    horizon_days: int = 30,
+) -> PerformanceHistoryResponse:
+    """Time-series model performance metrics over N days."""
+    return _monitoring.get_performance_history(horizon_days)
+
+
+@router.get("/monitoring/feature-drift", response_model=FeatureDriftResponse)
+def get_feature_drift() -> FeatureDriftResponse:
+    """Feature drift (PSI) monitor comparing training vs current distribution."""
+    return _monitoring.get_feature_drift()
+
+
+@router.get("/monitoring/prediction-log", response_model=PredictionLogResponse)
+def get_prediction_log(
+    limit: int = 50,
+    offset: int = 0,
+) -> PredictionLogResponse:
+    """Recent prediction log entries from the inference pipeline."""
+    return _monitoring.get_prediction_log(limit, offset)
 
 
 @router.get("/{customer_id}", response_model=CustomerPrediction)

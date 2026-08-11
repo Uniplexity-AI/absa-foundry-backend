@@ -84,3 +84,55 @@ class ModelSummary(BaseModel):
 class ModelsResponse(BaseModel):
     """List of registered models."""
     models: list[ModelSummary]
+
+
+# ── Model Monitoring ──────────────────────────────────────────────
+
+class PerformancePoint(BaseModel):
+    """One data point in the performance-over-time series."""
+    date: str
+    auc: float
+    precision: float
+    recall: float
+    log_loss: float
+
+
+class PerformanceHistoryResponse(BaseModel):
+    """Time-series model performance metrics."""
+    model_id: str
+    horizon_days: int
+    history: list[PerformancePoint]
+
+
+class FeatureDriftItem(BaseModel):
+    """PSI and distribution stats for one feature."""
+    name: str
+    training_mean: float
+    current_mean: float
+    drift_score: float  # PSI value
+    invert_shift: bool
+    status: str  # "STABLE", "WARNING", "CRITICAL"
+
+
+class FeatureDriftResponse(BaseModel):
+    """Feature drift monitoring results."""
+    model_id: str
+    threshold: float = 0.20
+    features: list[FeatureDriftItem]
+
+
+class PredictionLogEntry(BaseModel):
+    """One row in the live prediction log."""
+    timestamp: str
+    correlation_id: str
+    customer_id: str
+    churn_probability: float
+    predicted_class: str
+    latency_ms: float
+
+
+class PredictionLogResponse(BaseModel):
+    """Paginated prediction log."""
+    model_id: str
+    total_predictions: int
+    predictions: list[PredictionLogEntry]

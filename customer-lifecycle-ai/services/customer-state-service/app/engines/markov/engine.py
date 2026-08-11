@@ -1,9 +1,7 @@
 """Markov Chain Engine — First-order discrete-time Markov Chain.
 
-Builds 4×4 transition probability matrix from observed state_transitions.
+Builds N×N transition probability matrix from observed state_transitions.
 Predicts next-state probabilities and computes steady-state distribution.
-
-Dependencies: numpy (matrix ops, eigenvector) — already in requirements.txt.
 """
 from __future__ import annotations
 
@@ -13,7 +11,7 @@ import numpy as np
 
 logger = logging.getLogger("customer_state.markov")
 
-_STATES = ["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
+_STATES = ["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"]
 _STATE_INDEX: dict[str, int] = {s: i for i, s in enumerate(_STATES)}
 
 
@@ -42,7 +40,8 @@ class MarkovEngine:
         self._warnings = []
 
         # Initialize count matrix
-        count_matrix = np.zeros((4, 4), dtype=np.float64)
+        n = len(_STATES)
+        count_matrix = np.zeros((n, n), dtype=np.float64)
 
         for row in transition_counts:
             from_s = row["from_state"]
@@ -53,7 +52,8 @@ class MarkovEngine:
                 count_matrix[_STATE_INDEX[from_s], _STATE_INDEX[to_s]] = cnt
 
         # Build probability matrix with cold-start handling
-        prob_matrix = np.full((4, 4), np.nan, dtype=np.float64)
+        n = len(_STATES)
+        prob_matrix = np.full((n, n), np.nan, dtype=np.float64)
 
         for i, state_name in enumerate(_STATES):
             row_total = count_matrix[i].sum()
@@ -94,7 +94,8 @@ class MarkovEngine:
         result: list[list[float | None]] = []
         for row in self._matrix:
             if np.isnan(row).any():
-                result.append([None, None, None, None])
+                n = len(_STATES)
+                result.append([None] * n)
             else:
                 result.append([float(v) for v in row])
         return result

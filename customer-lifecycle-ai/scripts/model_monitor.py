@@ -135,7 +135,7 @@ def monitor(dates: list[str]) -> None:
 
     # ── 3. State distribution stability ───────────────────────────
     print(f"\n  ── State Distribution ──")
-    states = ["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
+    states = ["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"]
     header = f"  {'Date':<12s}"
     for s in states:
         header += f" {s:>8s}"

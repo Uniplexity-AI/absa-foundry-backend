@@ -310,6 +310,71 @@ def write_audit_record(
     return False
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# Validation Record Writer
+# ═══════════════════════════════════════════════════════════════════════
+
+def write_validation_record(
+    run_id: str,
+    batch_id: str,
+    *,
+    status: str,
+    total_records: int,
+    valid_records: int,
+    invalid_records: int,
+    duplicate_records: int,
+    total_errors: int,
+    total_warnings: int,
+    quality_score: float,
+    error_by_category: dict | None = None,
+    error_by_rule: dict | None = None,
+    config_snapshot: dict | None = None,
+    duration_seconds: float | None = None,
+) -> bool:
+    """Write a validation run summary to etl.etl_validation_run."""
+    try:
+        conn = get_target_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO etl.etl_validation_run (
+                run_id, batch_id, status,
+                total_records, valid_records, invalid_records,
+                duplicate_records, total_errors, total_warnings,
+                quality_score, error_by_category, error_by_rule,
+                config_snapshot, started_at, completed_at, duration_seconds
+            ) VALUES (
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s,
+                %s, %s, %s, %s
+            )
+            """,
+            (
+                run_id, batch_id, status,
+                total_records, valid_records, invalid_records,
+                duplicate_records, total_errors, total_warnings,
+                quality_score,
+                json.dumps(error_by_category) if error_by_category else None,
+                json.dumps(error_by_rule) if error_by_rule else None,
+                json.dumps(config_snapshot) if config_snapshot else None,
+                datetime.now(timezone.utc), datetime.now(timezone.utc), duration_seconds,
+            ),
+        )
+        conn.commit()
+        conn.close()
+        logger.info("Validation record written: run=%s quality=%.1f%%", run_id, quality_score)
+        return True
+    except psycopg2.Error as e:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        logger.error("Failed to write validation record: %s", e)
+        return False
+
+
 def _is_transient_db_error(exc: Exception) -> bool:
     """Check if a DB error is transient (retryable)."""
     return isinstance(exc, (
@@ -950,7 +1015,23 @@ async def run_etl_pipeline(
         )
         if not audit_ok:
             logger.error("Failed to write audit record")
-        elif extraction_result and extractor:
+        else:
+            write_validation_record(
+                run_id=run_id, batch_id=batch_id,
+                status="PASSED" if validation_report.invalid_records == 0 else ("FAILED" if validation_report.quality_score < 95.0 else "PARTIAL"),
+                total_records=total_rows,
+                valid_records=validation_report.valid_records,
+                invalid_records=validation_report.invalid_records,
+                duplicate_records=validation_report.duplicate_records,
+                total_errors=validation_report.total_errors,
+                total_warnings=validation_report.total_warnings,
+                quality_score=validation_report.quality_score,
+                error_by_category=validation_report.error_by_category,
+                error_by_rule=validation_report.error_by_rule,
+                config_snapshot=config.model_dump() if hasattr(config, 'model_dump') else None,
+                duration_seconds=time.monotonic() - start_time,
+            )
+        if extraction_result and extractor:
             # Advance incremental state only after the clean load and audit have
             # both completed successfully.  This prevents data loss on retries.
             extractor.commit_watermark(

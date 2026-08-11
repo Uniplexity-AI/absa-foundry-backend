@@ -176,3 +176,45 @@ class ETLRepository:
         runs = [dict(r._mapping) for r in result.fetchall()]
 
         return runs, total
+
+    # ------------------------------------------------------------------
+    # Single Run Detail
+    # ------------------------------------------------------------------
+
+    async def get_run_by_id(self, run_id: str) -> dict | None:
+        """Fetch full audit record for a single run by audit_id or batch_id."""
+        result = await self._session.execute(
+            text("""
+                SELECT id, audit_id, batch_id, status, pipeline_name,
+                       triggered_by, started_at, completed_at, duration_seconds,
+                       rows_received, rows_valid, rows_loaded, rows_rejected,
+                       rows_skipped, duplicates_detected, warnings_count,
+                       errors_count, quality_score, error_message,
+                       source_type, source_name
+                FROM etl.etl_audit
+                WHERE audit_id = :run_id OR batch_id = :run_id
+                ORDER BY completed_at DESC
+                LIMIT 1
+            """),
+            {"run_id": run_id},
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None
+
+    async def get_validation_for_batch(self, batch_id: str) -> dict | None:
+        """Fetch validation run summary for a given batch_id."""
+        result = await self._session.execute(
+            text("""
+                SELECT run_id, status, total_records, valid_records,
+                       invalid_records, duplicate_records, total_errors,
+                       total_warnings, quality_score,
+                       error_by_category, error_by_rule
+                FROM etl.etl_validation_run
+                WHERE batch_id = :batch_id
+                ORDER BY completed_at DESC
+                LIMIT 1
+            """),
+            {"batch_id": batch_id},
+        )
+        row = result.fetchone()
+        return dict(row._mapping) if row else None

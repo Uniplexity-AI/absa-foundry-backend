@@ -22,7 +22,7 @@ class DecisionContext(BaseModel):
     as_of_date: date
 
     # From State Service (L1, 8003)
-    customer_state: Literal["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"] = "ACTIVE"
+    customer_state: Literal["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"] = "ACTIVE"
     state_duration_days: int = 0
     state_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     previous_state: str | None = None

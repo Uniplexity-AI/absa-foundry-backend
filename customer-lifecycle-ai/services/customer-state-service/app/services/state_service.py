@@ -108,8 +108,7 @@ class StateService:
             cid = row["customer_id"]
             prev = previous_states.get(cid)
 
-            result = self._engine.classify(row, previous_state=prev)
-            result.as_of_date = effective_date
+            result = self._engine.classify(row, previous_state=prev, as_of_date=effective_date)
 
             states_to_upsert.append({
                 "customer_id": cid,

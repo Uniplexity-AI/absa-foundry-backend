@@ -170,7 +170,7 @@ def validate():
     transitions = cur.fetchall()
 
     # Build matrix
-    states = ["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
+    states = ["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"]
     print(f"  {'From':<10s} → {'To':<10s}   Count")
     print(f"  {'-'*35}")
     for t in transitions:

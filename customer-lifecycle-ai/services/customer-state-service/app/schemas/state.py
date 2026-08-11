@@ -21,7 +21,7 @@ class StateResult(BaseModel):
     """
     customer_id: str
     as_of_date: date
-    state: Literal["ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
+    state: Literal["NEW", "ACTIVE", "GROWING", "AT_RISK", "DORMANT", "CHURNED"]
     classification_rules: dict = Field(default_factory=dict)
     previous_state: str | None = None
     is_transition: bool = False
