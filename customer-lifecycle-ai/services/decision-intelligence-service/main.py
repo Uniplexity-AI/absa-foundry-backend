@@ -30,6 +30,10 @@ from app.api.routes import (
 )
 from app.schemas.schemas import PlatformHealth
 
+# Upstream service URLs — env-configurable, default localhost (pilot runs
+# all services on a single host).
+_upstream_host = os.getenv("UPSTREAM_HOST", "localhost")
+
 app = FastAPI(
     title="Decision & Insight Intelligence Platform",
     version="3.0.0",
@@ -49,8 +53,8 @@ def health() -> PlatformHealth:
     return PlatformHealth(
         status="healthy",
         upstream={
-            "feature_service": "http://100.82.12.85:8002",
-            "state_service": "http://100.82.12.85:8003",
-            "prediction_service": "http://100.82.12.85:8004",
+            "feature_service": f"http://{_upstream_host}:8002",
+            "state_service": f"http://{_upstream_host}:8003",
+            "prediction_service": f"http://{_upstream_host}:8004",
         },
     )

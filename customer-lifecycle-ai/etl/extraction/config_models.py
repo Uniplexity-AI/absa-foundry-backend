@@ -435,6 +435,29 @@ class TransformOverridesSpec(BaseModel):
 
 
 # ===========================================================================
+# Validation Overrides (Section 19 — per-spec mandatory-field override)
+# ===========================================================================
+
+class ValidationOverrideSpec(BaseModel):
+    """Per-spec validation overrides merged into the ETL ValidationConfig.
+
+    Lets a non-customer extraction spec declare its own mandatory fields
+    instead of inheriting the customer-centric defaults from etl_config.yaml.
+    Merged by run_etl.py before Phase 2 (ValidationService).
+    """
+    model_config = {"extra": "forbid"}
+
+    enabled: bool | None = Field(
+        default=None,
+        description="Override validation.enabled (None = inherit global)",
+    )
+    mandatory_fields: list[str] | None = Field(
+        default=None,
+        description="Override validation.mandatory_fields (None = inherit global)",
+    )
+
+
+# ===========================================================================
 # Business Rules (Section 18)
 # ===========================================================================
 
@@ -542,6 +565,12 @@ class ExtractionConfigSpec(BaseModel):
     target: TargetSpec | None = Field(
         default=None,
         description="Target clean table and column mapping for ETL bulk insert",
+    )
+
+    # Per-spec validation overrides (mandatory fields) for run_etl.py Phase 2
+    validation: ValidationOverrideSpec | None = Field(
+        default=None,
+        description="Override validation.mandatory_fields / enabled for this dataset",
     )
 
     @model_validator(mode="after")

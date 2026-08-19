@@ -39,7 +39,7 @@ An enterprise-grade AI platform deployed inside a bank's internal infrastructure
 - **GDPR / Data Privacy:** Customer data must be anonymized in non-production environments
 - **Audit Trail:** Every prediction and NBA recommendation must be logged
 - **Explainability:** All model predictions must have SHAP explanations for compliance
-- **Internal Deployment:** Runs on bank-owned Ubuntu servers, NOT in public cloud
+- **Internal Deployment:** Pilot runs on bank-owned Windows Server (no Docker) — services are Uvicorn processes
 - **No Internet Access:** Services run in an air-gapped network; all dependencies vendored
 
 ## Technical Constraints
@@ -47,7 +47,7 @@ An enterprise-grade AI platform deployed inside a bank's internal infrastructure
 - **Python 3.12+** only
 - **FastAPI** for all services (no Django, no Flask)
 - **PostgreSQL 16** as the single database
-- **Docker Compose** for orchestration (no Kubernetes)
+- **No Docker in pilot** — PowerShell scripts (`scripts/pilot_*.ps1`) start/stop Uvicorn processes
 - **No cloud-native services** — everything runs on bare metal/VMs
 - **Redis** is optional but recommended for caching
 
@@ -65,8 +65,8 @@ An enterprise-grade AI platform deployed inside a bank's internal infrastructure
 
 | Service | Port | Health Check |
 |---------|------|-------------|
-| Feature Engineering | 8002 | `Invoke-RestMethod http://100.82.12.85:8002/health` |
-| Customer State (L1) | 8003 | `Invoke-RestMethod http://100.82.12.85:8003/health` |
-| Prediction (L2) | 8004 | `Invoke-RestMethod http://100.82.12.85:8004/health` |
-| Decision Intel (L3) | 8005 | `Invoke-RestMethod http://100.82.12.85:8005/health` |
-| API Gateway | 8080 | `Invoke-RestMethod http://100.82.12.85:8080/health` |
+| Feature Engineering | 8002 | `Invoke-RestMethod http://localhost:8002/health` |
+| Customer State (L1) | 8003 | `Invoke-RestMethod http://localhost:8003/health` |
+| Prediction (L2) | 8004 | `Invoke-RestMethod http://localhost:8004/health` |
+| Decision Intel (L3) | 8005 | `Invoke-RestMethod http://localhost:8005/health` |
+| API Gateway | 8080 | `Invoke-RestMethod http://localhost:8080/health` |

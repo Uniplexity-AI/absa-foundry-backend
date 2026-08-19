@@ -1,7 +1,7 @@
 # Terminal & Tool Patterns — Lessons Learned
 
 > **Purpose:** Document recurring issues encountered when running scripts, terminal commands, and edits in this workspace so they aren't repeated.
-> **Last updated:** 2026-08-07
+> **Last updated:** 2026-08-19
 >
 > **⚠️ BEFORE ANY TASK:** Read `.ai/README.md` (Quick Rules), `.ai/coding-standards.md`, and this file.
 >
@@ -23,7 +23,7 @@
 > 15. ❌ Am I adding routes to a FastAPI router? → Static segments BEFORE `/{param}` catch-alls.
 > 16. ❌ Am I using `str.replace("AND", "and")` on user strings? → Use `re.sub(r'\bAND\b', 'and', ...)` — substring replacement corrupts words like DORMANT.
 > 17. ❌ Am I debugging a silent failure? → Add print/logging inside try/except blocks — swallowed exceptions hide the real error.
-> 18. ❌ Did upstream services go down? → Check `@(8002,8003,8004) | ForEach-Object { Invoke-RestMethod "http://100.82.12.85:$_/health" }` first.
+> 18. ❌ Did upstream services go down? → Check `@(8002,8003,8004) | ForEach-Object { Invoke-RestMethod "http://localhost:$_/health" }` first.
 
 ---
 
@@ -35,14 +35,14 @@ PowerShell has no `curl` command. The `curl` alias maps to `Invoke-WebRequest`, 
 
 ```powershell
 # ❌ FAILS — "Cannot find drive. A drive with the name 'http' does not exist."
-curl -s http://100.82.12.85:8003/health
+curl -s http://localhost:8003/health
 
 # ✅ CORRECT — use Invoke-RestMethod for API calls
-Invoke-RestMethod -Uri "http://100.82.12.85:8003/health"
+Invoke-RestMethod -Uri "http://localhost:8003/health"
 
 # ✅ CORRECT — with error handling
 try {
-    $r = Invoke-RestMethod -Uri "http://100.82.12.85:8003/health" -TimeoutSec 5
+    $r = Invoke-RestMethod -Uri "http://localhost:8003/health" -TimeoutSec 5
     Write-Host ($r | ConvertTo-Json)
 } catch {
     Write-Host "Service not running: $_"
@@ -149,7 +149,7 @@ uv pip install pyjwt passlib bcrypt python-multipart sqlalchemy
 @(8002,8003,8004,8005,8080) | ForEach-Object {
     $port = $_
     try {
-        $r = Invoke-RestMethod -Uri "http://100.82.12.85:$port/health" -TimeoutSec 3
+        $r = Invoke-RestMethod -Uri "http://localhost:$port/health" -TimeoutSec 3
         Write-Host "Port $port : $($r.status) — $($r.service)"
     } catch {
         Write-Host "Port $port : DOWN"
@@ -165,10 +165,10 @@ Set-Location "c:\Users\ADMIN\Desktop\uniplexity-ai\ABSA\absa-foundry-backend\cus
 .\.venv\Scripts\Activate.ps1
 
 # Step 2: Run prediction batch (via API call, not direct Python)
-Invoke-RestMethod -Uri "http://100.82.12.85:8004/predict/batch?as_of_date=2026-08-07" -Method POST
+Invoke-RestMethod -Uri "http://localhost:8004/predict/batch?as_of_date=2026-08-07" -Method POST
 
 # Step 3: Verify results
-Invoke-RestMethod -Uri "http://100.82.12.85:8004/predict/CUST00042/health?as_of_date=2026-08-07"
+Invoke-RestMethod -Uri "http://localhost:8004/predict/CUST00042/health?as_of_date=2026-08-07"
 ```
 
 ### ❌ Multiline `python -c` fails
@@ -432,7 +432,7 @@ The batch prediction is an API call, not a Python script:
 
 ```powershell
 # ✅ CORRECT — POST to the running service
-Invoke-RestMethod -Uri "http://100.82.12.85:8004/predict/batch?as_of_date=2026-07-27" -Method POST -TimeoutSec 120
+Invoke-RestMethod -Uri "http://localhost:8004/predict/batch?as_of_date=2026-07-27" -Method POST -TimeoutSec 120
 
 # Returns: {as_of_date, customers_scored: 4998, chunks_processed: 5, duration_seconds: 2.78, status: "COMPLETED"}
 ```
@@ -443,11 +443,11 @@ Invoke-RestMethod -Uri "http://100.82.12.85:8004/predict/batch?as_of_date=2026-0
 
 ```powershell
 # Check a customer
-Invoke-RestMethod "http://100.82.12.85:8004/predict/CUST00042/churn?as_of_date=2026-07-27"
-Invoke-RestMethod "http://100.82.12.85:8004/predict/CUST00042/health?as_of_date=2026-07-27"
+Invoke-RestMethod "http://localhost:8004/predict/CUST00042/churn?as_of_date=2026-07-27"
+Invoke-RestMethod "http://localhost:8004/predict/CUST00042/health?as_of_date=2026-07-27"
 
 # Verify health scores were backfilled to state service
-Invoke-RestMethod "http://100.82.12.85:8003/states/CUST00042?as_of_date=2026-07-27"
+Invoke-RestMethod "http://localhost:8003/states/CUST00042?as_of_date=2026-07-27"
 # Response includes health_score + component_scores (written by prediction service)
 ```
 
@@ -910,7 +910,7 @@ The Decision Intelligence Platform calls 3 upstream services (8002/8003/8004). W
 @(8002,8003,8004,8005,8080) | ForEach-Object {
     $p = $_
     try {
-        $r = Invoke-RestMethod -Uri "http://100.82.12.85:$p/health" -TimeoutSec 3
+        $r = Invoke-RestMethod -Uri "http://localhost:$p/health" -TimeoutSec 3
         Write-Host "Port $p : UP — $($r.service)"
     } catch {
         Write-Host "Port $p : DOWN"

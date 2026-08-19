@@ -59,21 +59,30 @@
       "path": "champion/churn/xgboost_churn_v1.json",
       "framework": "xgboost",
       "version": 1,
-      "trained_at": "2026-07-29",
+      "trained_at": "2026-08-19",
       "training_dates": [
         "2026-07-17",
         "2026-07-22"
       ],
       "holdout_date": "2026-07-27",
       "metrics": {
-        "auc": 0.7672,
-        "brier": 0.1892,
-        "ece": 0.2854,
-        "log_loss": 0.5663
+        "auc": 0.8117,
+        "brier": 0.2115,
+        "ece": 0.2724,
+        "log_loss": 0.6128
       },
-      "calibrator": null,
-      "feature_count_total": 80,
-      "feature_count_training": 65,
+      "calibrator": {
+        "method": "isotonic",
+        "path": "champion/churn/churn_calibrator_isotonic.joblib",
+        "ece_raw": 0.4038,
+        "ece_platt": 0.0228,
+        "ece_isotonic": 0.0172,
+        "ece_after": 0.0172,
+        "brier_after": 0.0458,
+        "log_loss_after": 0.1771
+      },
+      "feature_count_total": 78,
+      "feature_count_training": 64,
       "leakage_features_excluded": [
         "behav_activity_consistency",
         "behav_inactive_days_90d",
@@ -87,7 +96,6 @@
       ],
       "dead_features_excluded": [
         "behav_txn_count_7d",
-        "credit_to_debit_ratio_90d",
         "prof_declared_vs_observed_income_ratio",
         "temp_afternoon_activity_ratio_90d",
         "temp_evening_activity_ratio_90d",
@@ -108,8 +116,8 @@
         "chan_channel_entropy",
         "chan_digital_adoption_score",
         "chan_mobile_ratio_90d",
-        "computed_at",
         "credit_sum_30d",
+        "credit_to_debit_ratio_90d",
         "customer_segment",
         "customer_tenure_days",
         "days_since_first_txn",
@@ -127,7 +135,6 @@
         "fin_total_credit_90d",
         "fin_total_debit_90d",
         "has_salary_credit",
-        "id",
         "monthly_income_estimate",
         "onboarding_channel",
         "prof_age_band",
@@ -162,47 +169,119 @@
       ],
       "top_features": [
         {
-          "name": "behav_frequency_score",
-          "importance": "0.0457"
+          "name": "temp_payday_activity_ratio_90d",
+          "importance": "0.0385"
+        },
+        {
+          "name": "risk_high_value_txn_ratio_90d",
+          "importance": "0.0378"
         },
         {
           "name": "eng_login_count_30d",
-          "importance": "0.041"
-        },
-        {
-          "name": "temp_weekday_txn_ratio_90d",
-          "importance": "0.0352"
+          "importance": "0.0371"
         },
         {
           "name": "fin_median_txn_amount_90d",
-          "importance": "0.035"
+          "importance": "0.0363"
         },
         {
-          "name": "temp_payday_activity_ratio_90d",
-          "importance": "0.0322"
+          "name": "avg_amount_90d",
+          "importance": "0.0307"
         },
         {
-          "name": "amount_growth_ratio",
-          "importance": "0.0304"
+          "name": "risk_cash_heavy_ratio_90d",
+          "importance": "0.0285"
         },
         {
-          "name": "chan_digital_adoption_score",
-          "importance": "0.0296"
+          "name": "total_amount_90d",
+          "importance": "0.0284"
         },
         {
-          "name": "fin_total_credit_90d",
-          "importance": "0.0295"
+          "name": "distinct_channels_90d",
+          "importance": "0.0283"
         },
         {
           "name": "age_years",
-          "importance": "0.029"
+          "importance": "0.0283"
         },
         {
           "name": "customer_tenure_days",
-          "importance": "0.0288"
+          "importance": "0.0275"
         }
       ],
-      "notes": "PoC model \u2014 trained on account-closure-only labels (526 positives across ['2026-07-17', '2026-07-22']). AUC is directional, not precise. Probabilities are UNCALIBRATED ranking scores \u2014 do NOT treat churn_prob as a true probability. If AUC > 0.90, re-check for feature leakage. Calibration deferred to production (D12)."
+      "diagnostics": {
+        "plots": {
+          "roc_curve": "roc_curve.png",
+          "calibration": "calibration.png",
+          "feature_importance": "feature_importance.png",
+          "calibration_comparison": "calibration_comparison.png"
+        },
+        "health": {
+          "data_health": {
+            "test_missing_ratio": 0.0001,
+            "test_samples": 4998,
+            "test_positives": 263,
+            "test_negatives": 4735
+          },
+          "model_health": {
+            "train_auc": 0.8552,
+            "test_auc": 0.8117,
+            "overfit_gap": 0.0435,
+            "overfit_flag": true
+          }
+        },
+        "drift": {
+          "max_psi": 9.5106,
+          "drift_level": "high",
+          "top_drifted_features": [
+            {
+              "feature": "avg_days_between_txn",
+              "psi": 9.5106
+            },
+            {
+              "feature": "txn_count_90d",
+              "psi": 5.8184
+            },
+            {
+              "feature": "txn_count_180d",
+              "psi": 4.7813
+            },
+            {
+              "feature": "total_amount_180d",
+              "psi": 0.2919
+            },
+            {
+              "feature": "total_amount_90d",
+              "psi": 0.14
+            },
+            {
+              "feature": "days_since_first_txn",
+              "psi": 0.1195
+            },
+            {
+              "feature": "behav_diversity_score",
+              "psi": 0.0155
+            },
+            {
+              "feature": "behav_active_days_90d",
+              "psi": 0.0154
+            },
+            {
+              "feature": "behav_frequency_score",
+              "psi": 0.0154
+            },
+            {
+              "feature": "distinct_txn_types_90d",
+              "psi": 0.0146
+            }
+          ]
+        },
+        "hallucination": {
+          "overconfidence_ratio": 0.0,
+          "confident_predictions": 0
+        }
+      },
+      "notes": "PoC model \u2014 trained on account-closure-only labels (526 positives across ['2026-07-17', '2026-07-22']). AUC is directional, not precise. Raw probabilities are uncalibrated ranking scores; a calibrator (isotonic) is fitted out-of-fold and applied at inference time. If AUC > 0.90, re-check for feature leakage."
     }
   ]
 }

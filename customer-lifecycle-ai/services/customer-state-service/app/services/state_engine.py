@@ -62,7 +62,7 @@ class StateEngine:
         elif days is not None and days > self._cfg.dormant_days_threshold:
             rules_fired.append(f"inactive_{self._cfg.dormant_days_threshold}d")
             state = "DORMANT"
-        elif txn_count is not None and txn_count <= self._cfg.dormant_txn_count_threshold and days is not None and days > 30:
+        elif txn_count is not None and txn_count <= self._cfg.dormant_txn_count_threshold and days is not None and days > self._cfg.dormant_zero_txn_min_days:
             rules_fired.append("zero_txn_90d")
             state = "DORMANT"
         elif engagement is not None and engagement < self._cfg.engagement_dormant_threshold:
@@ -80,15 +80,15 @@ class StateEngine:
             rules_fired.append("engagement_decay")
             state = "AT_RISK"
 
-        # Priority 4: NEW (onboarding — <90 days tenure)
-        elif tenure_days is not None and tenure_days <= 90:
-            rules_fired.append("new_customer_90d")
+        # Priority 4: NEW (onboarding — below new_tenure_days tenure)
+        elif tenure_days is not None and tenure_days <= self._cfg.new_tenure_days:
+            rules_fired.append(f"new_customer_{self._cfg.new_tenure_days}d")
             state = "NEW"
 
         # Priority 5: GROWING (expanding balance or adding products)
-        elif (balance_growth is not None and balance_growth > 15) or (new_products and new_products > 0):
-            if balance_growth and balance_growth > 15:
-                rules_fired.append("balance_growth_gt_15pct")
+        elif (balance_growth is not None and balance_growth > self._cfg.growing_balance_growth_pct) or (new_products and new_products > 0):
+            if balance_growth and balance_growth > self._cfg.growing_balance_growth_pct:
+                rules_fired.append(f"balance_growth_gt_{int(self._cfg.growing_balance_growth_pct)}pct")
             if new_products and new_products > 0:
                 rules_fired.append("new_product_added")
             state = "GROWING"
@@ -100,7 +100,7 @@ class StateEngine:
         # Hysteresis: don't flip DORMANT→ACTIVE instantly on a single txn
         if previous_state == "DORMANT" and state == "ACTIVE":
             txn_count_30d = features.get("txn_count_30d", 0)
-            if txn_count_30d is None or txn_count_30d < 2:
+            if txn_count_30d is None or txn_count_30d < self._cfg.hysteresis_min_txn_30d:
                 state = "DORMANT"
                 rules_fired = ["hysteresis_hold_dormant"]
 

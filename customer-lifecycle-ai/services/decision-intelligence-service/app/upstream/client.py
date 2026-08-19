@@ -6,16 +6,18 @@ All calls use httpx with timeout, retry, and circuit-breaker protection.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 
 import httpx
 
 logger = logging.getLogger("decision.upstream")
 
-# Upstream service URLs
-FEATURE_SERVICE_URL = "http://localhost:8002"
-STATE_SERVICE_URL = "http://localhost:8003"
-PREDICTION_SERVICE_URL = "http://localhost:8004"
+# Upstream service URLs — configurable via environment, default to localhost
+# (all services run on the same host in the pilot deployment).
+FEATURE_SERVICE_URL = os.getenv("FEATURE_SERVICE_URL", "http://localhost:8002")
+STATE_SERVICE_URL = os.getenv("STATE_SERVICE_URL", "http://localhost:8003")
+PREDICTION_SERVICE_URL = os.getenv("PREDICTION_SERVICE_URL", "http://localhost:8004")
 
 TIMEOUT = 5.0  # seconds
 MAX_RETRIES = 2

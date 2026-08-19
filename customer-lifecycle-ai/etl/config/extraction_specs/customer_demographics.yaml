@@ -1,0 +1,66 @@
+# Customer Demographics — Table 7 → demographics_clean
+# =============================================================================
+# Maps the bank's demographic table (anonymised "Table 7") into demographics_clean.
+#
+# SOURCE TABLE NAME IS A PLACEHOLDER — replace before running:
+#   public.customer_demographics → your real Table 7 name
+#
+# Field mapping (source → backend):
+#   customer_number  → customer_id
+#   marital_status   → marital_status
+#
+# AVAILABLE IN TABLE 7 BUT TARGETS A DIFFERENT/NEW COLUMN:
+#   date_of_birth    → customers_clean.date_of_birth  (already captured by
+#                      customer_master.yaml join — do not duplicate here)
+#   residential_status / place_of_birth / phone_number / mobile_number /
+#   email_address / work_phone  → no columns yet; add to demographics_clean
+#                      if needed (contactability scoring)
+#
+# ⚠️ PRIMARY-KEY CONFLICT: demographics_clean has PK customer_id and bulk_insert
+#    does a plain INSERT (no upsert). This spec and employment_income.yaml both
+#    write demographics_clean. Run them as ONE merged spec (join Table 7 + 9),
+#    or add ON CONFLICT upsert to bulk_insert before running both.
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_demographics.yaml
+# =============================================================================
+
+version: "1.0"
+dataset_name: "customer_demographics"
+description: "Customer demographics (Table 7) → demographics_clean (marital status)."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
+
+primary_entity:
+  table: "${source_tables.customer_demographics}"   # see pilot_data_config.yaml
+  alias: "demo"
+  select_fields:
+    - field: "customer_number"            # TODO: confirm the key column name
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "marital_status"
+      alias: "marital_status"
+      validation: { type: "str", required: false }
+
+validation:
+  mandatory_fields:
+    - customer_id
+
+target:
+  clean_table: demographics_clean
+  data_columns:
+    - customer_id
+    - marital_status
+
+streaming:
+  enabled: true
+  batch_size: 10000
+  fetch_strategy: cursor

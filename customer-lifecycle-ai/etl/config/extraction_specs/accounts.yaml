@@ -1,0 +1,117 @@
+# Accounts — Table 1 → accounts_clean
+# =============================================================================
+# Maps the bank's account table (anonymised "Table 1") into accounts_clean.
+# customer_id is attached by joining the customer↔account bridge (Tables 2/3).
+#
+# SOURCE TABLE NAMES ARE PLACEHOLDERS — replace before running:
+#   public.accounts             → your real Table 1 name
+#   public.customer_account_xref → your real Table 2 name (the bridge)
+#
+# Field mapping (source → backend):
+#   account_number  → account_id
+#   account_status  → status
+#   account_type    → account_type
+#   date_opened     → opened_date
+#   branch_number   → branch_code   (NOTE: accounts_clean has no branch_code
+#                                    column — add it, or drop this field)
+#   customer_number (via bridge) → customer_id
+#
+# NOT COVERED (available in Table 1 but no columns yet in accounts_clean):
+#   currency_swift_code / country_currency_number → currency
+#   location_code / sales_location → location segmentation
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/accounts.yaml
+# =============================================================================
+
+version: "1.0"
+dataset_name: "accounts"
+description: "Accounts (Table 1) joined with the ownership bridge (Table 2) → accounts_clean."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
+
+primary_entity:
+  table: "${source_tables.accounts}"               # see pilot_data_config.yaml
+  alias: "acct"
+  select_fields:
+    - field: "account_number"
+      alias: "account_id"
+      validation: { type: "str", required: true }
+    - field: "account_status"
+      alias: "status"
+      validation: { type: "str", required: true }
+    - field: "account_type"
+      alias: "account_type"
+      validation: { type: "str", required: false }
+    - field: "date_opened"
+      alias: "opened_date"
+      validation: { type: "datetime", required: false }
+    - field: "branch_number"
+      alias: "branch_code"
+      validation: { type: "str", required: false }
+
+joins:
+  - table: "${source_tables.customer_account_xref}"   # see pilot_data_config.yaml
+    alias: "xref"
+    join_type: "left"
+    "on":
+      - left: "acct.account_number"
+        right: "xref.account_number"
+    select_fields:
+      - field: "customer_number"
+        alias: "customer_id"
+        validation: { type: "str", required: false }
+
+transform:
+  type_casts:
+    opened_date: datetime
+  standardization:
+    - field_name: status
+      mappings:
+        Active: ACTIVE
+        active: ACTIVE
+        Inactive: INACTIVE
+        inactive: INACTIVE
+        Dormant: DORMANT
+        dormant: DORMANT
+        Closed: CLOSED
+        closed: CLOSED
+      default_value: UNKNOWN
+    - field_name: account_type
+      mappings:
+        Savings: SAVINGS
+        savings: SAVINGS
+        Current: CURRENT
+        current: CURRENT
+        Fixed Deposit: FIXED_DEPOSIT
+        fixed deposit: FIXED_DEPOSIT
+        Loan: LOAN
+        loan: LOAN
+      default_value: UNKNOWN
+
+validation:
+  mandatory_fields:
+    - account_id
+    - status
+
+target:
+  clean_table: accounts_clean
+  data_columns:
+    - account_id
+    - customer_id
+    - account_type
+    - status
+    - opened_date
+
+streaming:
+  enabled: true
+  batch_size: 10000
+  fetch_strategy: cursor

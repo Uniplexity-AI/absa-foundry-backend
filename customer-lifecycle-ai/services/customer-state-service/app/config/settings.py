@@ -21,6 +21,12 @@ class StateConfig(BaseSettings):
     engagement_dormant_threshold: float = 10.0
     engagement_atrisk_max: float = 20.0
 
+    # ---- NEW / GROWING / hysteresis thresholds ----
+    new_tenure_days: int = 90            # tenure <= this -> NEW state
+    growing_balance_growth_pct: float = 15.0  # balance growth > this -> GROWING
+    dormant_zero_txn_min_days: int = 30  # zero-txn DORMANT requires days > this
+    hysteresis_min_txn_30d: int = 2      # DORMANT->ACTIVE requires >= this many txns
+
     # ---- Markov Chain ----
     markov_window_days: int = 180
     markov_min_transitions: int = 50

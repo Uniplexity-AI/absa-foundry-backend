@@ -75,6 +75,31 @@ This file acts as the persistent, self-learning memory ledger for AI agents (Git
 * **Learned Rule:** FastAPI endpoints using `Depends(get_target_session)` need the async driver. Install with `uv pip install asyncpg` before first gateway startup.
 * **Confidence:** High
 
+### [2026-08-19] Extraction spec per-spec mandatory-field override
+* **Context:** Non-customer extraction specs (accounts, demographics, bridge) failed `run_etl.py` Phase 2 because `etl_config.yaml`'s global `validation.mandatory_fields` is customer-centric.
+* **Learned Rule:** Extraction specs support a `validation:` block (merged by `run_etl.py`) to override `mandatory_fields` per dataset. `ValidationOverrideSpec` added to `ExtractionConfigSpec`. Other validators (Schema/Duplicate/BusinessRule) already skip missing columns gracefully — only `MandatoryFieldValidator` breaks.
+* **Confidence:** High
+
+### [2026-08-19] Pilot data config placeholder resolution
+* **Context:** Source table names for real data needed one editable location instead of hardcoding across many spec files.
+* **Learned Rule:** Specs use `${source_tables.<entity>}` placeholders resolved by `etl/config/pilot_data_config.py` (`PilotDataConfig.resolve`) in `ExtractionExecutor._load_spec` and `run_etl.py`'s transform/target/validation merge. Edit `pilot_data_config.yaml` only.
+* **Confidence:** High
+
+### [2026-08-19] Churn probability calibration (isotonic)
+* **Context:** Raw XGBoost probabilities were overconfident (ECE ~0.40). The old "calibration deferred to D12" note was wrong.
+* **Learned Rule:** Fit Platt + isotonic calibrators out-of-fold (`StratifiedKFold` + `cross_val_predict`), pick lowest holdout ECE, persist as joblib, apply in `churn_predictor._apply_calibrator`. Isotonic uses `.predict()`; Platt (`LogisticRegression`) uses `.predict_proba()`.
+* **Confidence:** High
+
+### [2026-08-19] Training leakage from metadata columns
+* **Context:** `id`/`computed_at`/`created_at`/`updated_at` leaked into training, inflating AUC.
+* **Learned Rule:** `NON_FEATURE_COLUMNS` in `scripts/train_models.py` must include all metadata columns. The fix took AUC 0.79 → 0.82.
+* **Confidence:** High
+
+### [2026-08-19] Tailscale IP removed → localhost/env config
+* **Context:** Dev Tailscale IP `100.82.12.85` was hardcoded in decision-intelligence upstream URLs.
+* **Learned Rule:** Upstream service URLs are env-configurable (`UPSTREAM_HOST`, `FEATURE_SERVICE_URL`, `STATE_SERVICE_URL`, `PREDICTION_SERVICE_URL`), defaulting to `localhost`. No hardcoded IPs in runtime code.
+* **Confidence:** High
+
 ---
 
 ## 4. Pending Verification & Workspace Gotchas

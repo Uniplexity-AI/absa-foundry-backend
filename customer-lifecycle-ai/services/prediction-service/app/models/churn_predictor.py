@@ -97,13 +97,19 @@ class ChurnPredictor:
         )
         self._model_version = churn_entry.get("model_id", "churn_v1")
 
-        # Load calibrator if registered (production path — PoC is None)
-        cal_path = churn_entry.get("calibrator")
-        if cal_path:
+        # Load calibrator if registered.
+        # Supports both the new dict format ({path, method, ...}) and the
+        # legacy string-path format. Registry paths are relative to models/.
+        cal = churn_entry.get("calibrator")
+        if cal:
             import joblib
-            cal_full = os.path.join(_PROJECT_ROOT, cal_path)
+            cal_rel = cal["path"] if isinstance(cal, dict) else cal
+            if cal_rel.startswith("models/"):
+                cal_full = os.path.join(_PROJECT_ROOT, cal_rel)
+            else:
+                cal_full = os.path.join(_PROJECT_ROOT, "models", cal_rel)
             self._calibrator = joblib.load(cal_full)
-            logger.info("Calibrator loaded: %s", cal_path)
+            logger.info("Calibrator loaded: %s", cal_rel)
 
         # Defensive: confirm no leakage features are in the training list
         leakage_in_training = set(self._leakage_excluded) & set(
@@ -127,25 +133,35 @@ class ChurnPredictor:
     def model_version(self) -> str:
         return self._model_version
 
+    def _apply_calibrator(self, raw: float) -> float:
+        """Apply the fitted calibrator to a raw model score.
+
+        Handles both calibrator types:
+        - LogisticRegression (Platt): has predict_proba → take class-1 probability
+        - IsotonicRegression: has predict (no predict_proba)
+        """
+        if self._calibrator is None:
+            return raw
+        if hasattr(self._calibrator, "predict_proba"):
+            return float(self._calibrator.predict_proba([[raw]])[0, 1])
+        return float(self._calibrator.predict([raw])[0])
+
     def predict(self, features: dict) -> float:
         """Receive full 56-feature dict; extract only training_features in order.
 
-        PoC: returns raw XGBoost score (ranking score, NOT a true probability).
-        Production: returns calibrated probability if calibrator is registered.
+        Returns the calibrated churn probability when a calibrator is
+        registered, otherwise the raw XGBoost ranking score.
         """
         vector = self._dict_to_vector(features)
         raw = float(self._model.predict_proba([vector])[0, 1])
-        if self._calibrator is not None:
-            return float(self._calibrator.predict_proba([[raw]])[0, 1])
-        return raw
+        return self._apply_calibrator(raw)
 
     def predict_batch(self, feature_rows: list[dict]) -> list[float]:
         """Receive list of full 56-feature dicts; extract training_features from each."""
         vectors = [self._dict_to_vector(r) for r in feature_rows]
         raw = self._model.predict_proba(vectors)[:, 1].tolist()
         if self._calibrator is not None:
-            raw_2d = [[r] for r in raw]
-            return self._calibrator.predict_proba(raw_2d)[:, 1].tolist()
+            return [self._apply_calibrator(r) for r in raw]
         return raw
 
     def _dict_to_vector(self, features: dict) -> list[float]:

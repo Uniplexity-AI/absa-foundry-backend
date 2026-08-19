@@ -1,0 +1,150 @@
+# =============================================================================
+# ABSA Foundry — Pilot Data Configuration
+# =============================================================================
+# SINGLE SOURCE OF TRUTH for the business/data decisions you must make before
+# moving the backend onto real customer data.
+#
+# HOW IT WORKS
+#   Extraction specs reference values here via ${dotted.path} placeholders,
+#   e.g. ${source_tables.customer_master}.  Edit THIS file only — the specs
+#   pick up the changes automatically at run time.  No spec edits required.
+#
+#   Sections marked [REFERENCE] are NOT auto-wired.  They are kept here as a
+#   checklist; sync them with the file noted in each section.
+#
+# Loaded by: etl/config/pilot_data_config.py
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Customer ID — decide this FIRST
+# ---------------------------------------------------------------------------
+# The feature engine joins customer_features (CUST#####) <-> customers_clean
+# (C01######) via RIGHT(id, 5) and a customer_id_mapping table.  Pick ONE
+# canonical format and make every source table use it consistently.
+# ---------------------------------------------------------------------------
+customer_id:
+  format: "C01######"          # example shape
+  regex: "^C[0-9]{8}$"         # validation regex used by customer specs
+  length: 9                    # expected length (for business rules)
+  example: "C01000097"
+
+# ---------------------------------------------------------------------------
+# Source tables — the main thing you will edit
+# ---------------------------------------------------------------------------
+# logical entity -> actual "schema.table" in the Source DB (etl_validation).
+# Replace the right-hand side with the real table name for each anonymised
+# "Table N" from the data discovery.
+# ---------------------------------------------------------------------------
+source_tables:
+  customer_master:        "public.customer_master"         # Table 16
+  customer_demographics:  "public.customer_demographics"   # Table 7
+  customer_account_xref:  "public.customer_account_xref"   # Tables 2 & 3
+  accounts:               "public.accounts"                # Table 1
+  employment_income:      "public.employment_income"       # Table 9
+
+  # Not yet wired into specs (still required data — see §9.5 of the mapping doc):
+  transactions:           "public.customer_transactions"   # REQUIRED — not yet provided
+  balance_history:        "public.balance_history"         # REQUIRED — not yet provided
+  digital_engagement:     "public.digital_engagement"      # Table 4 (partial)
+  loans:                  "public.loans_los"               # Table 12
+  cards:                  "public.cards_page1"             # Table 12
+  interactions:           "public.raw_interactions"        # Table 11
+
+# ---------------------------------------------------------------------------
+# Join keys
+# ---------------------------------------------------------------------------
+join_keys:
+  customer_key: "customer_number"    # column linking customer tables
+  account_key:  "account_number"     # column linking account tables
+
+# ---------------------------------------------------------------------------
+# Churn label — the single most important business decision
+# ---------------------------------------------------------------------------
+# Agree this with the business.  Maps to LABEL_CHURN_COLUMN /
+# LABEL_CHURN_POSITIVE_VALUE in .env and to the training pipeline.
+# ---------------------------------------------------------------------------
+churn_label:
+  column: "status"                       # column in customers_clean
+  positive_values: ["Closed", "Dormant"] # values that mean "churned"
+  date_column: "date_of_status"          # Table 16 field for point-in-time labels
+
+# ---------------------------------------------------------------------------
+# Channel taxonomy [REFERENCE — sync with FE_CHANNEL_* in .env]
+# ---------------------------------------------------------------------------
+channels:
+  mobile:   "MOBILE"
+  atm:      "ATM"
+  branch:   "BRANCH"
+  online:   "ONLINE"
+  internet: "INTERNET"
+
+# ---------------------------------------------------------------------------
+# Accepted values [REFERENCE — sync with etl/config/etl_config.yaml]
+# ---------------------------------------------------------------------------
+accepted_values:
+  customer_status:   [Active, Dormant, Closed, Suspended]
+  account_status:    [Active, Inactive, Dormant, Closed]
+  account_types:     [Savings, Current, Fixed Deposit, Loan]
+  customer_types:    [Retail, SME, Premium, Corporate]
+  currencies:        [ZMW, ZAR, USD, EUR, GBP]
+
+# ---------------------------------------------------------------------------
+# Clean-table DDL decisions [REFERENCE — see REAL-DATA-MAPPING.md §9.2]
+# ---------------------------------------------------------------------------
+# `required` = columns the feature engine expects (must exist).
+# `optional_extra` = columns you may add from the discovery (edit as needed).
+# ---------------------------------------------------------------------------
+clean_tables:
+  customers_clean:
+    required: [customer_id, customer_type, activation_date, date_of_birth, onboarding_channel, branch_code, status]
+    optional_extra: [risk_score, risk_level, internet_bank_ind, marketing_opt_out, gender, kyc_tier, nationality]
+  accounts_clean:
+    required: [account_id, customer_id, account_type, status, opened_date]
+    optional_extra: [branch_code, currency]
+  demographics_clean:
+    required: [customer_id, employment_status, employer_name, monthly_income_declared, marital_status]
+    optional_extra: [employment_type, designation, other_income, source_of_funds, residential_status, education_level]
+  customer_account_map:
+    required: [customer_id, account_id, is_primary, sms_alert_ind, contact_status]
+    optional_extra: []
+
+# ---------------------------------------------------------------------------
+# Training dates [REFERENCE — sync with TRAINING_DATES in .env]
+# ---------------------------------------------------------------------------
+training:
+  dates: "2026-07-17,2026-07-22"
+  holdout_date: "2026-07-27"
+
+# ---------------------------------------------------------------------------
+# Field mappings [REFERENCE — documented for audit; the specs encode these]
+# ---------------------------------------------------------------------------
+# source field -> backend column.  Verify against the real column names.
+# ---------------------------------------------------------------------------
+field_mappings:
+  customer_master:           # Table 16
+    customer_number:        customer_id
+    sex:                    gender
+    customer_status:        status
+    customer_creation_date: activation_date
+    market_segment:         customer_type
+    kyc_status:             kyc_tier
+  accounts:                  # Table 1
+    account_number:         account_id
+    account_status:         status
+    account_type:           account_type
+    date_opened:            opened_date
+    branch_number:          branch_code
+  customer_account_xref:     # Tables 2 & 3
+    customer_number:        customer_id
+    account_number:         account_id
+    primary_account_indicator: is_primary
+    sms_alert_ind:          sms_alert_ind
+    contact_status:         contact_status
+  customer_demographics:     # Table 7
+    customer_number:        customer_id
+    marital_status:         marital_status
+  employment_income:         # Table 9
+    customer_number:        customer_id
+    employment_status:      employment_status
+    employer:               employer_name
+    gross_income:           monthly_income_declared

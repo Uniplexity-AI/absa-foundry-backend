@@ -18,6 +18,7 @@ import psycopg2
 from psycopg2 import extras
 
 from shared.config.settings import settings
+from app.config.settings import FeatureConfig
 
 logger = logging.getLogger("feature_engineering.repository")
 
@@ -235,6 +236,7 @@ class FeatureRepository:
 
     def __init__(self) -> None:
         self._conn_str = settings.database_target_url_sync
+        self._feature_cfg = FeatureConfig()
 
     def _connect(self) -> psycopg2.extensions.connection:
         """Open a connection with timeout and TCP keepalives."""
@@ -272,10 +274,13 @@ class FeatureRepository:
             phase1_rows = cur.rowcount
 
             # Phase 2: Derived features (credit/debit split, trends, salary detection)
-            cur.execute(PHASE2_SQL, {"as_of_date": as_of_date})
-            cur.execute(PHASE2B_SQL, {"as_of_date": as_of_date})
-            conn.commit()
-            phase2_rows = cur.rowcount
+            phase2_rows = 0
+            if self._feature_cfg.enable_phase2_derived:
+                cur.execute(PHASE2_SQL, {"as_of_date": as_of_date})
+                if self._feature_cfg.enable_phase2b_ratio:
+                    cur.execute(PHASE2B_SQL, {"as_of_date": as_of_date})
+                conn.commit()
+                phase2_rows = cur.rowcount
         finally:
             conn.close()
         elapsed = time.monotonic() - t0

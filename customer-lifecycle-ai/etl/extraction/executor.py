@@ -360,6 +360,8 @@ class ExtractionExecutor:
         """Load and validate a YAML extraction spec."""
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
+        from etl.config.pilot_data_config import PilotDataConfig
+        data = PilotDataConfig().resolve(data)
         return ExtractionConfigSpec.model_validate(data)
 
     @staticmethod

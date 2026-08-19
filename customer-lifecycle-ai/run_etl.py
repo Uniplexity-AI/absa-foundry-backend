@@ -812,6 +812,8 @@ async def run_etl_pipeline(
         spec_path = os.path.join(_PROJECT_ROOT, extraction_spec)
         with open(spec_path) as f:
             spec_data = yaml.safe_load(f)
+        from etl.config.pilot_data_config import PilotDataConfig
+        spec_data = PilotDataConfig().resolve(spec_data)
         spec_transform = spec_data.get("transform")
         if spec_transform:
             transforms = spec_transform
@@ -843,6 +845,19 @@ async def run_etl_pipeline(
                     tr.standardization_rules.append(rule)
                 logger.info("  Merged %d standardization rules from extraction spec",
                             len(transforms["standardization"]))
+
+        # Merge validation overrides from spec — lets non-customer specs declare
+        # their own mandatory fields instead of the customer-centric defaults.
+        spec_validation = spec_data.get("validation")
+        if spec_validation:
+            if spec_validation.get("enabled") is not None:
+                config.validation.enabled = bool(spec_validation["enabled"])
+                logger.info("  Overrode validation.enabled from extraction spec: %s",
+                            config.validation.enabled)
+            if spec_validation.get("mandatory_fields") is not None:
+                config.validation.mandatory_fields = list(spec_validation["mandatory_fields"])
+                logger.info("  Overrode mandatory_fields from extraction spec (%d fields)",
+                            len(config.validation.mandatory_fields))
 
         # Merge target table configuration from spec
         spec_target = spec_data.get("target")

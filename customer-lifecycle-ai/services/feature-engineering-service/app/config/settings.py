@@ -39,6 +39,10 @@ class FeatureConfig(BaseSettings):
     financial_salary_min_amount: float = 500.0
     financial_income_window_days: int = 90
 
+    # Feature-group toggles — disable derived features without a code change.
+    enable_phase2_derived: bool = True   # credit/debit split, trend, salary, income
+    enable_phase2b_ratio: bool = True    # credit-to-debit ratio (depends on Phase 2)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
