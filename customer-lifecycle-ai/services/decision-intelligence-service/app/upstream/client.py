@@ -15,9 +15,9 @@ logger = logging.getLogger("decision.upstream")
 
 # Upstream service URLs — configurable via environment, default to localhost
 # (all services run on the same host in the pilot deployment).
-FEATURE_SERVICE_URL = os.getenv("FEATURE_SERVICE_URL", "http://localhost:8002")
-STATE_SERVICE_URL = os.getenv("STATE_SERVICE_URL", "http://localhost:8003")
-PREDICTION_SERVICE_URL = os.getenv("PREDICTION_SERVICE_URL", "http://localhost:8004")
+FEATURE_SERVICE_URL = os.getenv("FEATURE_SERVICE_URL", "http://127.0.0.1:8002")
+STATE_SERVICE_URL = os.getenv("STATE_SERVICE_URL", "http://127.0.0.1:8003")
+PREDICTION_SERVICE_URL = os.getenv("PREDICTION_SERVICE_URL", "http://127.0.0.1:8004")
 
 TIMEOUT = 5.0  # seconds
 MAX_RETRIES = 2
@@ -33,6 +33,9 @@ class UpstreamClient:
     def __init__(self) -> None:
         self._failure_counts: dict[str, int] = {}
         self._circuit_open: set[str] = set()
+        # Single persistent client — creating an httpx.Client per call costs
+        # ~0.75s (SSL context load on Windows); reuse one for connection pooling.
+        self._client = httpx.Client(timeout=TIMEOUT)
 
     # ------------------------------------------------------------------
     # Feature Service (8002)
@@ -97,19 +100,18 @@ class UpstreamClient:
         last_error = None
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                with httpx.Client(timeout=TIMEOUT) as client:
-                    resp = client.get(url, params=params)
-                    if resp.status_code == 200:
-                        self._reset_failures(service)
-                        return resp.json()
-                    elif resp.status_code == 404:
-                        self._reset_failures(service)
-                        return None
-                    else:
-                        logger.warning(
-                            "%s returned %d: %s", url, resp.status_code, resp.text[:200]
-                        )
-                        last_error = f"HTTP {resp.status_code}"
+                resp = self._client.get(url, params=params)
+                if resp.status_code == 200:
+                    self._reset_failures(service)
+                    return resp.json()
+                elif resp.status_code == 404:
+                    self._reset_failures(service)
+                    return None
+                else:
+                    logger.warning(
+                        "%s returned %d: %s", url, resp.status_code, resp.text[:200]
+                    )
+                    last_error = f"HTTP {resp.status_code}"
             except httpx.TimeoutException:
                 logger.warning("Timeout fetching %s (attempt %d/%d)", url, attempt, MAX_RETRIES)
                 last_error = "timeout"

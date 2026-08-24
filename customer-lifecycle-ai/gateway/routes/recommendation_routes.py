@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/v1/recommendations", tags=["recommendations"])
 
-_URL = "http://localhost:8005"
+_URL = "http://127.0.0.1:8005"
 
 
 @router.get("/{customer_id}")

@@ -1,4 +1,4 @@
-﻿"""
+"""
 API Gateway Entry Point — FastAPI application initialization.
 
 Mounts all route modules and middleware:
@@ -21,7 +21,7 @@ from gateway.routes import auth_routes, admin_routes, api_key_routes, etl_routes
 from gateway.routes import customer_routes, prediction_routes, models_routes
 from gateway.routes import recommendation_routes, insight_routes
 from gateway.routes import churn_intel_routes, forecast_routes
-from gateway.routes import monitoring_routes
+from gateway.routes import monitoring_routes, outcome_routes
 from shared.config.settings import settings
 
 # ---------------------------------------------------------------------------
@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(churn_intel_routes.router)
     app.include_router(forecast_routes.router)
     app.include_router(monitoring_routes.router)
+    app.include_router(outcome_routes.router)
 
     # ---- Health check ----
     @app.get("/health")

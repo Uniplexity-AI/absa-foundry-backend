@@ -11,14 +11,14 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/v1/predictions", tags=["predictions"])
 
-_PREDICTION_SERVICE_URL = "http://localhost:8004"
+_PREDICTION_SERVICE_URL = "http://127.0.0.1:8004"
 
 
 @router.get("/markov-matrix")
 async def proxy_markov_matrix(request: Request):
     """Forward Markov transition matrix query to State Service."""
     # Markov matrix lives on the state service, not prediction service
-    return await _forward(request, "http://localhost:8003", "/states/markov/matrix")
+    return await _forward(request, "http://127.0.0.1:8003", "/states/markov/matrix")
 
 
 @router.get("/{customer_id}/churn")

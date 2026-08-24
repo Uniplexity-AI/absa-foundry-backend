@@ -65,21 +65,77 @@
         "2026-07-22"
       ],
       "holdout_date": "2026-07-27",
+      "data": {
+        "train_samples": 7996,
+        "train_positives": 406,
+        "train_negatives": 7590,
+        "holdout_samples": 1000,
+        "holdout_positives": 60,
+        "holdout_negatives": 940,
+        "class_imbalance_pct": 5.08,
+        "scale_pos_weight": 18.6946
+      },
+      "hyperparameters": {
+        "max_depth": 4,
+        "learning_rate": 0.05,
+        "n_estimators": 50,
+        "min_child_weight": 2,
+        "reg_lambda": 1.0,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "scale_pos_weight": 18.6946
+      },
       "metrics": {
-        "auc": 0.8117,
-        "brier": 0.2115,
-        "ece": 0.2724,
-        "log_loss": 0.6128
+        "auc": 0.4737,
+        "brier": 0.2125,
+        "ece": 0.3437,
+        "log_loss": 0.614,
+        "train_logloss": 0.5819,
+        "accuracy": 0.9,
+        "cv_auc": 0.4623,
+        "optimal_threshold": 0.5585,
+        "f1_optimal_threshold": 0.3679
+      },
+      "classification": {
+        "precision": 0.1154,
+        "recall": 0.1,
+        "f1": 0.1071,
+        "confusion_matrix": [
+          [
+            894,
+            46
+          ],
+          [
+            54,
+            6
+          ]
+        ]
+      },
+      "classification_f1_threshold": {
+        "threshold": 0.3679,
+        "precision": 0.0611,
+        "recall": 0.8167,
+        "f1": 0.1137,
+        "confusion_matrix": [
+          [
+            187,
+            753
+          ],
+          [
+            11,
+            49
+          ]
+        ]
       },
       "calibrator": {
         "method": "isotonic",
         "path": "champion/churn/churn_calibrator_isotonic.joblib",
-        "ece_raw": 0.4038,
-        "ece_platt": 0.0228,
-        "ece_isotonic": 0.0172,
-        "ece_after": 0.0172,
-        "brier_after": 0.0458,
-        "log_loss_after": 0.1771
+        "ece_raw": 0.3799,
+        "ece_platt": 0.0101,
+        "ece_isotonic": 0.0095,
+        "ece_after": 0.0095,
+        "brier_after": 0.0565,
+        "log_loss_after": 0.2279
       },
       "feature_count_total": 78,
       "feature_count_training": 64,
@@ -169,44 +225,44 @@
       ],
       "top_features": [
         {
-          "name": "temp_payday_activity_ratio_90d",
-          "importance": "0.0385"
+          "name": "distinct_channels_90d",
+          "importance": "0.0347"
         },
         {
           "name": "risk_high_value_txn_ratio_90d",
-          "importance": "0.0378"
+          "importance": "0.0314"
         },
         {
-          "name": "eng_login_count_30d",
-          "importance": "0.0371"
+          "name": "temp_payday_activity_ratio_90d",
+          "importance": "0.0306"
         },
         {
           "name": "fin_median_txn_amount_90d",
-          "importance": "0.0363"
+          "importance": "0.0299"
         },
         {
-          "name": "avg_amount_90d",
-          "importance": "0.0307"
+          "name": "behav_frequency_score",
+          "importance": "0.0293"
         },
         {
-          "name": "risk_cash_heavy_ratio_90d",
+          "name": "amount_stddev_90d",
+          "importance": "0.0289"
+        },
+        {
+          "name": "risk_txn_volatility_90d",
           "importance": "0.0285"
         },
         {
-          "name": "total_amount_90d",
-          "importance": "0.0284"
+          "name": "debit_sum_30d",
+          "importance": "0.0267"
         },
         {
-          "name": "distinct_channels_90d",
-          "importance": "0.0283"
+          "name": "eng_login_count_7d",
+          "importance": "0.0265"
         },
         {
-          "name": "age_years",
-          "importance": "0.0283"
-        },
-        {
-          "name": "customer_tenure_days",
-          "importance": "0.0275"
+          "name": "temp_weekday_txn_ratio_90d",
+          "importance": "0.0259"
         }
       ],
       "diagnostics": {
@@ -214,65 +270,72 @@
           "roc_curve": "roc_curve.png",
           "calibration": "calibration.png",
           "feature_importance": "feature_importance.png",
+          "learning_curve": "learning_curve.png",
+          "loss_curve": "loss_curve.png",
+          "accuracy_threshold": "accuracy_threshold.png",
+          "confusion_matrix": "confusion_matrix.png",
+          "prediction_distribution": "prediction_distribution.png",
+          "threshold_analysis": "threshold_analysis.png",
           "calibration_comparison": "calibration_comparison.png"
         },
         "health": {
           "data_health": {
             "test_missing_ratio": 0.0001,
-            "test_samples": 4998,
-            "test_positives": 263,
-            "test_negatives": 4735
+            "test_samples": 1000,
+            "test_positives": 60,
+            "test_negatives": 940
           },
           "model_health": {
-            "train_auc": 0.8552,
-            "test_auc": 0.8117,
-            "overfit_gap": 0.0435,
+            "train_auc": 0.8914,
+            "test_auc": 0.4737,
+            "overfit_gap": 0.4177,
             "overfit_flag": true
           }
         },
         "drift": {
-          "max_psi": 9.5106,
+          "max_psi": 0.3515,
           "drift_level": "high",
+          "freeze_scoring": true,
           "top_drifted_features": [
             {
-              "feature": "avg_days_between_txn",
-              "psi": 9.5106
-            },
-            {
-              "feature": "txn_count_90d",
-              "psi": 5.8184
-            },
-            {
-              "feature": "txn_count_180d",
-              "psi": 4.7813
-            },
-            {
               "feature": "total_amount_180d",
-              "psi": 0.2919
+              "psi": 0.3515
             },
             {
               "feature": "total_amount_90d",
-              "psi": 0.14
+              "psi": 0.1606
+            },
+            {
+              "feature": "txn_count_180d",
+              "psi": 0.0955
             },
             {
               "feature": "days_since_first_txn",
-              "psi": 0.1195
+              "psi": 0.0935
+            },
+            {
+              "feature": "avg_days_between_txn",
+              "psi": 0.0703
+            },
+            {
+              "feature": "txn_count_90d",
+              "psi": 0.0337
+            },
+            {
+              "feature": "temp_weekend_txn_ratio_90d",
+              "psi": 0.0277
             },
             {
               "feature": "behav_diversity_score",
-              "psi": 0.0155
+              "psi": 0.0172
+            },
+            {
+              "feature": "fin_median_txn_amount_90d",
+              "psi": 0.0172
             },
             {
               "feature": "behav_active_days_90d",
-              "psi": 0.0154
-            },
-            {
-              "feature": "behav_frequency_score",
-              "psi": 0.0154
-            },
-            {
-              "feature": "distinct_txn_types_90d",
-              "psi": 0.0146
+              "psi": 0.0169
             }
           ]
         },
@@ -281,7 +344,8 @@
           "confident_predictions": 0
         }
       },
-      "notes": "PoC model \u2014 trained on account-closure-only labels (526 positives across ['2026-07-17', '2026-07-22']). AUC is directional, not precise. Raw probabilities are uncalibrated ranking scores; a calibrator (isotonic) is fitted out-of-fold and applied at inference time. If AUC > 0.90, re-check for feature leakage."
+      "notes": "PoC model \u2014 trained on account-closure-only labels (406 positives across ['2026-07-17', '2026-07-22']). AUC 0.4737, 5-fold OOF CV AUC 0.4623. Probabilities are calibrated out-of-fold via isotonic (ECE 0.3799 \u2192 0.0095). If AUC > 0.90, re-check for feature leakage.",
+      "report_pdf": "training_report.pdf"
     }
   ]
 }

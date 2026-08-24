@@ -37,6 +37,7 @@ DDL_STATEMENTS = (
     """,
     "ALTER TABLE customers_clean ADD COLUMN IF NOT EXISTS kyc_tier VARCHAR(16)",
     "ALTER TABLE customers_clean ADD COLUMN IF NOT EXISTS nationality VARCHAR(64)",
+    "ALTER TABLE customers_clean ADD COLUMN IF NOT EXISTS status VARCHAR(16)",
     """
     CREATE TABLE IF NOT EXISTS customer_transactions_clean (
         transaction_id VARCHAR(64) PRIMARY KEY,
@@ -112,6 +113,11 @@ class SyntheticDataGenerator:
     def customers(self) -> pd.DataFrame:
         n, today = self.config.customers, self.config.as_of_date
         ids = [f"CUST{i:07d}" for i in range(1, n + 1)]
+        # Behaviourally-driven churn: ~5% of customers are marked Closed, and
+        # transactions() gives them a 90+ day activity gap so the churn label is
+        # causally linked to recent transaction behaviour (learnable by the model).
+        churn = self.rng.random(n) < 0.05
+        status = np.where(churn, "Closed", "Active")
         return pd.DataFrame({
             "customer_id": ids, "full_name": [self.fake.name() for _ in ids],
             "date_of_birth": [today - dt.timedelta(days=int(self.rng.integers(18 * 365, 80 * 365))) for _ in ids],
@@ -120,16 +126,22 @@ class SyntheticDataGenerator:
             "customer_since_date": [today - dt.timedelta(days=int(self.rng.integers(30, 15 * 365))) for _ in ids],
             "kyc_tier": self.rng.choice(("TIER_1", "TIER_2", "TIER_3"), n, p=(.55, .35, .10)),
             "nationality": self.rng.choice(("ZM", "ZA", "ZW", "TZ", "KE", "MW", "CD", "NG", "GB", "IN"), n, p=(.62, .08, .06, .05, .04, .04, .04, .03, .02, .02)),
+            "status": status,
             "loaded_at": self.loaded_at, "batch_id": self.batch_id,
         })
 
-    def transactions(self, customer_ids: list[str]) -> pd.DataFrame:
+    def transactions(self, customer_ids: list[str], churned_ids: set[str]) -> pd.DataFrame:
         rows, today = [], self.config.as_of_date
         novel_customers = set(self.rng.choice(customer_ids, max(1, int(.15 * len(customer_ids))), replace=False))
         for customer_id in customer_ids:
             habitual = list(self.rng.choice(self.channels, int(self.rng.integers(2, 4)), replace=False))
             count = int(self.rng.integers(20, 120))
-            offsets = list(self.rng.integers(31, 181, count - max(1, count // 4))) + list(self.rng.integers(0, 31, max(1, count // 4)))
+            if customer_id in churned_ids:
+                # Churned customers: activity stops 90+ days before as_of_date,
+                # producing a clean recency/frequency churn signal.
+                offsets = list(self.rng.integers(90, 181, count))
+            else:
+                offsets = list(self.rng.integers(31, 181, count - max(1, count // 4))) + list(self.rng.integers(0, 31, max(1, count // 4)))
             for offset in offsets:
                 recent = offset <= 30
                 available = habitual
@@ -140,7 +152,7 @@ class SyntheticDataGenerator:
                     "transaction_date": timestamp, "amount": round(min(float(self.rng.lognormal(4.2, 1.1)), 50_000), 2),
                     "transaction_type": self._choice(("DEBIT", "CREDIT"), (.72, .28)), "channel": self._choice(available),
                     "merchant_category": self._choice(self.categories), "currency": "ZMW", "loaded_at": self.loaded_at, "batch_id": self.batch_id})
-        return pd.DataFrame(rows).sort_values(("customer_id", "transaction_date")).reset_index(drop=True)
+        return pd.DataFrame(rows).sort_values(["customer_id", "transaction_date"]).reset_index(drop=True)
 
     def products(self, customer_ids: list[str], table: str) -> pd.DataFrame:
         rows, today = [], self.config.as_of_date
@@ -188,7 +200,8 @@ class SyntheticDataGenerator:
     def build(self) -> dict[str, pd.DataFrame]:
         customers = self.customers()
         customer_ids = customers["customer_id"].tolist()
-        return {"customers_clean": customers, "customer_transactions_clean": self.transactions(customer_ids),
+        churned_ids = set(customers.loc[customers["status"] == "Closed", "customer_id"])
+        return {"customers_clean": customers, "customer_transactions_clean": self.transactions(customer_ids, churned_ids),
                 "accounts_clean": self.products(customer_ids, "accounts_clean"), "loans_clean": self.products(customer_ids, "loans_clean"),
                 "cards_clean": self.cards(customer_ids), "digital_engagement_clean": self.engagement(customer_ids), "demographics_clean": self.demographics(customer_ids)}
 

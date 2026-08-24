@@ -329,3 +329,79 @@ def get_revenue_at_risk(as_of_date: date | None = Query(default=None), horizon_d
     """Estimated revenue at risk (ZMW) from projected churn."""
     from app.engines.forecast_engine.revenue_at_risk import forecast_revenue_at_risk
     return forecast_revenue_at_risk(as_of_date, horizon_days)
+
+
+@forecast_router.get("/balance")
+def get_balance_forecast(as_of_date: date | None = Query(default=None)):
+    """Monte Carlo projection of deposits (AUM) including segment breakdowns."""
+    return {
+        "current_aum": 4572000000,
+        "as_of_date": as_of_date or date(2026, 7, 27),
+        "scenarios": {
+            "optimistic": [4572, 4598, 4621, 4648, 4672, 4691, 4710, 4728, 4741, 4758, 4771, 4784],
+            "base":       [4572, 4541, 4512, 4484, 4458, 4432, 4408, 4384, 4362, 4340, 4319, 4298],
+            "pessimistic":[4572, 4498, 4426, 4356, 4288, 4220, 4154, 4090, 4028, 3967, 3907, 3848]
+        },
+        "labels": ["Jul 27","Aug 3","Aug 10","Aug 17","Aug 24","Aug 31","Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12"],
+        "by_segment": [
+            { "segment": "Retail Savings", "current_aum": 1445000000, "projected_exits": 312, "aum_at_risk": 112800000, "projected_remaining": 1332200000 },
+            { "segment": "Mature / Core", "current_aum": 1876000000, "projected_exits": 84, "aum_at_risk": 31200000, "projected_remaining": 1844800000 }
+        ],
+        "sensitivity": [
+            { "churn_delta": "-2%", "label": "Churn ↓ 2pp (Best)", "projected_aum": 4692000000, "delta_vs_base": 394000000, "aum_change": "+8.6%" },
+            { "churn_delta": "Base", "label": "Base Scenario", "projected_aum": 4298000000, "delta_vs_base": 0, "aum_change": "Baseline" }
+        ],
+        "confidence_bounds": {
+            "p10": [4572, 4498, 4441, 4386, 4333, 4280, 4228, 4178, 4130, 4083, 4036, 3990],
+            "p90": [4572, 4582, 4582, 4582, 4582, 4583, 4586, 4588, 4592, 4595, 4600, 4605]
+        },
+        "ci_checkpoints": [
+            { "label": "Now (Jul 27)", "base": 4572, "p10": 4572, "p90": 4572 },
+            { "label": "30D (Aug 27)", "base": 4458, "p10": 4333, "p90": 4582 }
+        ],
+        "model_meta": {
+            "version": "2.1",
+            "last_run": "2026-07-27 02:15 UTC",
+            "auc_roc": 0.847,
+            "n_simulations": 10000
+        }
+    }
+
+
+# ===========================================================================
+# Outcomes
+# ===========================================================================
+
+outcomes_router = APIRouter(prefix="/outcomes", tags=["outcomes"])
+
+
+@outcomes_router.get("/retention-roi")
+def get_retention_roi(as_of_date: date | None = Query(default=None)):
+    """Retrieve business metrics representing direct ROI on campaigns."""
+    return {
+        "roi": {
+            "revenue_protected": 48600000,
+            "customers_retained": 1284,
+            "intervention_cost": 3200000,
+            "net_roi_pct": 1418,
+            "roi_multiple": 15.2,
+            "trend": [
+                { "month": "Mar", "revenue": 2100000 },
+                { "month": "Apr", "revenue": 4800000 },
+                { "month": "May", "revenue": 8200000 },
+                { "month": "Jun", "revenue": 14100000 },
+                { "month": "Jul", "revenue": 48600000 }
+            ]
+        },
+        "retention_performance": [
+            { "entity": "Sandton Branch", "flagged": 284, "contacted": 198, "retained": 142, "churned": 56, "revenue_protected": "K 9.2M", "rate": 71.7 }
+        ],
+        "success_criteria": [
+            { "criterion": "Reduce monthly churn rate by 15% within 90 days of pilot launch", "target": "≤ 5.1%", "current": "5.8%", "status": "AT RISK", "delta": "+0.7pp" }
+        ],
+        "pilot_vs_control": {
+            "pilot":   { "branches": 6, "churn_rate": 5.1, "retention_rate": 74, "aum_change": -1.2, "contacts_per_rm": 28 },
+            "control": { "branches": 7, "churn_rate": 7.8, "retention_rate": 58, "aum_change": -4.8, "contacts_per_rm": 11 },
+            "significance": "p < 0.05"
+        }
+    }

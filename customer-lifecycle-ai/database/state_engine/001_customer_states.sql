@@ -27,8 +27,9 @@ CREATE TABLE IF NOT EXISTS public.customer_states (
     as_of_date      DATE NOT NULL,
 
     -- === Layer 1: State classification ===
+    -- 6-state Absa lifecycle: NEW → ACTIVE → GROWING → AT_RISK → DORMANT → CHURNED
     state           VARCHAR(16) NOT NULL
-                    CHECK (state IN ('ACTIVE', 'AT_RISK', 'DORMANT', 'CHURNED')),
+                    CHECK (state IN ('NEW', 'ACTIVE', 'GROWING', 'AT_RISK', 'DORMANT', 'CHURNED')),
 
     -- Which rules fired during classification (JSONB — extensible)
     -- Example: {"risk_rules": ["30d_inactivity", "engagement_drop"], "active_rules": []}
@@ -64,6 +65,29 @@ CREATE INDEX IF NOT EXISTS idx_customer_states_health
 -- Composite index for "latest state per customer" queries
 CREATE INDEX IF NOT EXISTS idx_customer_states_customer_date
     ON customer_states(customer_id, as_of_date DESC);
+
+
+-- ---------------------------------------------------------------------------
+-- Migration guard: tables created before v2.0 carry a 4-state CHECK constraint
+-- (missing NEW/GROWING). Drop it and re-add the full 6-state constraint.
+-- Idempotent — safe to re-run.
+-- ---------------------------------------------------------------------------
+DO $$
+DECLARE
+    con_name text;
+BEGIN
+    SELECT conname INTO con_name
+    FROM pg_constraint
+    WHERE conrelid = 'public.customer_states'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ILIKE '%state%';
+    IF con_name IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE public.customer_states DROP CONSTRAINT %I', con_name);
+    END IF;
+    ALTER TABLE public.customer_states
+        ADD CONSTRAINT customer_states_state_check
+        CHECK (state IN ('NEW', 'ACTIVE', 'GROWING', 'AT_RISK', 'DORMANT', 'CHURNED'));
+END $$;
 
 
 -- ---------------------------------------------------------------------------

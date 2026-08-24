@@ -38,6 +38,9 @@ class PredictionConfig(BaseSettings):
     # ---- Batch processing ----
     batch_chunk_size: int = 1000  # customers per chunk — bounds memory usage
 
+    # ---- Feature snapshot cache ----
+    feature_cache_ttl_seconds: int = 300  # cache features + CLV percentiles per as_of_date
+
 
 class Settings(BaseSettings):
     """Service settings. Mirrors Feature Engineering Settings pattern."""

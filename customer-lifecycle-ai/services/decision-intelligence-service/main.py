@@ -1,4 +1,4 @@
-﻿"""Decision & Insight Intelligence Platform v3.0 — FastAPI Entry Point.
+"""Decision & Insight Intelligence Platform v3.0 — FastAPI Entry Point.
 
 The bank's central intelligence layer. 6 engines, 25+ endpoints.
 Answers: Why? What? Who? When? What next? What if?
@@ -27,12 +27,13 @@ from app.api.routes import (
     forecast_router,
     recommendation_router,
     insight_router,
+    outcomes_router,
 )
 from app.schemas.schemas import PlatformHealth
 
 # Upstream service URLs — env-configurable, default localhost (pilot runs
 # all services on a single host).
-_upstream_host = os.getenv("UPSTREAM_HOST", "localhost")
+_upstream_host = os.getenv("UPSTREAM_HOST", "127.0.0.1")
 
 app = FastAPI(
     title="Decision & Insight Intelligence Platform",
@@ -46,6 +47,7 @@ app.include_router(churn_intel_router)
 app.include_router(forecast_router)
 app.include_router(recommendation_router)
 app.include_router(insight_router)
+app.include_router(outcomes_router)
 
 
 @app.get("/health", response_model=PlatformHealth)

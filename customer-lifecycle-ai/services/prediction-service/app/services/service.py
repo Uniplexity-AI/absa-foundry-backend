@@ -6,6 +6,7 @@ Follows prediction-service.md §4.6 (chunking) + §8 (API contract).
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from datetime import date, datetime, timezone
 
@@ -58,6 +59,14 @@ class PredictionService:
         self._clv = CLVPredictor()
         self._health = HealthScorer(PredictionConfig())
         self._config = PredictionConfig()
+
+        # Feature snapshot cache — avoids re-scanning customer_features
+        # (~5,000 rows × ~64 cols) plus a PERCENT_RANK() pass on every
+        # single-customer request. Keyed by as_of_date.isoformat():
+        #   { "2026-07-27": (loaded_at_monotonic, features_list, clv_percentiles) }
+        self._feature_cache: dict[str, tuple[float, list[dict], dict[str, float]]] = {}
+        self._cache_lock = threading.Lock()
+        self._cache_ttl = self._config.feature_cache_ttl_seconds
 
     # ── Batch ──────────────────────────────────────────────────────
 
@@ -130,12 +139,51 @@ class PredictionService:
 
     # ── Single Customer ────────────────────────────────────────────
 
+    def _get_feature_snapshot(
+        self, as_of_date: date
+    ) -> tuple[list[dict], dict[str, float]]:
+        """Return (features, clv_percentiles) for a date, cached with TTL.
+
+        customer_features is ~5,000 rows × ~64 columns and was previously
+        re-scanned (plus a PERCENT_RANK() pass) on every single-customer
+        request. The decision service triggers churn + health + health per
+        decision, so this cache turns ~4 full-table scans into 1.
+        """
+        key = as_of_date.isoformat()
+        now = time.monotonic()
+
+        cached = self._feature_cache.get(key)
+        if cached is not None and (now - cached[0]) < self._cache_ttl:
+            logger.info("feature cache HIT  %s (age %.2fs)", key, now - cached[0])
+            return cached[1], cached[2]
+
+        logger.info("feature cache MISS %s — loading features + clv", key)
+
+        # Miss or expired — load under lock (single-flight) to avoid a
+        # thundering herd of duplicate full-table scans.
+        with self._cache_lock:
+            cached = self._feature_cache.get(key)
+            if cached is not None and (time.monotonic() - cached[0]) < self._cache_ttl:
+                logger.info("feature cache HIT  %s (after lock)", key)
+                return cached[1], cached[2]
+
+            t0 = time.perf_counter()
+            features = self._repo.load_features(as_of_date)
+            t1 = time.perf_counter()
+            clv = self._repo.load_clv_percentiles(as_of_date)
+            t2 = time.perf_counter()
+            self._feature_cache[key] = (time.monotonic(), features, clv)
+            logger.info(
+                "feature cache LOAD %s (features %.2fs, clv %.2fs)",
+                key, t1 - t0, t2 - t1,
+            )
+            return features, clv
+
     def get_prediction(
         self, customer_id: str, as_of_date: date
     ) -> CustomerPrediction | None:
         """Full prediction for one customer: churn + CLV + health.  §8.2"""
-        features_list = self._repo.load_features(as_of_date)
-        clv_percentiles = self._repo.load_clv_percentiles(as_of_date)
+        features_list, clv_percentiles = self._get_feature_snapshot(as_of_date)
         state = self._repo.load_state(customer_id, as_of_date)
 
         # Find this customer's feature row
@@ -173,7 +221,7 @@ class PredictionService:
         self, customer_id: str, as_of_date: date
     ) -> CustomerChurn | None:
         """Churn probability only.  §8.2"""
-        features_list = self._repo.load_features(as_of_date)
+        features_list, _ = self._get_feature_snapshot(as_of_date)
         customer_features = None
         for row in features_list:
             if row["customer_id"] == customer_id:
@@ -196,8 +244,7 @@ class PredictionService:
         self, customer_id: str, as_of_date: date
     ) -> CustomerHealth | None:
         """Health score breakdown.  §8.2"""
-        features_list = self._repo.load_features(as_of_date)
-        clv_percentiles = self._repo.load_clv_percentiles(as_of_date)
+        features_list, clv_percentiles = self._get_feature_snapshot(as_of_date)
 
         customer_features = None
         for row in features_list:

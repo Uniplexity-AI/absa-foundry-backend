@@ -11,13 +11,25 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
 
-_STATE_SERVICE_URL = "http://localhost:8003"
+_STATE_SERVICE_URL = "http://127.0.0.1:8003"
 
 
 @router.get("/portfolio")
 async def proxy_portfolio(request: Request):
     """Forward portfolio summary query."""
     return await _forward(request, "/states/portfolio")
+
+
+@router.get("/clv-summary")
+async def proxy_clv_summary(request: Request):
+    """Forward CLV summary query."""
+    return await _forward(request, "/states/clv-summary")
+
+
+@router.get("/lifecycle-stages")
+async def proxy_lifecycle_stages(request: Request):
+    """Forward lifecycle stages query."""
+    return await _forward(request, "/states/lifecycle-stages")
 
 
 @router.get("")

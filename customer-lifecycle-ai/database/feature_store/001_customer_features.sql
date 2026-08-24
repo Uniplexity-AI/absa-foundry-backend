@@ -40,6 +40,6 @@ CREATE TABLE IF NOT EXISTS public.customer_features (
     UNIQUE (customer_id, as_of_date)
 );
 
-CREATE INDEX idx_customer_features_customer ON customer_features(customer_id);
-CREATE INDEX idx_customer_features_date ON customer_features(as_of_date);
-CREATE INDEX idx_customer_features_customer_date ON customer_features(customer_id, as_of_date);
+CREATE INDEX IF NOT EXISTS idx_customer_features_customer ON customer_features(customer_id);
+CREATE INDEX IF NOT EXISTS idx_customer_features_date ON customer_features(as_of_date);
+CREATE INDEX IF NOT EXISTS idx_customer_features_customer_date ON customer_features(customer_id, as_of_date);

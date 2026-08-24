@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/states", tags=["states"])
 
-_CUSTOMER_STATE_URL = "http://localhost:8003"
+_CUSTOMER_STATE_URL = "http://127.0.0.1:8003"
 
 
 # Static routes — must come before catch-all

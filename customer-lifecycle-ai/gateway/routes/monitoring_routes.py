@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/v1/monitoring", tags=["monitoring"])
 
-_MONITORING_URL = "http://localhost:8004"
+_MONITORING_URL = "http://127.0.0.1:8004"
 
 
 @router.get("/performance-history")
