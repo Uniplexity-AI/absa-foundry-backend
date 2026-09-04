@@ -39,6 +39,8 @@ class FeatureSnapshot(BaseModel):
     # -- Phase 2: Customer Profile (Domain 1) --
     customer_tenure_days: int | None = None
     customer_segment: str | None = None
+    market_segment_code: str | None = None
+    market_segment: str | None = None
     age_years: int | None = None
     onboarding_channel: str | None = None
     prof_primary_branch: str | None = None

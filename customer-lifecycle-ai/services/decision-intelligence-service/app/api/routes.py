@@ -4,7 +4,7 @@ Decision Engine (/decisions) + Customer Intelligence (/customer-intel).
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -333,38 +333,101 @@ def get_revenue_at_risk(as_of_date: date | None = Query(default=None), horizon_d
 
 @forecast_router.get("/balance")
 def get_balance_forecast(as_of_date: date | None = Query(default=None)):
-    """Monte Carlo projection of deposits (AUM) including segment breakdowns."""
+    """AUM forecast in the legacy frontend contract shape.
+
+    Serves live data from the intelligence aggregation service (previously
+    a hardcoded payload). Series are in millions; by_segment/sensitivity/
+    confidence bounds are derived from the same per-customer projection.
+    """
+    from app.services.intelligence_service import intelligence_service
+
+    fc = intelligence_service.aum_forecast(as_of_date)
+    if fc.get("as_of_date") is None:
+        return {"as_of_date": None, "status": "NO_DATA"}
+
+    snap_date = date.fromisoformat(fc["as_of_date"])
+    weeks = len(fc["labels"])
+    short_labels = [
+        (snap_date + timedelta(weeks=w + 1)).strftime("%b %d")
+        for w in range(weeks)
+    ]
+    m = 1_000_000.0
+    base_m = fc["scenarios"]["base"]
+    total = fc["current_aum"]
+
+    # Analytic P10/P90 around the base path: per-customer churn decay is a
+    # sum of independent Bernoulli-weighted balances; normal approx.
+    # var_t = sum a_i^2 * q^t * (1 - q^t) with q = 1 - churn_i.
+    profiles = intelligence_service._snapshot(as_of_date)["profiles"]
+    scores = {s["customer_id"]: s for s in intelligence_service._snapshot(as_of_date)["scores"]}
+    var_rows = []
+    for cid, p in profiles.items():
+        a = float(p.get("current_aum") or 0)
+        c = (scores.get(cid) or {}).get("churn_probability") or 0.0
+        if a > 0:
+            var_rows.append((a, 1.0 - c))
+    z = 1.2816  # 80% two-sided
+    p10, p90 = [], []
+    for t in range(weeks):
+        mean_t = sum(a * (q ** (t + 1)) for a, q in var_rows) / m
+        var_t = sum((a * q ** (t + 1)) ** 2 * (1 - q ** (t + 1)) for a, q in var_rows) / (m * m)
+        sd = var_t ** 0.5
+        p10.append(round(mean_t - z * sd, 1))
+        p90.append(round(mean_t + z * sd, 1))
+
+    # Per-segment projection from profiles grouped by customer_segment
+    by_segment = []
+    seg_rows: dict[str, list] = {}
+    for cid, prof in profiles.items():
+        seg_rows.setdefault(prof.get("customer_segment") or "Unclassified", []).append(
+            (float(prof.get("current_aum") or 0),
+             (scores.get(cid) or {}).get("churn_probability") or 0.0)
+        )
+    for seg, rows in sorted(seg_rows.items(), key=lambda kv: -sum(a for a, _ in kv[1]))[:5]:
+        seg_aum = sum(a for a, _ in rows)
+        exits = sum(1 for _, c in rows if c > 0.5)
+        at_risk = sum(a * c for a, c in rows if c > 0.5)
+        remaining = sum(a * (1 - c) ** weeks for a, c in rows)
+        by_segment.append({
+            "segment": seg,
+            "current_aum": round(seg_aum, 2),
+            "projected_exits": exits,
+            "aum_at_risk": round(at_risk, 2),
+            "projected_remaining": round(remaining, 2),
+        })
+
+    base_end = base_m[-1] * m
+    opt_end = fc["scenarios"]["optimistic"][-1] * m
+    pes_end = fc["scenarios"]["pessimistic"][-1] * m
+    delta_1pp = (base_end - pes_end) / 2
+
     return {
-        "current_aum": 4572000000,
-        "as_of_date": as_of_date or date(2026, 7, 27),
+        "current_aum": round(total, 2),
+        "as_of_date": fc["as_of_date"],
         "scenarios": {
-            "optimistic": [4572, 4598, 4621, 4648, 4672, 4691, 4710, 4728, 4741, 4758, 4771, 4784],
-            "base":       [4572, 4541, 4512, 4484, 4458, 4432, 4408, 4384, 4362, 4340, 4319, 4298],
-            "pessimistic":[4572, 4498, 4426, 4356, 4288, 4220, 4154, 4090, 4028, 3967, 3907, 3848]
+            "optimistic": fc["scenarios"]["optimistic"],
+            "base": base_m,
+            "pessimistic": fc["scenarios"]["pessimistic"],
         },
-        "labels": ["Jul 27","Aug 3","Aug 10","Aug 17","Aug 24","Aug 31","Sep 7","Sep 14","Sep 21","Sep 28","Oct 5","Oct 12"],
-        "by_segment": [
-            { "segment": "Retail Savings", "current_aum": 1445000000, "projected_exits": 312, "aum_at_risk": 112800000, "projected_remaining": 1332200000 },
-            { "segment": "Mature / Core", "current_aum": 1876000000, "projected_exits": 84, "aum_at_risk": 31200000, "projected_remaining": 1844800000 }
-        ],
+        "labels": short_labels,
+        "by_segment": by_segment,
         "sensitivity": [
-            { "churn_delta": "-2%", "label": "Churn ↓ 2pp (Best)", "projected_aum": 4692000000, "delta_vs_base": 394000000, "aum_change": "+8.6%" },
-            { "churn_delta": "Base", "label": "Base Scenario", "projected_aum": 4298000000, "delta_vs_base": 0, "aum_change": "Baseline" }
+            {"churn_delta": "-2%", "label": "Churn ↓ 2pp (Best)",  "projected_aum": round(opt_end, 2), "delta_vs_base": round(opt_end - base_end, 2), "aum_change": f"{(opt_end / base_end - 1) * 100:+.1f}%" if base_end else "Baseline"},
+            {"churn_delta": "Base", "label": "Base Scenario",       "projected_aum": round(base_end, 2), "delta_vs_base": 0, "aum_change": "Baseline"},
+            {"churn_delta": "+2%", "label": "Churn ↑ 2pp (Stress)", "projected_aum": round(pes_end, 2), "delta_vs_base": round(pes_end - base_end, 2), "aum_change": f"{(pes_end / base_end - 1) * 100:+.1f}%" if base_end else "Baseline"},
         ],
-        "confidence_bounds": {
-            "p10": [4572, 4498, 4441, 4386, 4333, 4280, 4228, 4178, 4130, 4083, 4036, 3990],
-            "p90": [4572, 4582, 4582, 4582, 4582, 4583, 4586, 4588, 4592, 4595, 4600, 4605]
-        },
+        "confidence_bounds": {"p10": p10, "p90": p90},
         "ci_checkpoints": [
-            { "label": "Now (Jul 27)", "base": 4572, "p10": 4572, "p90": 4572 },
-            { "label": "30D (Aug 27)", "base": 4458, "p10": 4333, "p90": 4582 }
+            {"label": f"Now ({short_labels[0]})", "base": base_m[0], "p10": p10[0], "p90": p90[0]},
+            {"label": "30D", "base": base_m[min(3, weeks - 1)], "p10": p10[min(3, weeks - 1)], "p90": p90[min(3, weeks - 1)]},
+            {"label": f"{weeks * 7}D", "base": base_m[-1], "p10": p10[-1], "p90": p90[-1]},
         ],
         "model_meta": {
-            "version": "2.1",
-            "last_run": "2026-07-27 02:15 UTC",
-            "auc_roc": 0.847,
-            "n_simulations": 10000
-        }
+            "version": "churn-decay v1",
+            "last_run": f"{fc['as_of_date']} (on request)",
+            "n_customers": fc["customers"],
+            "method": fc["method"],
+        },
     }
 
 
@@ -377,31 +440,61 @@ outcomes_router = APIRouter(prefix="/outcomes", tags=["outcomes"])
 
 @outcomes_router.get("/retention-roi")
 def get_retention_roi(as_of_date: date | None = Query(default=None)):
-    """Retrieve business metrics representing direct ROI on campaigns."""
+    """ROI metrics in the legacy frontend contract shape.
+
+    Serves live data from decision_outcomes + the intelligence aggregation
+    (previously a hardcoded payload).
+    """
+    from app.services.intelligence_service import intelligence_service
+
+    bo = intelligence_service.business_outcomes()
+    roi = bo["roi"]
+    pvc = bo["pilot_vs_control"]
+
+    def _fmt_m(v: float) -> str:
+        return f"ZMW {v / 1_000_000:.1f}M"
+
+    retention_performance = [
+        {
+            "entity": b["branch_id"],
+            "pilot": b["pilot"],
+            "flagged": b["interventions"],
+            "contacted": b["accepted"],
+            "retained": b["retained_90d"],
+            "churned": max(b["accepted"] - b["retained_90d"], 0),
+            "revenue_protected": _fmt_m(b["revenue_protected"]),
+            "rate": round(
+                b["retained_90d"] / b["accepted"] * 100, 1
+            ) if b["accepted"] else 0.0,
+        }
+        for b in bo["retention_performance"]
+    ]
+
     return {
         "roi": {
-            "revenue_protected": 48600000,
-            "customers_retained": 1284,
-            "intervention_cost": 3200000,
-            "net_roi_pct": 1418,
-            "roi_multiple": 15.2,
-            "trend": [
-                { "month": "Mar", "revenue": 2100000 },
-                { "month": "Apr", "revenue": 4800000 },
-                { "month": "May", "revenue": 8200000 },
-                { "month": "Jun", "revenue": 14100000 },
-                { "month": "Jul", "revenue": 48600000 }
-            ]
+            "revenue_protected": roi["revenue_protected"],
+            "customers_retained": sum(b["retained_90d"] for b in bo["retention_performance"]),
+            "intervention_cost": roi["intervention_cost"],
+            "net_roi_pct": roi["net_roi_pct"],
+            "roi_multiple": roi["roi_multiple"],
+            "trend": intelligence_service.revenue_trend(months=5),
         },
-        "retention_performance": [
-            { "entity": "Sandton Branch", "flagged": 284, "contacted": 198, "retained": 142, "churned": 56, "revenue_protected": "K 9.2M", "rate": 71.7 }
-        ],
-        "success_criteria": [
-            { "criterion": "Reduce monthly churn rate by 15% within 90 days of pilot launch", "target": "≤ 5.1%", "current": "5.8%", "status": "AT RISK", "delta": "+0.7pp" }
-        ],
+        "retention_performance": retention_performance,
         "pilot_vs_control": {
-            "pilot":   { "branches": 6, "churn_rate": 5.1, "retention_rate": 74, "aum_change": -1.2, "contacts_per_rm": 28 },
-            "control": { "branches": 7, "churn_rate": 7.8, "retention_rate": 58, "aum_change": -4.8, "contacts_per_rm": 11 },
-            "significance": "p < 0.05"
-        }
+            "pilot": {
+                "branches": pvc["pilot"]["branches"],
+                "retention_rate": pvc["pilot"]["retention_rate_pct"],
+                "acceptance_rate": pvc["pilot"]["acceptance_rate_pct"],
+            },
+            "control": {
+                "branches": pvc["control"]["branches"],
+                "retention_rate": pvc["control"]["retention_rate_pct"],
+                "acceptance_rate": pvc["control"]["acceptance_rate_pct"],
+            },
+            "significance": (
+                "directional only" if pvc["pilot"]["branches"] == 0
+                or pvc["control"]["branches"] == 0 else "pilot vs control (descriptive)"
+            ),
+        },
+        "success_criteria": bo.get("success_criteria", []),
     }

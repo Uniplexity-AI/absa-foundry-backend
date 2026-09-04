@@ -25,57 +25,42 @@ class RoutePermission:
 
 
 # ===========================================================================
-# Permission Matrix — 4 Roles
+# Permission Matrix — route areas mapped to roles.
+#
+# ADMIN is handled by a full-access BYPASS in has_permission() and never needs
+# to be listed below. Wildcards ('**') cover every real gateway route (see
+# gateway/routes/*.py). Unknown routes are DENIED for non-admin roles.
 # ===========================================================================
 
 PERMISSIONS: list[RoutePermission] = [
-    # ---- Auth (public) ----
-    RoutePermission("POST",  "/auth/login",    []),
-    RoutePermission("POST",  "/auth/refresh",  []),
-    RoutePermission("POST",  "/auth/logout",   []),
-    RoutePermission("GET",   "/auth/me",       []),
+    # ---- Public (auth middleware lets these through; matrix returns allow) ----
+    RoutePermission("*", "/auth/login",    []),
+    RoutePermission("*", "/auth/refresh",  []),
+    RoutePermission("*", "/auth/logout",   []),
+    RoutePermission("*", "/auth/me",       []),
+    RoutePermission("*", "/health",        []),
 
-    # ---- Admin — user management ----
-    RoutePermission("GET",    "/admin/users",         ["ADMIN"]),
-    RoutePermission("POST",   "/admin/users",         ["ADMIN"]),
-    RoutePermission("GET",    "/admin/users/{id}",   ["ADMIN"]),
-    RoutePermission("PUT",    "/admin/users/{id}",   ["ADMIN"]),
-    RoutePermission("DELETE", "/admin/users/{id}",   ["ADMIN"]),
+    # ---- Customer analytics / NBA — RELATIONSHIP_MANAGER ----
+    RoutePermission("*", "/api/v1/customers/**",       ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/predictions/**",     ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/recommendations/**", ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/forecasts/**",       ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/churn-intel/**",     ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/insights/**",        ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/intelligence/**",    ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/outcomes/**",        ["RELATIONSHIP_MANAGER"]),
+    RoutePermission("*", "/api/v1/pilot/actions/**",   ["RELATIONSHIP_MANAGER"]),
 
-    # ---- Admin — role management ----
-    RoutePermission("GET",    "/admin/roles",         ["ADMIN"]),
-    RoutePermission("POST",   "/admin/roles",         ["ADMIN"]),
+    # ---- Models & feature engineering — DATA_SCIENTIST ----
+    RoutePermission("*", "/api/v1/models/**", ["DATA_SCIENTIST"]),
+    RoutePermission("*", "/features/**",      ["DATA_SCIENTIST"]),
 
-    # ---- Admin — API keys ----
-    RoutePermission("GET",    "/admin/api-keys",      ["ADMIN"]),
-    RoutePermission("POST",   "/admin/api-keys",      ["ADMIN"]),
-    RoutePermission("DELETE", "/admin/api-keys/{id}", ["ADMIN"]),
+    # ---- Monitoring & ETL — OPERATIONS ----
+    RoutePermission("*", "/api/v1/monitoring/**", ["OPERATIONS"]),
+    RoutePermission("*", "/api/etl/**",           ["OPERATIONS"]),
 
-    # ---- Dashboard — RM + ADMIN ----
-    RoutePermission("GET",  "/dashboard/customers",       ["ADMIN", "RELATIONSHIP_MANAGER"]),
-    RoutePermission("GET",  "/dashboard/customers/{id}",  ["ADMIN", "RELATIONSHIP_MANAGER"]),
-    RoutePermission("POST", "/dashboard/recommendations", ["ADMIN", "RELATIONSHIP_MANAGER"]),
-    RoutePermission("GET",  "/dashboard/health-scores",   ["ADMIN", "RELATIONSHIP_MANAGER"]),
-
-    # ---- Models — Data Scientists + ADMIN ----
-    RoutePermission("GET",  "/models/registry",        ["ADMIN", "DATA_SCIENTIST"]),
-    RoutePermission("POST", "/models/train",            ["ADMIN", "DATA_SCIENTIST"]),
-    RoutePermission("GET",  "/models/training-history", ["ADMIN", "DATA_SCIENTIST"]),
-    RoutePermission("POST", "/models/deploy",           ["ADMIN"]),
-    RoutePermission("POST", "/models/evaluate",         ["ADMIN", "DATA_SCIENTIST"]),
-
-    # ---- Monitoring — Operations + ADMIN ----
-    RoutePermission("GET",  "/monitoring/health",    ["ADMIN", "OPERATIONS"]),
-    RoutePermission("GET",  "/monitoring/metrics",   ["ADMIN", "OPERATIONS"]),
-    RoutePermission("GET",  "/monitoring/pipelines", ["ADMIN", "OPERATIONS"]),
-
-    # ---- ETL — Operations + ADMIN ----
-    RoutePermission("GET",  "/api/etl/**", ["ADMIN", "OPERATIONS"]),
-
-    # ---- Feature Engineering — Data Scientists + ADMIN ----
-    RoutePermission("POST", "/features/compute-batch",   ["ADMIN", "DATA_SCIENTIST"]),
-    RoutePermission("GET",  "/features/{customer_id}",   ["ADMIN", "DATA_SCIENTIST"]),
-    RoutePermission("GET",  "/features/{customer_id}/latest", ["ADMIN", "DATA_SCIENTIST"]),
+    # ---- Admin management — ADMIN only (explicit for clarity) ----
+    RoutePermission("*", "/admin/**", ["ADMIN"]),
 ]
 
 
@@ -86,16 +71,24 @@ PERMISSIONS: list[RoutePermission] = [
 def has_permission(user_roles: list[str], method: str, path: str) -> bool:
     """Check if a user has permission to access a route.
 
+    ADMIN always has FULL access (bypass). For every other role a route is
+    allowed only if one of the user's roles appears in a matching permission
+    entry. Unknown routes are denied by default.
+
     Args:
         user_roles: List of role names from the JWT.
         method: HTTP method (GET, POST, etc.).
         path: Request path (e.g. '/admin/users/123').
 
     Returns:
-        True if any of the user's roles match the required roles.
+        True if the user may access the route.
     """
+    # ADMIN full-access bypass
+    if "ADMIN" in user_roles:
+        return True
+
     for perm in PERMISSIONS:
-        if perm.method.upper() != method.upper():
+        if perm.method != "*" and perm.method.upper() != method.upper():
             continue
         if not _path_matches(perm.path, path):
             continue
@@ -105,9 +98,8 @@ def has_permission(user_roles: list[str], method: str, path: str) -> bool:
         # Check if user has any of the required roles
         if any(role in perm.roles for role in user_roles):
             return True
-        return False
 
-    # No matching route — deny by default
+    # No matching permission — deny by default (ADMIN already returned True)
     return False
 
 
@@ -122,7 +114,9 @@ def get_required_roles(method: str, path: str) -> list[str]:
         List of role names, or empty list for public routes.
     """
     for perm in PERMISSIONS:
-        if perm.method.upper() == method.upper() and _path_matches(perm.path, path):
+        if perm.method != "*" and perm.method.upper() != method.upper():
+            continue
+        if _path_matches(perm.path, path):
             return perm.roles
     return ["ADMIN"]  # Unknown routes default to admin-only
 

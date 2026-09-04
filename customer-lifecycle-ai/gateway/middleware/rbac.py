@@ -38,6 +38,10 @@ class RBACMiddleware:
         Raises:
             HTTPException 403: User lacks required roles.
         """
+        # CORS preflight has no user context — let it through to the CORS layer
+        if request.method == "OPTIONS":
+            return
+
         route_key = (request.method.upper(), request.url.path)
 
         # Skip RBAC for public auth routes

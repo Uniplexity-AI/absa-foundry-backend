@@ -161,7 +161,7 @@ UPDATE customer_features SET
         WHEN txn_count_90d > (txn_count_180d - txn_count_90d) THEN 'RISING'
         ELSE 'STABLE'
     END,
-    -- Salary detection: 3+ monthly CREDIT deposits within 10% variance
+    -- Salary detection: 3+ monthly CREDIT deposits within 10%% variance
     has_salary_credit = (
         SELECT COUNT(DISTINCT DATE_TRUNC('month', transaction_date::date)) >= 3
         FROM customer_transactions_clean t2

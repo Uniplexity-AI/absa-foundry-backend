@@ -34,9 +34,13 @@ ROOT = Path(__file__).resolve().parent.parent
 # (sql_file_relative_path, target_db_key)
 MIGRATIONS = [
     ("database/iam/001_initial_schema.sql", "source"),
+    ("database/migrations/011_local_auth.sql", "source"),
     ("database/migrations/001_etl_schema.sql", "target"),
+    ("database/migrations/002_clean_data_tables.sql", "target"),
     ("database/feature_store/001_customer_features.sql", "target"),
     ("database/state_engine/001_customer_states.sql", "target"),
+    ("database/migrations/009_pilot_actions.sql", "target"),
+    ("database/migrations/010_market_segment.sql", "target"),
 ]
 
 

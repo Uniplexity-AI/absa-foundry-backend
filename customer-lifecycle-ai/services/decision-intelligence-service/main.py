@@ -29,6 +29,8 @@ from app.api.routes import (
     insight_router,
     outcomes_router,
 )
+from app.api.intelligence_routes import router as intelligence_router
+from app.api.pilot_action_routes import router as pilot_action_router
 from app.schemas.schemas import PlatformHealth
 
 # Upstream service URLs — env-configurable, default localhost (pilot runs
@@ -48,6 +50,8 @@ app.include_router(forecast_router)
 app.include_router(recommendation_router)
 app.include_router(insight_router)
 app.include_router(outcomes_router)
+app.include_router(intelligence_router)
+app.include_router(pilot_action_router)
 
 
 @app.get("/health", response_model=PlatformHealth)

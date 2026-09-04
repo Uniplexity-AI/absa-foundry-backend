@@ -22,6 +22,8 @@ from gateway.routes import customer_routes, prediction_routes, models_routes
 from gateway.routes import recommendation_routes, insight_routes
 from gateway.routes import churn_intel_routes, forecast_routes
 from gateway.routes import monitoring_routes, outcome_routes
+from gateway.routes import intelligence_routes
+from gateway.routes import pilot_action_routes
 from shared.config.settings import settings
 
 # ---------------------------------------------------------------------------
@@ -58,19 +60,40 @@ def create_app() -> FastAPI:
     app.middleware("http")(request_logging_middleware)
 
     # CORS
+    # Auth is a Bearer-token flow (no cookies), so credentials are NOT required.
+    # allow_credentials=True with allow_origins=["*"] is rejected by browsers on
+    # preflight; with credentials disabled the wildcard origin works.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # TODO: Restrict in production
-        allow_credentials=True,
+        allow_origins=["*"],  # TODO: Restrict to frontend origin(s) in production
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # RBAC — role-based access control (after CORS, before routes)
+    # Auth + RBAC — enforce a valid JWT on every non-public route, then check roles.
+    # Runs inside CORS; sets request.state.user for all downstream handlers.
+    # HTTPException raised inside an http middleware must be converted to a
+    # Response here (otherwise Starlette's exception middleware turns it into 500).
+    from fastapi import HTTPException
+    from fastapi.responses import JSONResponse
+    from gateway.middleware.auth import auth_middleware as _auth
     from gateway.middleware.rbac import rbac_middleware as _rbac
+
     @app.middleware("http")
-    async def rbac_middleware(request, call_next):
-        await _rbac(request)
+    async def auth_rbac_middleware(request, call_next):
+        # CORS preflight — let it through so the CORS layer answers it
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        try:
+            await _auth(request)   # 401 if token missing/invalid; public routes pass
+            await _rbac(request)   # 403 if the user's roles don't cover the route
+        except HTTPException as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail},
+                headers=exc.headers,
+            )
         return await call_next(request)
 
     # ---- Routes ----
@@ -88,6 +111,8 @@ def create_app() -> FastAPI:
     app.include_router(forecast_routes.router)
     app.include_router(monitoring_routes.router)
     app.include_router(outcome_routes.router)
+    app.include_router(intelligence_routes.router)
+    app.include_router(pilot_action_routes.router)
 
     # ---- Health check ----
     @app.get("/health")

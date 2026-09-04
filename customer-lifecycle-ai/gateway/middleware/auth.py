@@ -11,20 +11,19 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-import redis.asyncio as aioredis
 from fastapi import Request, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 
 from shared.auth.models import UserContext
 from shared.auth.token_service import TokenService
-from shared.config.settings import settings
 
 logger = logging.getLogger("gateway.auth")
 
 # Public routes that don't require authentication
 PUBLIC_ROUTES: set[tuple[str, str]] = {
     ("POST", "/auth/login"),
+    ("POST", "/auth/refresh"),  # self-authenticates via refresh token in body
     ("GET",  "/health"),
     ("GET",  "/docs"),
     ("GET",  "/openapi.json"),
@@ -37,14 +36,15 @@ security = HTTPBearer(auto_error=False)
 class JWTAuthMiddleware:
     """FastAPI middleware that validates JWT and injects UserContext."""
 
-    def __init__(self, redis_client: aioredis.Redis | None = None) -> None:
-        """Initialize middleware with optional Redis for token blacklisting.
+    def __init__(self, redis_client=None) -> None:  # noqa: ANN001 - legacy arg, ignored
+        """Initialize middleware.
 
         Args:
-            redis_client: Connected async Redis client. If None, blacklist is skipped.
+            redis_client: Deprecated legacy argument. Redis is not used in the
+                          pilot/local deployment; revocation is in-process.
         """
-        self._redis = redis_client
-        self._token_service = TokenService(redis_client)
+        self._redis = None
+        self._token_service = TokenService()
 
     async def __call__(self, request: Request) -> UserContext | None:
         """Validate JWT and return UserContext, or None for public routes.
@@ -61,7 +61,9 @@ class JWTAuthMiddleware:
             HTTPException 401: Missing or invalid token.
             HTTPException 403: Token is blacklisted (logged out).
         """
-        # Allow public routes
+        # Allow public routes + CORS preflight
+        if request.method == "OPTIONS":
+            return None
         route_key = (request.method.upper(), request.url.path)
         if route_key in PUBLIC_ROUTES or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
             return None
@@ -118,22 +120,8 @@ class JWTAuthMiddleware:
         return user
 
 
-# Singleton — initialized with Redis from the routes module
-_redis: aioredis.Redis | None = None
-
-
-def _get_redis() -> aioredis.Redis | None:
-    global _redis
-    if _redis is None:
-        try:
-            _redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-        except Exception:
-            logger.warning("Redis unavailable — token blacklist disabled")
-            _redis = None
-    return _redis
-
-
-auth_middleware = JWTAuthMiddleware(redis_client=_get_redis())
+# Singleton — pilot/local runs without Redis (revocation is in-process).
+auth_middleware = JWTAuthMiddleware()
 
 
 async def get_current_user(request: Request) -> UserContext:

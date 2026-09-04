@@ -1158,10 +1158,15 @@ def train_churn_model() -> dict:
     y_hat_opt = (y_pred >= optimal_threshold).astype(int)
     accuracy = float(accuracy_score(y_test, y_hat_opt))
 
+    # KS statistic: max separation of positive vs negative score CDFs
+    from scipy.stats import ks_2samp
+    ks = ks_2samp(y_pred[y_test == 1], y_pred[y_test == 0])
+
     logger.info("-" * 70)
     logger.info("HOLDOUT METRICS (raw probabilities)")
     logger.info("-" * 70)
     logger.info("  AUC                    = %.4f", auc)
+    logger.info("  KS statistic           = %.4f (p=%.2e)", ks.statistic, ks.pvalue)
     logger.info("  Brier                  = %.4f", brier)
     logger.info("  ECE                    = %.4f", ece)
     logger.info("  LogLoss (test)         = %.4f", ll)
@@ -1336,6 +1341,8 @@ def train_churn_model() -> dict:
         },
         "metrics": {
             "auc": round(auc, 4),
+            "ks_statistic": round(float(ks.statistic), 4),
+            "ks_pvalue": float(f"{ks.pvalue:.2e}"),
             "brier": round(brier, 4),
             "ece": round(ece, 4),
             "log_loss": round(ll, 4),

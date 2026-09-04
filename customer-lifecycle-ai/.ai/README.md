@@ -16,7 +16,7 @@ Read these documents **in order** before generating any implementation:
 | 3 | [architecture.md](./architecture.md) | 3-Layer AI architecture and service boundaries |
 | 4 | [coding-standards.md](./coding-standards.md) | How we write code |
 | 5 | [skills/](./skills/) | Task-specific guidance (pick the relevant one) |
-| 6 | [graphify-out/GRAPH_REPORT.md](../graphify-out/GRAPH_REPORT.md) | Codebase semantic graph (580+ files mapped) |
+| 6 | [graphify-out/GRAPH_REPORT.md](../graphify-out/GRAPH_REPORT.md) \| [Frontend Insights](/dashboard/ai/codebase-insights) | Codebase semantic graph (580+ files mapped) |
 
 ---
 
@@ -24,7 +24,7 @@ Read these documents **in order** before generating any implementation:
 
 To minimize context token usage and ensure surgical accuracy, AI agents must strictly follow this navigation protocol:
 
-1. **Consult the semantic map first**: Instead of listing directories or grepping full files, read `graphify-out/GRAPH_REPORT.md` first. It breaks down the entire 427,000-word codebase into semantic communities. Use it to trace bridges (like `BaseModel` or `ConnectorConfig`) and locate the exact files matching your domain.
+1. **Consult the semantic map first**: Instead of listing directories or grepping full files, read `graphify-out/GRAPH_REPORT.md` first. It breaks down the entire 427,000-word codebase into semantic communities. Use it to trace bridges (like `BaseModel` or `ConnectorConfig`) and locate the exact files matching your domain. **For specific questions, use `/graphify query "<question>"` to ask the graph directly.**
 2. **Reuse pre-engineered templates**: Never ask the LLM to invent code patterns. Look at `.ai/skills/` first. It contains fully validated patterns for FastAPI routing, SQLAlchemy models, Pytest setups, and ML training pipelines.
 3. **Perform targeted, partial file reads**: Never read entire large files. Request an outline, find the exact functions or classes of interest, and read only their specific lines using `start_line` and `end_line` ranges.
 4. **Make surgically minimal edits**: Keep conversational history lean by performing highly focused, minimal line replacements. Rewriting whole files wastes thousands of output tokens and increases latency.

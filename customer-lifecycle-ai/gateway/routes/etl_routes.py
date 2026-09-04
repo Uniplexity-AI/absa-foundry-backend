@@ -93,7 +93,7 @@ def _list_configs() -> list[dict]:
     configs = []
     for f in sorted(_SPECS_DIR.glob("*.yaml")):
         stat = f.stat()
-        content = f.read_text()
+        content = f.read_text(encoding="utf-8", errors="replace")
         desc = ""
         try:
             parsed = yaml.safe_load(content)
@@ -119,7 +119,7 @@ def _read_config(name: str) -> dict | None:
     stat = path.stat()
     return {
         "name": name,
-        "content": path.read_text(),
+        "content": path.read_text(encoding="utf-8", errors="replace"),
         "last_modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
     }
 

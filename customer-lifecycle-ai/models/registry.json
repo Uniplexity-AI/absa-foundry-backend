@@ -345,7 +345,36 @@
         }
       },
       "notes": "PoC model \u2014 trained on account-closure-only labels (406 positives across ['2026-07-17', '2026-07-22']). AUC 0.4737, 5-fold OOF CV AUC 0.4623. Probabilities are calibrated out-of-fold via isotonic (ECE 0.3799 \u2192 0.0095). If AUC > 0.90, re-check for feature leakage.",
-      "report_pdf": "training_report.pdf"
+      "report_pdf": "training_report.pdf",
+      "governance": {
+        "model_owner": null,
+        "risk_owner": null,
+        "validated_by": null,
+        "validation_date": null,
+        "approval_status": "PILOT \u2014 pre-MRM",
+        "approval_stages": [
+          {
+            "stage": "Development",
+            "date": "2026-08-19",
+            "status": "DONE",
+            "detail": "churn_v1 trained via scripts/train_models.py"
+          },
+          {
+            "stage": "Independent Validation",
+            "date": null,
+            "status": "PENDING",
+            "detail": "MRM process not yet run in pilot"
+          },
+          {
+            "stage": "Production",
+            "date": null,
+            "status": "LIVE",
+            "detail": "Serving predictions via prediction-service (:8004)"
+          }
+        ],
+        "next_review_due": null,
+        "regulatory_ref": "SARB MRM Framework 2023 \u00b7 SR 11-7"
+      }
     }
   ]
 }

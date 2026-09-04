@@ -265,7 +265,8 @@ def main() -> None:
         return
     connection = psycopg2.connect(args.database_url)
     try:
-        apply_ddl(connection)
+        # DDL already handled by pilot_migrate.py; skip in data generator.
+        # apply_ddl(connection)
         for name, frame in tables.items():
             copy_frame(connection, name, frame)
     except Exception:

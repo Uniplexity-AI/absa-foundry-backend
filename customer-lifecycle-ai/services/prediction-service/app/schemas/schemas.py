@@ -79,6 +79,19 @@ class ModelSummary(BaseModel):
     status: str
     metrics: dict | None = None
     method: str | None = None  # "percentile_rank" for CLV PoC
+    # Governance / training metadata (from models/registry.json)
+    version: str | None = None
+    framework: str | None = None
+    trained_at: str | None = None
+    holdout_date: str | None = None
+    training_dates: list[str] | None = None
+    classification: dict | None = None  # holdout precision/recall/f1/confusion_matrix
+    classification_threshold: float | None = None
+    n_training_features: int | None = None
+    data: dict | None = None            # train/holdout sizes, class balance
+    hyperparameters: dict | None = None
+    top_features: list | None = None
+    governance: dict | None = None      # owners, approval stages (pilot: registry block)
 
 
 class ModelsResponse(BaseModel):
@@ -102,6 +115,7 @@ class PerformanceHistoryResponse(BaseModel):
     model_id: str
     horizon_days: int
     history: list[PerformancePoint]
+    status: str = "OK"  # OK | AWAITING_OUTCOME_LABELS (sparse until labels accrue)
 
 
 class FeatureDriftItem(BaseModel):
@@ -118,6 +132,8 @@ class FeatureDriftResponse(BaseModel):
     """Feature drift monitoring results."""
     model_id: str
     threshold: float = 0.20
+    baseline_date: str | None = None   # training-window snapshot used as baseline
+    current_date: str | None = None    # latest snapshot compared against baseline
     features: list[FeatureDriftItem]
 
 

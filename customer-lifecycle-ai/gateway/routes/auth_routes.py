@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import datetime, timezone
 
-import redis.asyncio as aioredis
 from fastapi import APIRouter, Request, HTTPException, status
 
 from shared.auth.models import (
@@ -18,7 +18,9 @@ from shared.auth.models import (
     TokenResponse,
     RefreshRequest,
     UserResponse,
+    UserContext,
 )
+from shared.auth.password import verify_password
 from shared.auth.token_service import TokenService
 from shared.auth.user_repository import UserRepository
 from shared.auth.audit import AuthAudit
@@ -50,9 +52,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 _user_repo = UserRepository()
 
-_redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-
-_token_service = TokenService(redis_client=_redis)
+_token_service = TokenService()
 
 _authenticator = Authenticator(
     server_url=settings.ldap_server,
@@ -71,61 +71,40 @@ def _client_ip(request: Request) -> str | None:
 
 
 # ===========================================================================
-# Phase 3: Rate limiting, lockout, password policy, failure delay
+# Phase 3: Rate limiting (in-memory) & account lockout (DB-backed, no Redis)
 # ===========================================================================
-
-LOCKOUT_PREFIX = "lockout:"  # Redis key prefix for account lockout counters
 
 
 async def _check_rate_limit(request: Request) -> None:
-    """Phase 3: Apply rate limit middleware to this request."""
+    """Phase 3: Apply rate limit middleware (in-memory — pilot has no Redis)."""
     from gateway.middleware.rate_limit import rate_limiter
     await rate_limiter.check(request)
 
 
 async def _check_lockout(username: str) -> None:
-    """Phase 3: Check if account is locked due to too many failed attempts."""
-    key = f"{LOCKOUT_PREFIX}{username}"
-    if _redis is not None:
-        attempts_raw = await _redis.get(key)
-        if attempts_raw:
-            attempts = int(attempts_raw)
-            if attempts >= settings.lockout_max_attempts:
-                ttl = await _redis.ttl(key)
-                raise HTTPException(
-                    status_code=status.HTTP_423_LOCKED,
-                    detail=f"Account temporarily locked. Retry in {ttl // 60 + 1} minutes.",
-                )
+    """Phase 3: Check the DB for a persisted lockout (survives gateway restarts)."""
+    now = datetime.now(timezone.utc)
+    row = _user_repo.get_by_username(username)
+    if row is None or row.get("locked_until") is None:
+        return
+    locked_until = row["locked_until"]
+    if locked_until > now:
+        retry_mins = int((locked_until - now).total_seconds() // 60) + 1
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Account temporarily locked. Retry in ~{retry_mins} minute(s).",
+        )
 
 
 async def _record_failed_attempt(username: str, ip: str | None) -> None:
-    """Phase 3: Increment failed attempt counter, trigger lockout if threshold reached."""
-    if _redis is not None:
-        key = f"{LOCKOUT_PREFIX}{username}"
-        attempts = await _redis.incr(key)
-        if attempts == 1:
-            await _redis.expire(key, settings.lockout_duration_minutes * 60)
-        if attempts >= settings.lockout_max_attempts:
-            await AuthAudit.log("ACCOUNT_LOCKED", ip_address=ip,
-                                details={"username": username, "attempts": attempts})
-
-
-async def _clear_failed_attempts(username: str) -> None:
-    """Phase 3: Clear failed attempt counter on successful login."""
-    if _redis is not None:
-        await _redis.delete(f"{LOCKOUT_PREFIX}{username}")
-
-
-async def _failure_delay(username: str) -> None:
-    """Phase 3: Exponential backoff on repeated failures (1s → 2s → 4s)."""
-    if _redis is not None:
-        key = f"{LOCKOUT_PREFIX}{username}"
-        attempts_raw = await _redis.get(key)
-        if attempts_raw:
-            attempts = int(attempts_raw)
-            delay = min(2 ** (attempts - 1), 8)  # Max 8 seconds
-            import asyncio
-            await asyncio.sleep(delay)
+    """Phase 3: Persist a failed attempt; auto-lock the account at the threshold."""
+    row = _user_repo.get_by_username(username)
+    if row is None:
+        return
+    attempts = _user_repo.increment_failed_attempts(row["user_id"])
+    if attempts >= settings.lockout_max_attempts:
+        await AuthAudit.log("ACCOUNT_LOCKED", user_id=row["user_id"], ip_address=ip,
+                            details={"username": username, "attempts": attempts})
 
 
 def _validate_password_policy(username: str, password: str) -> None:
@@ -174,10 +153,6 @@ async def login(request: Request, body: LoginRequest):
     # Phase 3: Account lockout check
     await _check_lockout(username)
 
-    # Phase 3: Password policy (only when LDAP is disabled — in dev mode)
-    if not settings.ldap_enabled:
-        _validate_password_policy(username, body.password)
-
     # ---- Authenticate ----
     ldap_attrs = None
 
@@ -186,7 +161,6 @@ async def login(request: Request, body: LoginRequest):
             ldap_attrs = _authenticator.authenticate(username, body.password)
         except InvalidCredentialsError:
             await _record_failed_attempt(username, ip)
-            await _failure_delay(username)
             await AuthAudit.log("LOGIN_FAILED", ip_address=ip,
                                 details={"username": username, "reason": "invalid_credentials"})
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
@@ -202,13 +176,62 @@ async def login(request: Request, body: LoginRequest):
                 detail="Authentication service temporarily unavailable",
             )
     else:
-        # Dev mode — accept any credentials for local development
+        # LOCAL MODE — verify stored credentials against iam.users (no LDAP).
+        user_row = _user_repo.get_by_username(username)
+        now = datetime.now(timezone.utc)
+
+        # 1) Account exists and has a local password?
+        if user_row is None or not user_row.get("password_hash"):
+            await AuthAudit.log("LOGIN_FAILED", ip_address=ip,
+                                details={"username": username, "reason": "invalid_credentials"})
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Invalid credentials")
+
+        # 2) Account active?
+        if not user_row.get("is_active", True):
+            await AuthAudit.log("LOGIN_FAILED", ip_address=ip,
+                                details={"username": username, "reason": "account_disabled"})
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Account is disabled")
+
+        # 3) Persisted lockout active?
+        locked_until = user_row.get("locked_until")
+        if locked_until is not None and locked_until > now:
+            retry_mins = int((locked_until - now).total_seconds() // 60) + 1
+            await AuthAudit.log("LOGIN_FAILED", ip_address=ip,
+                                details={"username": username, "reason": "account_locked"})
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail=f"Account temporarily locked. Retry in ~{retry_mins} minute(s).",
+            )
+        elif locked_until is not None:
+            # Lock expired — clear counters so the user can retry.
+            _user_repo.reset_lockout(user_row["user_id"])
+            user_row["failed_attempts"] = 0
+
+        # 4) Verify password
+        if not verify_password(body.password, user_row["password_hash"]):
+            attempts = _user_repo.increment_failed_attempts(user_row["user_id"])
+            await AuthAudit.log("LOGIN_FAILED", ip_address=ip,
+                                details={"username": username, "reason": "invalid_credentials",
+                                         "failed_attempts": attempts})
+            if attempts >= settings.lockout_max_attempts:
+                await AuthAudit.log("ACCOUNT_LOCKED", user_id=user_row["user_id"], ip_address=ip,
+                                    details={"username": username, "attempts": attempts})
+                raise HTTPException(
+                    status_code=status.HTTP_423_LOCKED,
+                    detail=f"Account locked after {attempts} failed attempts.",
+                )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Invalid credentials")
+
+        # 5) Success — carry over the profile stored in the DB.
         ldap_attrs = {
-            "dn": f"CN={username},OU=Dev,DC=local",
-            "username": username,
-            "email": f"{username}@absa.co.zm",
-            "display_name": username,
-            "department": None,
+            "username": user_row["username"],
+            "email": user_row["email"],
+            "display_name": user_row["display_name"],
+            "dn": user_row["dn"],
+            "department": user_row.get("department"),
         }
 
     # ---- Sync user to DB + resolve roles ----
@@ -230,8 +253,8 @@ async def login(request: Request, body: LoginRequest):
         )
 
     # ---- Issue tokens ----
-    # Phase 3: Clear lockout counter on success
-    await _clear_failed_attempts(username)
+    # Phase 3: Clear the persisted lockout counter on success
+    _user_repo.reset_lockout(user.user_id)
 
     access_token = _token_service.create_access_token(user)
     raw_refresh, token_hash = _token_service.create_refresh_token(user.user_id)
@@ -327,24 +350,13 @@ async def logout(request: Request):
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(request: Request):
-    """Return the authenticated user's profile."""
+    """Return the authenticated user's profile (loaded from iam.users)."""
     from gateway.middleware.auth import get_current_user
     user = await get_current_user(request)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
-    return UserResponse(
-        user_id=user.user_id,
-        username=user.username,
-        email=user.email,
-        display_name=user.display_name,
-        department=None,
-        branch_code=user.branch_code,
-        roles=user.roles,
-        is_active=True,
-        last_login_at=None,
-        created_at=None,  # TODO: load from DB
-    )
+    return _user_response(user.user_id, fallback=user)
 
 
 # ===========================================================================
@@ -355,15 +367,43 @@ def _get_user_context(user_id) -> UserContext | None:
     """Resolve a UserContext from the database by user_id."""
     from uuid import UUID
     uid = user_id if isinstance(user_id, UUID) else UUID(str(user_id))
-    users = _user_repo.list_users()
-    for u in users:
-        if u["user_id"] == uid:
-            return UserContext(
-                user_id=uid,
-                username=u["username"],
-                display_name=u["display_name"],
-                email=u["email"],
-                roles=list(u["roles"]) if u["roles"] else [],
-                branch_code=u.get("branch_code"),
-            )
-    return None
+    row = _user_repo.get_by_user_id(uid)
+    if row is None:
+        return None
+    return UserContext(
+        user_id=row["user_id"],
+        username=row["username"],
+        display_name=row["display_name"],
+        email=row["email"],
+        roles=list(row["roles"]) if row.get("roles") else [],
+        branch_code=row.get("branch_code"),
+    )
+
+
+def _user_response(user_id, fallback: UserContext | None = None) -> UserResponse:
+    """Build a UserResponse from the DB; fall back to the JWT context if not found."""
+    row = _user_repo.get_by_user_id(user_id)
+    if row is not None:
+        return UserResponse(
+            user_id=row["user_id"],
+            username=row["username"],
+            email=row["email"],
+            display_name=row["display_name"],
+            department=row.get("department"),
+            branch_code=row.get("branch_code"),
+            roles=list(row["roles"]) if row.get("roles") else [],
+            is_active=bool(row["is_active"]),
+            last_login_at=row.get("last_login_at"),
+            created_at=row.get("created_at") or datetime.now(timezone.utc),
+        )
+    if fallback is not None:
+        return UserResponse(
+            user_id=fallback.user_id,
+            username=fallback.username,
+            email=fallback.email,
+            display_name=fallback.display_name,
+            branch_code=fallback.branch_code,
+            roles=fallback.roles,
+            created_at=datetime.now(timezone.utc),
+        )
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

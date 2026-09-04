@@ -419,3 +419,117 @@ class UserRepository:
             raise
         finally:
             self._pool.putconn(conn)
+
+    # ------------------------------------------------------------------
+    # Local password authentication (non-LDAP mode)
+    # ------------------------------------------------------------------
+
+    def get_by_username(self, username: str) -> dict | None:
+        """Fetch a full user row by username (incl. password + lockout fields)."""
+        return self._fetch_user("u.username = %s", (username,))
+
+    def get_by_user_id(self, user_id: UUID) -> dict | None:
+        """Fetch a full user row by user_id (incl. password + lockout fields)."""
+        return self._fetch_user("u.user_id = %s", (str(user_id),))
+
+    def _fetch_user(self, where: str, params: tuple) -> dict | None:
+        """Shared single-user fetch used by get_by_username / get_by_user_id."""
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f"""
+                SELECT u.user_id, u.username, u.email, u.display_name, u.dn,
+                       u.department, u.branch_code, u.is_active,
+                       u.password_hash, u.must_change_pwd,
+                       u.failed_attempts, u.locked_until,
+                       u.last_login_at, u.created_at,
+                       COALESCE(array_agg(r.role_name) FILTER (WHERE r.role_name IS NOT NULL), '{{}}') AS roles
+                FROM iam.users u
+                LEFT JOIN iam.user_roles ur ON ur.user_id = u.user_id
+                LEFT JOIN iam.roles r ON r.role_id = ur.role_id
+                WHERE {where}
+                GROUP BY u.user_id
+                """,
+                params,
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            columns = [d[0] for d in cur.description]
+            return dict(zip(columns, row))
+        finally:
+            self._pool.putconn(conn)
+
+    def set_password(self, user_id: UUID, password_hash: str) -> None:
+        """Set/replace a user's password hash and clear lockout state."""
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE iam.users
+                SET password_hash = %s,
+                    must_change_pwd = FALSE,
+                    failed_attempts = 0,
+                    locked_until = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+                """,
+                (password_hash, str(user_id)),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
+
+    def increment_failed_attempts(self, user_id: UUID) -> int:
+        """Increment failed-login count; auto-lock when the threshold is reached.
+
+        Returns the new failed_attempts count.
+        """
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE iam.users
+                SET failed_attempts = failed_attempts + 1,
+                    locked_until = CASE
+                        WHEN failed_attempts + 1 >= %s
+                        THEN CURRENT_TIMESTAMP + make_interval(mins => %s)
+                        ELSE locked_until END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = %s
+                RETURNING failed_attempts
+                """,
+                (settings.lockout_max_attempts, settings.lockout_duration_minutes,
+                 str(user_id)),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return row[0] if row else 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
+
+    def reset_lockout(self, user_id: UUID) -> None:
+        """Clear failed_attempts and locked_until after a successful login."""
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE iam.users SET failed_attempts = 0, locked_until = NULL "
+                "WHERE user_id = %s",
+                (str(user_id),),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)

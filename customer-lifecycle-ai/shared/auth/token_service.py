@@ -1,41 +1,53 @@
 """
-Shared Auth Token Service — JWT creation, verification, refresh, and Redis blacklist.
+Shared Auth Token Service — JWT creation, verification, refresh, and revocation.
 
 Handles:
 - Access token (JWT) creation and verification
-- Refresh token generation, storage, rotation, and revocation
-- Redis-based token blacklist for logout
+- Refresh token generation (persistence handled by UserRepository in PostgreSQL)
+- In-process token blacklist for logout (no Redis required in pilot/local runs)
+
+Note: The pilot/local deployment does NOT run Redis, so revoked JWT ids are kept
+in a module-level dict shared by every TokenService instance in this gateway
+process. Refresh-token persistence & validation live in iam.refresh_tokens via
+UserRepository.
 """
 
 from __future__ import annotations
 
 import hashlib
 import secrets
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
-import redis.asyncio as aioredis
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 from shared.auth.models import TokenResponse, UserContext
 from shared.config.settings import settings
 
+# In-process blacklist of revoked JWT ids: jti -> expiry timestamp (epoch).
+# Shared module-level so every TokenService instance (middleware + routes) sees
+# the same revocations. Cleared when the gateway process restarts.
+_JWT_BLACKLIST: dict[str, float] = {}
+
 
 class TokenService:
-    """JWT token lifecycle management with Redis-backed blacklist and refresh tokens."""
+    """JWT token lifecycle management with an in-process revocation blacklist.
 
-    BLACKLIST_PREFIX = "jwt_blacklist:"  # Redis key prefix for blacklisted JTIs
-    REFRESH_PREFIX = "refresh:"          # Redis key prefix for refresh token metadata
+    The pilot/local deployment has no Redis, so revocations are kept in a
+    module-level dict shared by every TokenService instance in this process.
+    Refresh-token persistence/validation is handled by UserRepository
+    (PostgreSQL) — see gateway/routes/auth_routes.py.
+    """
 
-    def __init__(self, redis_client: aioredis.Redis | None = None) -> None:
+    def __init__(self, redis_client=None) -> None:  # noqa: ANN001 - legacy arg, ignored
         """Initialize token service.
 
         Args:
-            redis_client: Async Redis client. If None, blacklist and refresh tokens
-                          are database-only (no Redis acceleration).
+            redis_client: Deprecated. Kept for call-site compatibility; ignored.
         """
-        self._redis = redis_client
+        self._redis = None
 
     # ------------------------------------------------------------------
     # Access Tokens (JWT)
@@ -88,27 +100,33 @@ class TokenService:
         return payload
 
     async def is_blacklisted(self, jti: str) -> bool:
-        """Check if a JWT ID is in the Redis blacklist.
+        """Check if a JWT ID is in the in-process blacklist.
 
         Args:
             jti: JWT ID from token payload.
 
         Returns:
-            True if the token has been revoked.
+            True if the token has been revoked and is still within its TTL.
         """
-        if self._redis is None:
+        if not jti:
             return False
-        return await self._redis.exists(f"{self.BLACKLIST_PREFIX}{jti}") > 0
+        expiry = _JWT_BLACKLIST.get(jti)
+        if expiry is None:
+            return False
+        if time.time() > expiry:
+            _JWT_BLACKLIST.pop(jti, None)
+            return False
+        return True
 
     async def blacklist_token(self, jti: str, ttl_seconds: int = 900) -> None:
-        """Add a JWT ID to the Redis blacklist.
+        """Add a JWT ID to the in-process blacklist.
 
         Args:
             jti: JWT ID to blacklist.
             ttl_seconds: Time-to-live matching the token's remaining lifetime.
         """
-        if self._redis is not None:
-            await self._redis.setex(f"{self.BLACKLIST_PREFIX}{jti}", ttl_seconds, "1")
+        if jti:
+            _JWT_BLACKLIST[jti] = time.time() + max(int(ttl_seconds), 1)
 
     # ------------------------------------------------------------------
     # Refresh Tokens
@@ -126,82 +144,6 @@ class TokenService:
         raw = secrets.token_urlsafe(64)
         token_hash = self._hash(raw)
         return raw, token_hash
-
-    async def store_refresh_token(
-        self,
-        user_id: uuid.UUID,
-        token_hash: str,
-        ttl_days: int = 7,
-    ) -> None:
-        """Store refresh token metadata in Redis.
-
-        Args:
-            user_id: Owner of the refresh token.
-            token_hash: SHA-256 hash of the raw token.
-            ttl_days: Token lifetime in days.
-        """
-        if self._redis is not None:
-            key = f"{self.REFRESH_PREFIX}{token_hash}"
-            await self._redis.setex(
-                key,
-                ttl_days * 86400,
-                str(user_id),
-            )
-
-    async def validate_refresh_token(self, raw_token: str) -> uuid.UUID | None:
-        """Validate a refresh token and return the owning user_id.
-
-        Args:
-            raw_token: The raw refresh token string.
-
-        Returns:
-            User UUID if valid, None if revoked/expired/not found.
-        """
-        if self._redis is None:
-            return None
-        token_hash = self._hash(raw_token)
-        key = f"{self.REFRESH_PREFIX}{token_hash}"
-        user_id_raw = await self._redis.get(key)
-        if user_id_raw is None:
-            return None
-        # decode_responses=True returns str; decode_responses=False returns bytes
-        return uuid.UUID(user_id_raw.decode() if isinstance(user_id_raw, bytes) else user_id_raw)
-
-    async def revoke_refresh_token(self, raw_token: str) -> None:
-        """Revoke a single refresh token.
-
-        Args:
-            raw_token: The raw refresh token string.
-        """
-        if self._redis is not None:
-            token_hash = self._hash(raw_token)
-            await self._redis.delete(f"{self.REFRESH_PREFIX}{token_hash}")
-
-    async def revoke_all_user_tokens(self, user_id: uuid.UUID) -> None:
-        """Revoke all refresh tokens for a user.
-
-        Note: This is a best-effort operation with Redis — for full revocation,
-        also update iam.refresh_tokens in PostgreSQL.
-
-        Args:
-            user_id: User whose tokens should be revoked.
-        """
-        if self._redis is not None:
-            # Scan for all refresh keys and delete those matching the user
-            cursor = 0
-            while True:
-                cursor, keys = await self._redis.scan(
-                    cursor, match=f"{self.REFRESH_PREFIX}*", count=100,
-                )
-                for key in keys:
-                    uid_raw = await self._redis.get(key)
-                    if uid_raw is None:
-                        continue
-                    uid = uid_raw.decode() if isinstance(uid_raw, bytes) else uid_raw
-                    if uid == str(user_id):
-                        await self._redis.delete(key)
-                if cursor == 0:
-                    break
 
     # ------------------------------------------------------------------
     # Helpers

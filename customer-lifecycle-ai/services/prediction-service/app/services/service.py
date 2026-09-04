@@ -137,6 +137,54 @@ class PredictionService:
             status="COMPLETED",
         )
 
+    # ── Portfolio (bulk, no persist) ────────────────────────────────
+
+    def portfolio_scores(self, as_of_date: date | None = None) -> dict:
+        """Score every customer for a date WITHOUT persisting.  §Portfolio API
+
+        Used by the Decision Intelligence Service (8005) to aggregate
+        portfolio-level metrics (CLV bands, AUM forecast, lifecycle).
+        Reuses the same batch churn model + CLV percent-rank machinery
+        as compute_batch, but returns scores instead of backfilling.
+        """
+        t0 = time.perf_counter()
+
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+            if as_of_date is None:
+                return {"as_of_date": None, "count": 0, "scores": [],
+                        "duration_seconds": 0.0, "status": "NO_DATA"}
+
+        features_list, clv_percentiles = self._get_feature_snapshot(as_of_date)
+        if not features_list:
+            return {"as_of_date": as_of_date.isoformat(), "count": 0, "scores": [],
+                    "duration_seconds": round(time.perf_counter() - t0, 2),
+                    "status": "NO_DATA"}
+
+        churn_probs = self._churn.predict_batch(features_list)
+        scores = [
+            {
+                "customer_id": row["customer_id"],
+                "churn_probability": round(prob, 4),
+                "clv_percentile": round(
+                    self._clv.get_percentile(row["customer_id"], clv_percentiles), 4
+                ),
+            }
+            for row, prob in zip(features_list, churn_probs)
+        ]
+
+        duration = round(time.perf_counter() - t0, 2)
+        logger.info("portfolio_scores: date=%s n=%d duration=%.1fs",
+                    as_of_date, len(scores), duration)
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "count": len(scores),
+            "scores": scores,
+            "churn_model": self._churn.model_version,
+            "duration_seconds": duration,
+            "status": "COMPLETED",
+        }
+
     # ── Single Customer ────────────────────────────────────────────
 
     def _get_feature_snapshot(
@@ -179,6 +227,26 @@ class PredictionService:
             )
             return features, clv
 
+    def _log_prediction(
+        self, customer_id: str, as_of_date: date,
+        churn_prob: float, latency_s: float,
+    ) -> None:
+        """Best-effort telemetry insert into prediction_log (never raises)."""
+        threshold = 0.5
+        try:
+            threshold = float(self._churn.optimal_threshold or 0.5)
+        except AttributeError:
+            pass
+        self._repo.log_prediction(
+            customer_id=customer_id,
+            as_of_date=as_of_date,
+            model_id=self._churn.model_version or "churn_v1",
+            model_version=self._churn.model_version,
+            churn_probability=round(float(churn_prob), 6),
+            predicted_class="CHURN" if churn_prob >= threshold else "RETAIN",
+            latency_ms=round(latency_s * 1000, 2),
+        )
+
     def get_prediction(
         self, customer_id: str, as_of_date: date
     ) -> CustomerPrediction | None:
@@ -196,7 +264,10 @@ class PredictionService:
         if customer_features is None:
             return None
 
+        t0 = time.perf_counter()
         churn_prob = self._churn.predict(customer_features)
+        self._log_prediction(customer_id, as_of_date, churn_prob,
+                             time.perf_counter() - t0)
         clv_pct = self._clv.get_percentile(customer_id, clv_percentiles)
         result = self._health.compute(
             churn_prob, clv_pct, customer_features.get("engagement_score")
@@ -231,7 +302,10 @@ class PredictionService:
         if customer_features is None:
             return None
 
+        t0 = time.perf_counter()
         churn_prob = self._churn.predict(customer_features)
+        self._log_prediction(customer_id, as_of_date, churn_prob,
+                             time.perf_counter() - t0)
         return CustomerChurn(
             customer_id=customer_id,
             as_of_date=as_of_date,
@@ -303,6 +377,21 @@ class PredictionService:
                     type=m["type"],
                     status=m["status"],
                     metrics=m.get("metrics"),
+                    version=m.get("version"),
+                    framework=m.get("framework"),
+                    trained_at=m.get("trained_at"),
+                    holdout_date=m.get("holdout_date"),
+                    training_dates=m.get("training_dates"),
+                    classification=m.get("classification"),
+                    classification_threshold=m.get("classification_f1_threshold"),
+                    n_training_features=(
+                        len(m["training_features"]) if m.get("training_features")
+                        else m.get("feature_count_training")
+                    ),
+                    data=m.get("data"),
+                    hyperparameters=m.get("hyperparameters"),
+                    top_features=m.get("top_features"),
+                    governance=m.get("governance"),
                 )
                 models.append(summary)
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:

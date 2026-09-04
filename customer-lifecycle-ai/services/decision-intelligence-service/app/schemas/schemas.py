@@ -274,3 +274,61 @@ class ExplanationResponse(BaseModel):
     confidence_factors: dict = Field(default_factory=dict)
     computed_at: datetime = Field(default_factory=datetime.utcnow)
     upstream: dict = Field(default_factory=dict)
+
+
+# ===========================================================================
+# Pilot Action Log & State (frontend write buttons)
+# ===========================================================================
+
+# Action types used by the frontend action buttons. Kept open (str) so the
+# pilot can add new ones without a schema migration.
+PILOT_ACTION_TYPES = {
+    "RM_ASSIGNED",
+    "RM_CONTACTED",
+    "CAMPAIGN_ENROLLED",
+    "ALERT_ACKNOWLEDGED",
+    "NBA_OVERRIDE",
+    "CAMPAIGN_LAUNCHED",
+    "ACTION_PLAN_CREATED",
+    "ACTION_RECORDED",
+    "BULK_ACTION",
+}
+
+
+class PilotActionLogRequest(BaseModel):
+    """Body for POST /pilot/actions/log — append one action-log row."""
+    customer_id: str = Field(..., min_length=1)
+    action_type: str = Field(..., min_length=1)
+    detail: str | None = None
+    meta: dict = Field(default_factory=dict)
+    actor: str | None = None
+
+
+class PilotActionLogEntry(BaseModel):
+    """One action-log row returned to the client."""
+    id: int
+    customer_id: str
+    action_type: str
+    detail: str | None = None
+    meta: dict = Field(default_factory=dict)
+    actor: str | None = None
+    created_at: datetime | None = None
+
+
+class PilotActionLogResponse(BaseModel):
+    """Acknowledgement for a logged action."""
+    ok: bool = True
+    id: int | None = None
+    action: PilotActionLogEntry | None = None
+
+
+class PilotStateMergeRequest(BaseModel):
+    """Body for POST /pilot/actions/state/{customer_id} — merge patch into
+    the customer's JSONB state (rm, campaigns, ackedAlerts, override ...)."""
+    patch: dict = Field(default_factory=dict)
+
+
+class PilotStateResponse(BaseModel):
+    """Per-customer mutable state blob."""
+    customer_id: str
+    state: dict = Field(default_factory=dict)

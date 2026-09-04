@@ -37,7 +37,7 @@ ORDER BY {cust_col}
     "clv_percentiles": """
 SELECT
     {cust_col},
-    PERCENT_RANK() OVER (ORDER BY {total_amount_col}) AS clv_percentile
+    PERCENT_RANK() OVER (ORDER BY COALESCE({total_amount_col}, 0)) AS clv_percentile
 FROM {features_table}
 WHERE {as_of_col} = %(as_of_date)s
 """,
@@ -184,6 +184,79 @@ class PredictionRepository:
 
         return self._retry_db_op(_query, f"load_clv_percentiles({as_of_date})")
 
+    def drift_feature_windows(
+        self, columns: list[str], baseline_date: date | None = None,
+    ) -> list[dict]:
+        """Raw values per feature for the baseline and latest snapshots.
+
+        baseline_date defaults to the second-latest snapshot when the
+        registry's training dates are unavailable. Caller computes PSI.
+        Columns are validated as identifiers before interpolation.
+        """
+        for col in columns:
+            if not col.replace("_", "").isalnum():
+                raise ValueError(f"invalid drift column: {col!r}")
+        col_sql = ", ".join(f'"{c}"' for c in columns)
+
+        def _query():
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                if baseline_date is None:
+                    cur.execute(
+                        "SELECT DISTINCT as_of_date FROM customer_features "
+                        "ORDER BY as_of_date DESC LIMIT 2"
+                    )
+                    dates = [r[0] for r in cur.fetchall()]
+                    base = dates[1] if len(dates) > 1 else dates[0]
+                else:
+                    base = baseline_date
+                cur.execute("SELECT MAX(as_of_date) FROM customer_features")
+                current = cur.fetchone()[0]
+                if base is None or current is None or base == current:
+                    return [
+                        {"name": c, "baseline_mean": 0.0, "current_mean": 0.0, "psi": 0.0}
+                        for c in columns
+                    ]
+                out = []
+                for col in columns:
+                    cur.execute(
+                        f'SELECT ARRAY_AGG("{col}") FROM customer_features '
+                        f'WHERE as_of_date = %(b)s AND "{col}" IS NOT NULL',
+                        {"b": base},
+                    )
+                    baseline_vals = [float(v) for v in (cur.fetchone()[0] or []) if v is not None]
+                    cur.execute(
+                        f'SELECT ARRAY_AGG("{col}") FROM customer_features '
+                        f'WHERE as_of_date = %(c)s AND "{col}" IS NOT NULL',
+                        {"c": current},
+                    )
+                    current_vals = [float(v) for v in (cur.fetchone()[0] or []) if v is not None]
+                    out.append({
+                        "name": col,
+                        "baseline_mean": (sum(baseline_vals) / len(baseline_vals)) if baseline_vals else 0.0,
+                        "current_mean": (sum(current_vals) / len(current_vals)) if current_vals else 0.0,
+                        "baseline_vals": baseline_vals,
+                        "current_vals": current_vals,
+                    })
+                return out
+            finally:
+                conn.close()
+        return self._retry_db_op(_query, "drift_feature_windows")
+
+    def latest_feature_date(self) -> date | None:
+        """Most recent as_of_date present in customer_features (None if empty)."""
+        def _query():
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT MAX(as_of_date) FROM customer_features")
+                return cur.fetchone()[0]
+            finally:
+                conn.close()
+
+        return self._retry_db_op(_query, "latest_feature_date()")
+
     # ------------------------------------------------------------------
     # Read — State
     # ------------------------------------------------------------------
@@ -248,3 +321,113 @@ class PredictionRepository:
             return cur.rowcount
         finally:
             conn.close()
+
+    # ------------------------------------------------------------------
+    # Write — prediction telemetry (best-effort)
+    # ------------------------------------------------------------------
+
+    def log_prediction(
+        self,
+        customer_id: str,
+        as_of_date: date,
+        model_id: str,
+        model_version: str | None,
+        churn_probability: float,
+        predicted_class: str,
+        latency_ms: float | None,
+    ) -> None:
+        """Insert one prediction_log row. Never raises — telemetry must not
+        fail the scoring request."""
+        try:
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    INSERT INTO prediction_log
+                      (customer_id, as_of_date, model_id, model_version,
+                       churn_probability, predicted_class, latency_ms)
+                    VALUES (%(c)s, %(d)s, %(m)s, %(v)s, %(p)s, %(cl)s, %(l)s)
+                    """,
+                    {
+                        "c": customer_id, "d": as_of_date, "m": model_id,
+                        "v": model_version, "p": churn_probability,
+                        "cl": predicted_class, "l": latency_ms,
+                    },
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:  # noqa: BLE001 — deliberate best-effort
+            logger.warning("log_prediction failed for %s: %s", customer_id, e)
+
+    # ------------------------------------------------------------------
+    # Read — monitoring (real telemetry)
+    # ------------------------------------------------------------------
+
+    def recent_predictions(self, limit: int = 50) -> list[dict]:
+        def _query():
+            conn = self._connect()
+            try:
+                cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+                cur.execute(
+                    """
+                    SELECT id, customer_id, as_of_date, model_id, churn_probability,
+                           predicted_class, latency_ms, created_at
+                    FROM prediction_log
+                    ORDER BY created_at DESC
+                    LIMIT %(lim)s
+                    """,
+                    {"lim": limit},
+                )
+                return [dict(r) for r in cur.fetchall()]
+            finally:
+                conn.close()
+        return self._retry_db_op(_query, "recent_predictions")
+
+    def total_predictions(self) -> int:
+        def _query():
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM prediction_log")
+                return int(cur.fetchone()[0])
+            finally:
+                conn.close()
+        return self._retry_db_op(_query, "total_predictions")
+
+    def realized_outcomes(self, horizon_days: int = 90) -> list[dict]:
+        """Join logged predictions with later CHURNED transitions.
+
+        A prediction realizes as churned when the customer transitions to
+        CHURNED within horizon_days after the prediction's as_of_date.
+        Realized labels power the true confusion matrix / rolling AUC.
+        """
+        def _query():
+            conn = self._connect()
+            try:
+                cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+                cur.execute(
+                    """
+                    SELECT p.customer_id,
+                           p.as_of_date,
+                           p.churn_probability,
+                           p.predicted_class,
+                           COALESCE(MAX((t.transition_date <= p.as_of_date + %(h)s::int)::int), 0)
+                               AS churned
+                    FROM prediction_log p
+                    LEFT JOIN state_transitions t
+                      ON t.customer_id = p.customer_id
+                     AND t.to_state = 'CHURNED'
+                     AND t.transition_date > p.as_of_date
+                     AND t.transition_date <= p.as_of_date + %(h)s::int
+                    GROUP BY p.customer_id, p.as_of_date, p.churn_probability,
+                             p.predicted_class
+                    HAVING COUNT(t.id) >= 0
+                    """,
+                    {"h": horizon_days},
+                )
+                return [dict(r) for r in cur.fetchall()]
+            finally:
+                conn.close()
+        return self._retry_db_op(_query, "realized_outcomes")

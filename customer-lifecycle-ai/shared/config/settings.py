@@ -114,6 +114,10 @@ class Settings(BaseSettings):
     password_require_uppercase: bool = True
     password_require_digit: bool = True
 
+    # ---- Local Password Auth ----
+    # Work factor for hashlib.pbkdf2_hmac("sha256", ...). Raise before production.
+    password_hash_iterations: int = 260_000
+
     # ---- Health Score ----
     health_score_churn_weight: float = 0.40
     health_score_clv_weight: float = 0.30

@@ -46,83 +46,16 @@ def get_portfolio(
 
 @router.get("/clv-summary")
 def get_clv_summary(as_of_date: date = Query(..., description="Date for CLV summary")):
-    """Get Customer Lifetime Value summary and bands."""
-    return {
-        "summary": {
-            "total_clv": 8420000000,
-            "avg_clv": 41280,
-            "high_value_count": 3840,
-            "clv_at_risk": 312000000,
-            "value_protected_mtd": 48600000,
-            "churn_adjusted_clv": 7980000000
-        },
-        "bands": [
-            { "band": "Platinum", "label": "Platinum", "threshold": "CLV > K500K", "count": 820, "avg_clv": 1240000, "avg_churn_prob": 0.12, "total_aum": 1016800000, "pct": 0.4 },
-            { "band": "Gold", "label": "Gold", "threshold": "K100K–K500K", "count": 3020, "avg_clv": 210000, "avg_churn_prob": 0.19, "total_aum": 634200000, "pct": 1.5 },
-            { "band": "Silver", "label": "Silver", "threshold": "K20K–K100K", "count": 28400, "avg_clv": 52000, "avg_churn_prob": 0.31, "total_aum": 1476800000, "pct": 13.9 },
-            { "band": "Bronze", "label": "Bronze", "threshold": "CLV < K20K", "count": 172060, "avg_clv": 8400, "avg_churn_prob": 0.42, "total_aum": 1445304000, "pct": 84.2 }
-        ],
-        "top_customers": [
-            {
-                "customer_id": "CU-00421",
-                "name": "Mpho Radebe",
-                "segment": "Wealth Management",
-                "band": "Platinum",
-                "clv": 2140000,
-                "churn_prob": 0.91,
-                "aum": "K 2.1M",
-                "rm": None,
-                "days_since_contact": 12,
-                "churn_confidence": "± 0.04",
-                "clv_confidence": "± K 84K",
-                "churn_drivers": [
-                    { "label": "Deposit Velocity (3M trend)", "impact": -0.31, "direction": "negative" },
-                    { "label": "Digital Channel Dormancy", "impact": -0.22, "direction": "negative" },
-                    { "label": "Products Held", "impact": 0.08, "direction": "positive" }
-                ]
-            }
-        ]
-    }
+    """Live CLV summary: bands + at-risk top customers (frontend contract shape)."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.clv_summary(as_of_date)
 
 
 @router.get("/lifecycle-stages")
 def get_lifecycle_stages(as_of_date: date = Query(..., description="Date for lifecycle stages")):
-    """Get customer distribution across lifecycle stages and onboarding funnel."""
-    return {
-        "distribution": [
-            { "stage": "ONBOARDING", "label": "Onboarding", "count": 4820, "pct": 2.4, "mom_delta": 312, "color": "text-gray-600", "bg": "bg-gray-100", "dot": "bg-gray-500" },
-            { "stage": "GROWING", "label": "Growing", "count": 38240, "pct": 18.7, "mom_delta": -820, "color": "text-absa-passion", "bg": "bg-red-50", "dot": "bg-absa-passion" },
-            { "stage": "MATURE", "label": "Mature", "count": 124300, "pct": 60.9, "mom_delta": -1240, "color": "text-absa-enrich", "bg": "bg-gray-50", "dot": "bg-absa-enrich" },
-            { "stage": "AT_RISK", "label": "At Risk", "count": 22840, "pct": 11.2, "mom_delta": 1840, "color": "text-absa-energy", "bg": "bg-orange-50", "dot": "bg-absa-energy" },
-            { "stage": "CHURNING", "label": "Churning", "count": 8420, "pct": 4.1, "mom_delta": 410, "color": "text-absa-inspire", "bg": "bg-red-100", "dot": "bg-absa-inspire" },
-            { "stage": "CHURNED", "label": "Churned", "count": 3680, "pct": 1.8, "mom_delta": 280, "color": "text-red-900", "bg": "bg-red-100", "dot": "bg-red-900" },
-            { "stage": "WIN_BACK", "label": "Win-Back", "count": 1000, "pct": 0.5, "mom_delta": 55, "color": "text-amber-700", "bg": "bg-amber-50", "dot": "bg-amber-500" }
-        ],
-        "transitions": {
-            "stages": ["ONBOARDING", "GROWING", "MATURE", "AT_RISK", "CHURNING", "CHURNED"],
-            "matrix": [
-                [2800, 1840, 120, 40, 12, 8],
-                [0, 36200, 1420, 480, 110, 30],
-                [0, 180, 121840, 1240, 420, 620],
-                [0, 140, 4200, 16200, 1840, 460],
-                [0, 0, 280, 840, 5200, 2100],
-                [0, 0, 0, 0, 0, 3680]
-            ]
-        },
-        "onboarding": {
-            "total_new": 4820,
-            "activated_30d": 3240,
-            "activated_60d": 3820,
-            "activated_90d": 4140,
-            "early_at_risk": 380,
-            "avg_products": 1.4,
-            "digital_enrolled": 72
-        },
-        "win_back": [
-            { "customer_id": "CU-W0041", "name": "Lerato Dlamini", "last_product": "Savings Account", "months_churned": 3, "est_value": "K 28K", "status": "ELIGIBLE", "prob": 0.62 },
-            { "customer_id": "CU-W0088", "name": "Bongani Khumalo", "last_product": "Business Current", "months_churned": 5, "est_value": "K 84K", "status": "IN CAMPAIGN", "prob": 0.55 }
-        ]
-    }
+    """Live lifecycle distribution, 30d transitions, onboarding funnel, win-back."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.lifecycle_stages(as_of_date)
 
 
 @router.get("", response_model=list[StateSnapshot])

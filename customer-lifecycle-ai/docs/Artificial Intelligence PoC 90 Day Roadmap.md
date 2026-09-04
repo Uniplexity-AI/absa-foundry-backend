@@ -6,7 +6,7 @@ Artificial Intelligence POC
 
 Co-developing an AI Platform via the Absa Innovation Hubs
 
-7th July 2026 Nchimunya Munyama
+26th August 2026 Nchimunya Munyama
 
 \[Add company classification and regulatory details\]
 
@@ -44,27 +44,27 @@ Deliver working AI models, dashboards, KPIs, and a roadmap for enterprise rollou
 
 ## Discovery & Design
 
--   -   Define use cases and KPIs
-    -   Assess customer data sources
-    -   Establish success criteria
+-   **[x]** Define use cases and KPIs
+    **[x]** Assess customer data sources
+    **[x]** Establish success criteria
 
 ## Data Foundation
 
--   -   Prepare and consolidate data
-    -   Create unified analytical datasets
-    -   Engineer model features
+-   **[x]** Prepare and consolidate data
+    **[x]** Create unified analytical datasets
+    **[x]** Engineer model features
 
 ## Model Development
 
--   Develop lifecycle prediction models
--   Build customer value scoring
--   Create balance forecasting capabilities
+-   **[ ]** Develop lifecycle prediction models
+-   **[ ]** Build customer value scoring
+-   **[ ]** Create balance forecasting capabilities
 
 ## Validation & Pilot
 
--   Test with business users
--   Validate model performance
--   Present business case and rollout roadmap
+-   **[ ]** Test with business users
+-   **[ ]** Validate model performance
+-   **[ ]** Present business case and rollout roadmap
 
 ![](./Artificial%20Intelligence%20PoC%2090%20Day%20Roadmap_images/image-004.png)
 

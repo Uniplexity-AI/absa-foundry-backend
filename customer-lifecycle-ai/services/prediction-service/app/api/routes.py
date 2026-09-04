@@ -53,6 +53,18 @@ def get_models() -> ModelsResponse:
     return _service.get_models()
 
 
+@router.get("/portfolio-scores")
+def get_portfolio_scores(
+    as_of_date: date | None = Query(default=None, description="Score as-of date (default: latest feature date)"),
+):
+    """Churn + CLV percentile for every customer on a date. No persistence.
+
+    Consumed by the Decision Intelligence Service (8005) for portfolio
+    aggregations (CLV bands, AUM forecast, lifecycle summaries).
+    """
+    return _service.portfolio_scores(as_of_date)
+
+
 @router.get("/{customer_id}/churn", response_model=CustomerChurn)
 def get_churn(
     customer_id: str,
