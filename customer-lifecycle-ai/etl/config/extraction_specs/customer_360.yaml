@@ -1,0 +1,111 @@
+# Customer 360 Extraction Spec
+# Single-table extraction from raw_customers with structural validation.
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_360.yaml
+
+version: "1.0"
+dataset_name: "customer_360"
+description: "Unified customer profile extraction from raw_customers with structural validation."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
+
+primary_entity:
+  table: "public.raw_customers"
+  alias: "cust"
+  select_fields:
+    - field: "customer_id"
+      alias: "customer_id"
+      validation:
+        type: "str"
+        required: true
+        regex: "^C[0-9]{8}$"
+
+    - field: "activation_date"
+      alias: "activation_date"
+      validation:
+        type: "datetime"
+        required: true
+
+    - field: "branch_code"
+      alias: "branch_code"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "country"
+      alias: "country"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "customer_type"
+      alias: "customer_type"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "onboarding_channel"
+      alias: "onboarding_channel"
+      validation:
+        type: "str"
+        required: false
+        default: "UNKNOWN"
+
+    - field: "date_of_birth"
+      alias: "date_of_birth"
+      validation:
+        type: "datetime"
+        required: true
+
+    - field: "gender"
+      alias: "gender"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "status"
+      alias: "status"
+      validation:
+        type: "str"
+        required: true
+
+# Business rules — evaluated after structural validation
+business_rules:
+  - id: BR001
+    name: "Customer ID format"
+    expression: "len(str(customer_id)) == 9"
+    severity: ERROR
+    message: "Customer ID must be exactly 9 characters"
+
+  - id: BR002
+    name: "Valid gender"
+    expression: "gender in ('M', 'F')"
+    severity: WARNING
+    message: "Gender must be M or F"
+
+  - id: BR003
+    name: "Valid status"
+    expression: "status in ('Active', 'Dormant', 'Closed', 'Suspended')"
+    severity: ERROR
+    message: "Invalid customer status"
+
+  - id: BR004
+    name: "Valid customer type"
+    expression: "customer_type in ('Retail', 'SME', 'Premium', 'Corporate')"
+    severity: ERROR
+    message: "Invalid customer type"
+
+# Streaming — process in 10K-row chunks
+streaming:
+  enabled: true
+  batch_size: 10000
+  fetch_strategy: cursor

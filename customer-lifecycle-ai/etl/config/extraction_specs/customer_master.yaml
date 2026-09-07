@@ -1,0 +1,119 @@
+# Customer Master — Table 16 → customers_clean
+# =============================================================================
+# Maps the bank's customer master (anonymised "Table 16") into customers_clean,
+# enriched with date_of_birth from Table 7.
+#
+# SOURCE TABLE NAMES ARE PLACEHOLDERS — replace before running:
+#   public.customer_master       → your real Table 16 name
+#   public.customer_demographics → your real Table 7 name
+#
+# Field mapping (source → backend):
+#   customer_number        → customer_id        (KEY — confirm this column exists)
+#   sex                    → gender
+#   customer_status        → status             (the churn label source)
+#   customer_creation_date → activation_date    (tenure calculation)
+#   market_segment         → customer_type
+#   kyc_status             → kyc_tier
+#   date_of_birth (Table 7)→ date_of_birth
+#
+# NOT COVERED BY TABLE 16 (supply separately or leave NULL in customers_clean):
+#   - branch_code      (from Table 1 branch_number or Table 2/3)
+#   - onboarding_channel (not present in Table 16)
+#   - full_name        (concatenate first_name + ' ' + family_name in a source
+#                       view, or add first_name/family_name columns to customers_clean)
+#   - risk_score / risk_level / internet_bank_ind / marketing_opt_out
+#     (available in Table 16 but no columns yet in customers_clean — add if needed)
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_master.yaml
+# =============================================================================
+
+version: "1.0"
+dataset_name: "customer_master"
+description: "Customer master (Table 16) enriched with date_of_birth (Table 7) → customers_clean."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
+
+primary_entity:
+  table: "${source_tables.customer_master}"      # see pilot_data_config.yaml
+  alias: "cust"
+  select_fields:
+    - field: "customer_number"         # TODO: confirm the key column name
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "sex"
+      alias: "gender"
+      validation: { type: "str", required: false, default: "UNKNOWN" }
+    - field: "customer_status"
+      alias: "status"
+      validation: { type: "str", required: true }
+    - field: "customer_creation_date"
+      alias: "activation_date"
+      validation: { type: "datetime", required: false }
+    - field: "market_segment"
+      alias: "customer_type"
+      validation: { type: "str", required: false, default: "UNKNOWN" }
+    - field: "kyc_status"
+      alias: "kyc_tier"
+      validation: { type: "str", required: false }
+
+joins:
+  - table: "${source_tables.customer_demographics}"   # see pilot_data_config.yaml
+    alias: "demo"
+    join_type: "left"
+    "on":
+      - left: "cust.customer_number"
+        right: "demo.customer_number"
+    select_fields:
+      - field: "date_of_birth"
+        alias: "date_of_birth"
+        validation: { type: "datetime", required: false }
+
+transform:
+  type_casts:
+    activation_date: datetime
+    date_of_birth: datetime
+  standardization:
+    - field_name: gender
+      mappings:
+        M: MALE
+        F: FEMALE
+        Male: MALE
+        Female: FEMALE
+      default_value: UNKNOWN
+    - field_name: customer_type
+      mappings:
+        Retail: Retail
+        SME: SME
+        Premium: Premium
+        Corporate: Corporate
+      default_value: UNKNOWN
+
+validation:
+  mandatory_fields:
+    - customer_id
+    - status
+
+target:
+  clean_table: customers_clean
+  data_columns:
+    - customer_id
+    - gender
+    - status
+    - activation_date
+    - customer_type
+    - kyc_tier
+    - date_of_birth
+
+streaming:
+  enabled: true
+  batch_size: 10000
+  fetch_strategy: cursor

@@ -1,0 +1,72 @@
+# Cards Page 2 — Second card data source
+# Same schema as cards_page1. Process separately; ETL can UNION into
+# the same customer_cards_clean target table.
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/cards_page2.yaml
+
+version: "1.0"
+dataset_name: "cards_page2"
+trusted_config: true
+description: "Cards from page 2 — same schema as cards_page1, separate source."
+
+primary_entity:
+  table: "public.cards_page2"
+  alias: "card"
+  select_fields:
+    - field: "card_id"
+      alias: "card_id"
+      validation: { type: "str", required: true }
+    - field: "customer_id"
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "card_type"
+      alias: "card_type"
+      validation: { type: "str", required: false }
+    - field: "status"
+      alias: "status"
+      validation: { type: "str", required: false }
+    - field: "issued_date"
+      alias: "issued_date"
+      validation: { type: "datetime", required: false }
+    - field: "expiry_date"
+      alias: "expiry_date"
+      validation: { type: "datetime", required: false }
+
+# Transform: dates are text → datetime; standardize status & card_type
+transform:
+  type_casts:
+    issued_date: datetime
+    expiry_date: datetime
+  standardization:
+    - field_name: status
+      mappings:
+        Active: ACTIVE
+        active: ACTIVE
+        Inactive: INACTIVE
+        inactive: INACTIVE
+        Blocked: BLOCKED
+        blocked: BLOCKED
+        Expired: EXPIRED
+        expired: EXPIRED
+      default_value: UNKNOWN
+    - field_name: card_type
+      mappings:
+        Debit: DEBIT
+        debit: DEBIT
+        Credit: CREDIT
+        credit: CREDIT
+        Prepaid: PREPAID
+        prepaid: PREPAID
+      default_value: UNKNOWN
+
+# Target: card data → cards_clean (same target as card_summary)
+target:
+  clean_table: cards_clean
+  data_columns:
+    - card_id
+    - customer_id
+    - card_type
+    - status
+    - issued_date
+    - expiry_date

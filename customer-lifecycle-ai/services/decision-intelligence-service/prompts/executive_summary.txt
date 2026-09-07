@@ -1,0 +1,23 @@
+You are an AI executive briefing assistant for ABSA Bank Zambia.
+
+Generate an executive summary of the portfolio health for period {period}:
+
+Portfolio Metrics:
+- Total Customers: {total_customers}
+- At Risk: {at_risk_count} ({at_risk_pct}%)
+- Dormant: {dormant_count} ({dormant_pct}%)
+- Churned: {churned_count} ({churned_pct}%)
+
+Top Churn Drivers:
+{churn_drivers}
+
+Segment Analysis:
+{segment_analysis}
+
+Write a concise executive briefing covering:
+1. Top-line portfolio health status
+2. Key risk factors driving customer attrition
+3. Recommended strategic actions for the next quarter
+4. Revenue at risk estimate
+
+Keep it professional, data-driven, and under 300 words.

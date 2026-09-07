@@ -1,76 +1,71 @@
-# Current Sprint — Phase 2: Foundation Implementation
+# Current Sprint — ABSA Customer Lifecycle Platform
 
-**Sprint Status:** Planning
-**Target:** Implement core infrastructure before ML logic
+**Status:** Pilot Deployment Preparation — Real-Data Onboarding
+**Date:** 2026-08-19
+**Branch:** `poc-90day`
 
 ---
 
-## Active Phase: Database & API Foundations
+## Active Phase: Pilot Data Onboarding
 
-We are moving from scaffolding (Phase 1) to implementation (Phase 2).
+Backend prepared for Windows Server pilot with real customer data. Churn model
+trained + calibrated (AUC 0.8117, isotonic ECE 0.0172). Extraction specs + a single
+pilot data config drive real-table mapping. Remaining: obtain transaction +
+balance history and confirm source table names in `pilot_data_config.yaml`.
 
-## What's Done (Phase 1)
+## Completed This Sprint (2026-08-11 → 08-19)
 
-- [x] Complete project structure with 3-layer AI architecture
-- [x] All 8 microservices scaffolded with Clean Architecture
-- [x] Shared module with database, logging, exceptions, auth, ML utilities
-- [x] Docker Compose for local development (PostgreSQL, Redis, all services)
-- [x] Champion/challenger model registry structure
-- [x] Feature Store subdirectories for all banking domains
-- [x] Research notebook structure for experimentation
-- [x] AI development guidance system (`.ai/`, `.github/`, `.cursor/`, `.claude/`)
+### Model Training & Calibration
+- [x] XGBoost churn retrained — leakage fixed (`id`/`computed_at` excluded), AUC 0.7672 → 0.8117
+- [x] Probability calibration — Platt + isotonic (out-of-fold), isotonic ECE 0.0172
+- [x] Calibrator wired into prediction service (`churn_predictor.py`)
+- [x] Diagnostics: health (overfit gap), drift (PSI), hallucination (overconfidence)
 
-## What's Next (Phase 2)
+### Pilot Deployment Tooling
+- [x] `scripts/pilot_setup.ps1`, `pilot_start.ps1`, `pilot_stop.ps1`, `pilot_migrate.py`
+- [x] No `--reload`, no blanket `taskkill`; PID-tracked; logs to `logs/pilot/`
+- [x] Tailscale IP removed — upstream URLs env-configurable (`UPSTREAM_HOST`, `*_SERVICE_URL`)
+- [x] Ports/thresholds/feature toggles env-configurable (`CS_`, `FE_`, `PRED_`)
 
-### Priority 1: Database Models
-1. Implement SQLAlchemy ORM models for each service
-2. Set up Alembic for migrations
-3. Create initial migration for all schemas:
-   - `customer_data` — ingested customer records
-   - `features` — feature store tables
-   - `customer_states` — Markov state assignments
-   - `predictions` — churn/CLV/health score predictions
-   - `decisions` — NBA recommendations
-   - `model_registry` — champion/challenger tracking
+### Real-Data ETL Onboarding
+- [x] 5 extraction specs: `customer_master`, `customer_account_map`, `accounts`, `customer_demographics`, `employment_income`
+- [x] Per-spec `validation.mandatory_fields` override (non-customer specs)
+- [x] `etl/config/pilot_data_config.yaml` — single editable source of truth (tables, churn label, join keys)
+- [x] `${source_tables.*}` placeholder resolution in spec loader
 
-### Priority 2: API Endpoints
-1. Implement CRUD routes for each service
-2. Set up FastAPI dependency injection
-3. Wire up service → repository → database flow
-4. Add request/response validation with Pydantic v2
-5. Implement health check endpoints
+### Documentation
+- [x] `docs/deployment/PILOT-DATA-ONBOARDING-GUIDE.md` — datasets, table names, full .env reference
+- [x] `docs/deployment/REAL-DATA-MAPPING.md` — 17 bank tables → backend model mapping + gap analysis
+- [x] `docs/deployment/PILOT-DEPLOYMENT-GUIDE.md` — Windows Server runbook
+- [x] `docs/ml/model-training-guide.md` — calibration section + updated metrics
 
-### Priority 3: Shared Infrastructure
-1. Finalize `shared/database/session.py` with async session factory
-2. Implement `shared/auth/authenticator.py` with JWT
-3. Set up `shared/logging/logger.py` for structured JSON logging
-4. Implement `shared/exceptions/` hierarchy
+## Backend Services
 
-## What NOT to Implement Yet
+| Port | Service | Status |
+|------|---------|--------|
+| `:8080` | API Gateway | pilot-ready |
+| `:8002` | Feature Engineering | 21 features |
+| `:8003` | Customer State | thresholds env-configurable |
+| `:8004` | Prediction Service | XGBoost AUC 0.81 + isotonic calibrator |
+| `:8005` | Decision Intelligence | upstream URLs env-configurable |
 
-- ❌ Markov chain transition matrices (Phase 3)
-- ❌ XGBoost/LightGBM model training (Phase 3)
-- ❌ SHAP explainability (Phase 3)
-- ❌ NBA rule engine logic (Phase 4)
-- ❌ Champion/challenger evaluation (Phase 4)
-- ❌ RL-based optimization (Future)
+## Frontend (6 pages wired)
 
-## Current Focus for AI Agents
+| Page | Route | Data |
+|------|-------|------|
+| Dashboard Home | `/dashboard/home` | Live KPIs + 500-row ledger |
+| Portfolio | `/dashboard/portfolio` | Live KPIs |
+| Customer Detail | `/dashboard/customer/:id` | State, health, churn, timeline, markov |
+| Model Performance | `/dashboard/models` | AUC-ROC 76.7%, 2 models |
+| ETL Pipeline | `/dashboard/etl-pipeline` | Health cards, quality chart, run table |
+| ETL Run History | `/dashboard/etl-run-history` | Paginated audit trail |
 
-When asked to implement code right now, the response should be:
-
-1. **Build database models first** — `app/models/models.py` for each service
-2. **Then build schemas** — `app/schemas/schemas.py` (Pydantic v2)
-3. **Then build repositories** — `app/repository/repository.py`
-4. **Then build services** — `app/services/service.py` (thin, delegates to repos initially)
-5. **Then build routes** — `app/api/routes.py`
-
-Follow the order. Don't jump ahead.
-
-## Next Sprint Preview (Phase 3)
-
-- Markov chain implementation in customer-state-service
-- XGBoost and LightGBM model training in prediction-service
-- SHAP explainability integration
-- Health score calculator
-- Feature Store pipeline implementation
+## Known Gaps / Blockers
+- [ ] Transaction history dataset not yet provided (core churn feature source)
+- [ ] Balance history dataset not yet provided (`balances_clean` + GROWING state)
+- [ ] Real source table names + join keys not yet confirmed in `pilot_data_config.yaml`
+- [ ] Clean-table DDL alignment (feature engine expects `activation_date`, `status`, `customer_type`, …)
+- [ ] `demographics_clean` PK conflict between Tables 7 & 9 (merge into one spec or add upsert)
+- [ ] Customer ID format decision (`C01######` vs `CUST#####`)
+- [ ] Branch Manager Dashboard not yet wired
+- [ ] Customer names are synthetic — replaced by real data on pilot

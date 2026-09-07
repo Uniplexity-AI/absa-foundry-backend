@@ -2,65 +2,158 @@
 
 An enterprise-grade AI platform for banking Customer Lifecycle Prediction, Churn Analysis, Customer Value Prediction, and Next Best Action (NBA) recommendations for Relationship Managers.
 
-> **Phase:** Project Scaffolding — 3-Layer AI Architecture. No business logic implemented yet.
+> **Phase:** PoC (90-day) — ETL Engine production-hardened. Feature Engineering + minimal 3-Layer AI in progress.
+> **Reference:** Full 8-service target architecture preserved on `architecture-target-full` branch.
+> **Strategy:** See [ARCHITECTURE.md](./ARCHITECTURE.md) for branch strategy and recovery instructions.
 
 ---
 
-## Architecture: Three AI Layers
+## Architecture Overview
 
 ```mermaid
 graph TD
-    GW[API Gateway] --> DI[Data Ingestion Service]
-    GW --> FE[Feature Engineering Service<br/>(Feature Store)]
-    GW --> CS[Customer State Service<br/>Layer 1: Behaviour Intelligence]
-    GW --> PS[Prediction Service<br/>Layer 2: Prediction Intelligence]
-    GW --> DS[Decision Intelligence Service<br/>Layer 3: Decision Intelligence]
-    GW --> MM[Model Management Service]
+    GW[API Gateway] --> ETL[ETL Engine]
+    GW --> FE[Feature Engineering Svcs]
+    GW --> CS[Customer State Service]
+    GW --> PS[Prediction Service]
+    GW --> DS[Decision Intelligence]
     GW --> DB[Dashboard Service]
-    OS[Orchestration Service] --> DI
-    OS --> FE
-    OS --> CS
-    OS --> PS
-    OS --> DS
 
-    CS -- customer state --> PS
-    CS -- behavioural features --> FE
+    ETL --> PG[(PostgreSQL)]
+    ETL --> RD[(Redis)]
 
-    PS -- health score<br/>churn prob<br/>CLV --> DS
+    CS -- state --> PS
+    PS -- scores --> DS
+    DS -- NBA --> DB
 
-    DS -- NBA recommendations --> DB
-
-    DI --> PG[(PostgreSQL)]
-    FE --> PG
-    CS --> PG
-    PS --> PG
-    DS --> PG
-    MM --> PG
-    DB --> PG
-
-    GW --> RD[(Redis)]
-    subgraph Infrastructure
-        NG[Nginx]
-        PG
-        RD
+    subgraph "ETL Engine (Production-Hardened)"
+        CN[File + DB Connectors]
+        IG[Ingestion]
+        VL[Validation 10 rules]
+        TR[Transformation]
+        LD[Production Loader]
+        AU[Immutable Audit]
     end
 ```
 
-### Layer 1 — Behaviour Intelligence (`customer-state-service`)
+### Data Flow
 
-Markov Chain based customer state engine that tracks customer behavioral state transitions.
+```
+Bank Core Systems
+  → ETL Engine (Extract → Validate → Transform → Load)
+  → Feature Store
+  → Behaviour Intelligence (Markov State Classification)
+  → Prediction Intelligence (XGBoost / LightGBM)
+  → Decision Intelligence (NBA Recommendations)
+  → Dashboard (Relationship Manager View)
+```
+
+---
+
+## Project Structure
+
+```
+customer-lifecycle-ai/
+├── etl/                    # Enterprise ETL Engine (NEW - 15 modules)
+│   ├── connectors/         # 12 data source connectors
+│   ├── ingestion/          # Data reception & routing
+│   ├── landing/            # Immutable raw storage (Parquet)
+│   ├── validation/         # 5-stage validation engine
+│   ├── transformation/     # 3-stage transform pipeline
+│   ├── staging/            # Temporary staging tables
+│   ├── loading/            # Production upsert loader
+│   ├── orchestration/      # DAG-based pipeline execution
+│   ├── checkpoint/         # Resumable processing
+│   ├── monitoring/         # Real-time observability
+│   ├── logging/            # 7-stream structured JSON
+│   ├── audit/              # Immutable compliance trail
+│   ├── config/             # Centralized env+YAML config
+│   ├── pipelines/          # Assembled pipeline runner
+│   ├── models/             # 17 SQLAlchemy 2.0 ORM models
+│   └── schemas/            # 12 Pydantic v2 schema modules
+├── services/               # AI microservices
+│   ├── customer-state-service/    # Layer 1: Behaviour Intelligence
+│   ├── prediction-service/        # Layer 2: Prediction Intelligence
+│   ├── decision-intelligence-service/  # Layer 3: Decision Intelligence
+│   ├── feature-engineering-service/    # Feature Store
+│   ├── model-management-service/      # Model Registry
+│   ├── dashboard-service/             # Dashboards
+│   └── orchestration-service/         # Pipeline Scheduling (deferred)
+├── gateway/                # API Gateway (FastAPI)
+├── shared/                 # Shared libraries
+├── database/               # Database schemas (17 schemas)
+├── models/                 # ML model registry
+├── docs/                   # Documentation
+└── tests/                  # Test suites
+```
+
+---
+
+## ETL Engine
+
+The **Enterprise ETL Engine** is the data integration backbone of the system. It ingests banking data from diverse source systems, validates and transforms it, and loads it into the tiered database architecture.
+
+| Feature | Description |
+|---------|-------------|
+| **6 Connectors (PoC)** | PostgreSQL, SQL Server, Oracle, MySQL, CSV, Core Banking (REST/SOAP/Kafka available on `architecture-target-full`) |
+| **5 Validators** | Schema, Mandatory Fields, Business Rules, Duplicate Detection, Referential Integrity |
+| **10 Validation Rules** | All verified against ground truth (currency, channel, date, future-date, amount, duplicates, mandatory fields) |
+| **3 Transforms** | Field Mapping, Value Standardization, Data Enrichment |
+| **Batch Bulk Insert** | `execute_values` with 5K-row chunks — ~17K rows/s on 70K-row test file |
+| **Schema Drift Detection** | Strict mode — fails loudly on missing/reordered columns (configurable) |
+| **Idempotency Guard** | SHA-256 file hash dedup — refuses to reload without `--force` |
+| **Immutable Audit** | 24-column `etl.etl_audit` — compliance-grade, append-only, 7-year retention |
+| **Per-Row Rejection** | Every rejected row carries its specific failed rule ID(s) |
+| **Invariant Checks** | Conservation, no-silent-skips, reason coverage, quality floor — every batch |
+| **Structured Logging** | INFO/WARNING/ERROR with timestamps, UTF-8 output |
+
+### Quick Usage
+
+```bash
+python run_etl.py                           # run against default fixture CSV
+python run_etl.py --csv data.csv            # custom input
+python run_etl.py --dry-run                 # validate only, no DB writes
+python run_etl.py --csv data.csv --force    # re-process already-loaded file
+pytest tests/test_validation_ground_truth.py -v   # fixture regression test (6/6)
+python verify.py --verbose                  # ground-truth comparison
+```
+
+See [ETL README](etl/README.md) and [ETL Architecture](docs/architecture/etl/README.md) for details.
+
+---
+
+## Services Status (PoC)
+
+| Service | Status | Notes |
+|---|---|---|
+| **ETL Engine** | ✅ Production-hardened | 10/10 validation categories verified, 6/6 regression tests |
+| **Feature Engineering** | 🔨 Month 1 priority | Next deliverable — Feature Store implementation |
+| **Customer State (L1)** | 📋 Scaffolded | Markov engine only; HMM deferred to `architecture-target-full` |
+| **Prediction (L2)** | 📋 Scaffolded | Minimal XGBoost/LightGBM; champion/challenger deferred |
+| **Decision Intelligence (L3)** | 📋 Scaffolded | Rule engine only; RL deferred to `architecture-target-full` |
+| **Dashboard** | 📋 Scaffolded | Functional, not polished |
+| **Model Management** | 📋 Scaffolded | Registry structure ready |
+| **Orchestration** | ⏸️ Deferred | Commented out in compose; restore from `architecture-target-full` |
+
+> **Full architecture reference:** `git checkout architecture-target-full` — includes HMM, RL, Kafka/Debezium, REST/SOAP connectors, and hardened gateway middleware. See [ARCHITECTURE.md](./ARCHITECTURE.md).
+
+---
+
+## AI Architecture: Three Layers
+
+### Layer 1 — Behaviour Intelligence (`customer-state-service`)
+Markov Chain based customer state engine tracking behavioral state transitions.
 
 | Component | Description |
 |-----------|-------------|
 | Markov Engine | Transition matrix computation from customer journey data |
-| HMM Engine (Future) | Hidden Markov Model for latent state discovery |
 | Behaviour Profiler | Customer behavior pattern extraction and state classification |
 
 **Outputs:** Customer state labels (Active, At Risk, Dormant, etc.), transition probabilities, behavioural features
 
 ### Layer 2 — Prediction Intelligence (`prediction-service`)
 
-Unified prediction engine supporting multiple ML backends with champion/challenger model evaluation.
+Unified prediction engine supporting multiple ML backends.
 
 | Model | Framework | Purpose |
 |-------|-----------|---------|
@@ -78,7 +171,6 @@ Rule engine and Next Best Action recommendation system for Relationship Managers
 |-----------|-------------|
 | Rule Engine | Business rule evaluation and action triggering |
 | NBA Generator | Next Best Action ranking and recommendation |
-| RL Engine (Future) | Reinforcement learning for optimized treatment strategies |
 
 **Outputs:** Ranked NBA recommendations, customer treatment strategies
 

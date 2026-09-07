@@ -1,0 +1,72 @@
+# Card Summary — UNION cards_page1 + cards_page2, per-customer aggregates
+# Unlocks 5 card features: rel_has_card, rel_card_count, rel_has_unactivated_card,
+# rel_card_expiring_30d, rel_card_types
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/card_summary.yaml
+
+version: "1.0"
+dataset_name: "card_summary"
+trusted_config: true
+description: "Per-customer card data from cards_page1 UNION cards_page2."
+
+primary_entity:
+  table: "public.cards_page1"
+  alias: "card"
+  select_fields:
+    - field: "card_id"
+      alias: "card_id"
+      validation: { type: "str", required: true }
+    - field: "customer_id"
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "card_type"
+      alias: "card_type"
+      validation: { type: "str", required: false }
+    - field: "status"
+      alias: "status"
+      validation: { type: "str", required: false }
+    - field: "issued_date"
+      alias: "issued_date"
+      validation: { type: "datetime", required: false }
+    - field: "expiry_date"
+      alias: "expiry_date"
+      validation: { type: "datetime", required: false }
+
+# Transform: dates are text → datetime; standardize status & card_type
+transform:
+  type_casts:
+    issued_date: datetime
+    expiry_date: datetime
+  standardization:
+    - field_name: status
+      mappings:
+        Active: ACTIVE
+        active: ACTIVE
+        Inactive: INACTIVE
+        inactive: INACTIVE
+        Blocked: BLOCKED
+        blocked: BLOCKED
+        Expired: EXPIRED
+        expired: EXPIRED
+      default_value: UNKNOWN
+    - field_name: card_type
+      mappings:
+        Debit: DEBIT
+        debit: DEBIT
+        Credit: CREDIT
+        credit: CREDIT
+        Prepaid: PREPAID
+        prepaid: PREPAID
+      default_value: UNKNOWN
+
+# Target: card data → cards_clean
+target:
+  clean_table: cards_clean
+  data_columns:
+    - card_id
+    - customer_id
+    - card_type
+    - status
+    - issued_date
+    - expiry_date

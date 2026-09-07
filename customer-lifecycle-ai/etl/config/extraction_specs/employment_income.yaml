@@ -1,0 +1,78 @@
+# Employment / Income — Table 9 → demographics_clean
+# =============================================================================
+# Maps the bank's employment table (anonymised "Table 9") into demographics_clean.
+#
+# SOURCE TABLE NAME IS A PLACEHOLDER — replace before running:
+#   public.employment_income → your real Table 9 name
+#
+# Field mapping (source → backend):
+#   customer_number   → customer_id            (KEY — TODO: confirm the join key;
+#                                              Table 9's field list omits it)
+#   employment_status → employment_status
+#   employer          → employer_name
+#   gross_income      → monthly_income_declared (text → float)
+#
+# AVAILABLE IN TABLE 9 BUT NO COLUMN YET IN demographics_clean (add if needed):
+#   employment_type, designation, other_income, source_of_funds,
+#   employment_status_date, contract_expiry
+#
+# ⚠️ PRIMARY-KEY CONFLICT: demographics_clean has PK customer_id and bulk_insert
+#    does a plain INSERT (no upsert). This spec and customer_demographics.yaml
+#    both write demographics_clean. Recommended: merge this spec with Table 7
+#    (join on customer_number) so employment + marital land in ONE pass.
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/employment_income.yaml
+# =============================================================================
+
+version: "1.0"
+dataset_name: "employment_income"
+description: "Employment & income (Table 9) → demographics_clean."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
+
+primary_entity:
+  table: "${source_tables.employment_income}"        # see pilot_data_config.yaml
+  alias: "emp"
+  select_fields:
+    - field: "customer_number"             # TODO: confirm the join key column name
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "employment_status"
+      alias: "employment_status"
+      validation: { type: "str", required: false }
+    - field: "employer"
+      alias: "employer_name"
+      validation: { type: "str", required: false }
+    - field: "gross_income"
+      alias: "monthly_income_declared"
+      validation: { type: "float", required: false }
+
+transform:
+  type_casts:
+    monthly_income_declared: float
+
+validation:
+  mandatory_fields:
+    - customer_id
+
+target:
+  clean_table: demographics_clean
+  data_columns:
+    - customer_id
+    - employment_status
+    - employer_name
+    - monthly_income_declared
+
+streaming:
+  enabled: true
+  batch_size: 10000
+  fetch_strategy: cursor

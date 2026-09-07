@@ -2,14 +2,27 @@
 
 ## Before Any Code Changes
 
-Read the `.ai/` directory in this order:
+Read the `.ai/` and `graphify-out` directories in this order:
 
-1. `.ai/README.md` — Entry point and quick rules
-2. `.ai/project-context.md` — What we're building and banking constraints
-3. `.ai/current-sprint.md` — Current phase and priorities
-4. `.ai/architecture.md` — Complete 3-layer architecture
-5. `.ai/coding-standards.md` — How code must be structured
-6. `.ai/skills/<relevant-skill>.md` — Task-specific patterns
+1. `.ai/README.md` — Entry point, quick rules, and Token Efficiency Protocol
+2. `graphify-out/GRAPH_REPORT.md` — Codebase semantic graph (community groupings & files)
+3. `.ai/project-context.md` — What we're building and banking constraints
+4. `.ai/current-sprint.md` — Current phase and priorities
+5. `.ai/architecture.md` — Complete 3-layer architecture
+6. `.ai/coding-standards.md` — How code must be structured
+7. `.ai/skills/<relevant-skill>.md` — Task-specific validated patterns
+
+---
+
+## Token Efficiency Navigation Protocol (MUST FOLLOW)
+
+To drastically minimize LLM context token consumption and avoid context bloating:
+* **Locate, Don't Scan**: Avoid scanning large directories or grepping entire folders. Open `graphify-out/GRAPH_REPORT.md` first to locate which semantic community and files contain the components or bridges (e.g. `BaseModel`, `ConnectorConfig`, `ExtractionConfigSpec`) you need.
+* **Targeted Reads**: Never do full-file reads on files over 150 lines. Fetch the outline first, then request specific line ranges via `start_line` / `end_line`.
+* **Zero Guessing / Inventing**: Refer directly to `.ai/skills/` for validated design templates.
+* **Surgical Edits**: Provide minimal context line replacements in edits. Do not rewrite whole sections unnecessarily.
+
+---
 
 ## Project Identity
 

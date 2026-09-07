@@ -2,14 +2,27 @@
 
 ## Before Generating Any Code
 
-Read these files in order before writing any implementation:
+Read these files in order before writing any implementation to ensure token optimization:
 
-1. `.ai/project-context.md` — What we're building and the banking constraints
-2. `.ai/current-sprint.md` — What's in progress right now (Phase 2: Database & APIs)
-3. `.ai/architecture.md` — 3-Layer AI architecture and service boundaries
-4. `.ai/coding-standards.md` — How code must be structured
+1. `.ai/README.md` — Entry point, quick rules, and Token Efficiency Protocol
+2. `graphify-out/GRAPH_REPORT.md` — Codebase semantic graph (580+ files mapped into communities)
+3. `.ai/project-context.md` — What we're building and the banking constraints
+4. `.ai/current-sprint.md` — What's in progress right now (Phase 2: Database & APIs)
+5. `.ai/architecture.md` — 3-Layer AI architecture and service boundaries
+6. `.ai/coding-standards.md` — How code must be structured
 
 For task-specific guidance, also read the relevant skill file in `.ai/skills/`.
+
+---
+
+## Token Efficiency Navigation Protocol (MUST FOLLOW)
+
+To drastically minimize LLM context token consumption and avoid context bloating:
+- **Consult semantic graph**: Avoid scans. Inspect `graphify-out/GRAPH_REPORT.md` to trace bridges (like `BaseModel` or `ConnectorConfig`) and locate the exact files matching your domain.
+- **Targeted Reads**: Never do full-file reads on large files. Read precise line ranges (e.g., `start_line` / `end_line`).
+- **Surgical Edits**: Provide minimal context line replacements in edits. Do not rewrite whole sections.
+
+---
 
 ## Mandatory Rules
 

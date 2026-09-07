@@ -1,0 +1,86 @@
+# Customer ↔ Account Bridge — Tables 2 & 3 → customer_account_map
+# =============================================================================
+# Resolves account_number → customer_number. LOAD THIS FIRST — every account /
+# transaction / product spec depends on it because Table 1 is keyed by
+# account_number and has no customer_number.
+#
+# SOURCE TABLE NAME IS A PLACEHOLDER — replace before running:
+#   public.customer_account_xref → your real Table 2 name
+#   (Table 3 is the alternate source with the same fields — run this spec
+#    against it by changing `table:`, or UNION the two later.)
+#
+# Field mapping (source → backend):
+#   customer_number            → customer_id
+#   account_number             → account_id
+#   primary_account_indicator  → is_primary
+#   sms_alert_ind              → sms_alert_ind
+#   contact_status             → contact_status
+#
+# TARGET TABLE: customer_account_map is NEW — create it in etl_clean:
+#   CREATE TABLE public.customer_account_map (
+#       customer_id  VARCHAR(64) NOT NULL,
+#       account_id   VARCHAR(64) NOT NULL,
+#       is_primary   BOOLEAN,
+#       sms_alert_ind VARCHAR(16),
+#       contact_status VARCHAR(32),
+#       loaded_at    TIMESTAMPTZ NOT NULL,
+#       batch_id     VARCHAR(64) NOT NULL
+#   );
+#   CREATE UNIQUE INDEX ON public.customer_account_map (customer_id, account_id);
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_account_map.yaml
+# =============================================================================
+
+version: "1.0"
+dataset_name: "customer_account_map"
+description: "Customer-to-account ownership bridge (Tables 2/3) → customer_account_map."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
+
+primary_entity:
+  table: "${source_tables.customer_account_xref}"    # see pilot_data_config.yaml
+  alias: "xref"
+  select_fields:
+    - field: "customer_number"             # TODO: confirm the key column name
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "account_number"
+      alias: "account_id"
+      validation: { type: "str", required: true }
+    - field: "primary_account_indicator"
+      alias: "is_primary"
+      validation: { type: "str", required: false }
+    - field: "sms_alert_ind"
+      alias: "sms_alert_ind"
+      validation: { type: "str", required: false }
+    - field: "contact_status"
+      alias: "contact_status"
+      validation: { type: "str", required: false }
+
+validation:
+  mandatory_fields:
+    - customer_id
+    - account_id
+
+target:
+  clean_table: customer_account_map
+  data_columns:
+    - customer_id
+    - account_id
+    - is_primary
+    - sms_alert_ind
+    - contact_status
+
+streaming:
+  enabled: true
+  batch_size: 10000
+  fetch_strategy: cursor

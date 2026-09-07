@@ -1,0 +1,3102 @@
+[
+  {
+    "rejection_id": "f99a5383-898a-4573-a7f2-21df745388c3",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69673,
+      "customer_id": null,
+      "account_id": "ACC104711",
+      "branch_code": "LUS01",
+      "transaction_date": "2026-05-21",
+      "transaction_type": "DEBIT",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": "43913.6",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "33827c18-70e2-4ad4-8c98-ae157eb59913",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69681,
+      "customer_id": "CUST01372",
+      "account_id": "ACC101371",
+      "branch_code": "NDL01",
+      "transaction_date": "2024-06-26",
+      "transaction_type": "CREDIT",
+      "channel": "MOBILE",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "b6d764b4-102d-4db1-881a-3c8fd251fa09",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69683,
+      "customer_id": null,
+      "account_id": "ACC104193",
+      "branch_code": "KIT01",
+      "transaction_date": "2024-06-13",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "95732.81",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "36da2ea7-d32c-432b-b00f-6bf1dfca75b5",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69691,
+      "customer_id": "CUST02673",
+      "account_id": "ACC102672",
+      "branch_code": "LUS01",
+      "transaction_date": "2025-09-21",
+      "transaction_type": "CREDIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "fa317f72-fed7-4530-a6d5-2dc8f96de354",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69693,
+      "customer_id": null,
+      "account_id": "ACC103879",
+      "branch_code": "LUS01",
+      "transaction_date": "2026-03-03",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "25373.36",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "8c78476b-dcb6-4f59-a70a-ad259ff2db2c",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69701,
+      "customer_id": "CUST03743",
+      "account_id": "ACC103742",
+      "branch_code": "NDL01",
+      "transaction_date": "2026-06-06",
+      "transaction_type": "DEBIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "44d47295-836a-4b89-9eb7-22453229891a",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69703,
+      "customer_id": null,
+      "account_id": "ACC101375",
+      "branch_code": "LVI01",
+      "transaction_date": "2024-02-28",
+      "transaction_type": "DEBIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": "12239.06",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "bef0e847-2f49-4f38-af7d-4b6937c3cc47",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69711,
+      "customer_id": "CUST03098",
+      "account_id": "ACC103097",
+      "branch_code": "KIT01",
+      "transaction_date": "2026-03-25",
+      "transaction_type": "TRANSFER",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "15349559-26e9-411b-a7f5-8e261b12c735",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69713,
+      "customer_id": null,
+      "account_id": "ACC100520",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-05-26",
+      "transaction_type": "TRANSFER",
+      "channel": "MOBILE",
+      "currency": "USD",
+      "amount": "87513.35",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "896b3fff-788e-4435-ac6b-56ff9c0637b2",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69721,
+      "customer_id": "CUST02152",
+      "account_id": "ACC102151",
+      "branch_code": "KIT01",
+      "transaction_date": "2024-04-02",
+      "transaction_type": "DEBIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "e4833d33-289b-4456-9915-47f8db7ce5b2",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69723,
+      "customer_id": null,
+      "account_id": "ACC100402",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-07-05",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": "25848.11",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "8f0a0235-5ded-44ad-8cd6-539de1141202",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69731,
+      "customer_id": "CUST05000",
+      "account_id": "ACC104999",
+      "branch_code": "LVI01",
+      "transaction_date": "2025-09-16",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "29931e3a-04c5-47d5-9c77-2fb26157c49e",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69733,
+      "customer_id": null,
+      "account_id": "ACC100276",
+      "branch_code": "LVI01",
+      "transaction_date": "2025-02-23",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "49632.37",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "8cec70c9-b005-4397-8097-3bd001d681ad",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69741,
+      "customer_id": "CUST01111",
+      "account_id": "ACC101110",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-11-28",
+      "transaction_type": "CREDIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "160c58d2-46a2-45b7-b1ac-82e97168941f",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69743,
+      "customer_id": null,
+      "account_id": "ACC103216",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-12-31",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": "54138.77",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "a03f6d46-1068-4006-b3d6-ba14751e58c8",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69751,
+      "customer_id": "CUST04109",
+      "account_id": "ACC104108",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-02-21",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "167c4a2b-c6f9-4cff-9a9e-e69bfd8bbfac",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69753,
+      "customer_id": null,
+      "account_id": "ACC102695",
+      "branch_code": "LVI01",
+      "transaction_date": "2026-03-03",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "74794.16",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "f397b8c1-bf10-4f30-9cdc-e8b554716a58",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69761,
+      "customer_id": "CUST01932",
+      "account_id": "ACC101931",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-11-16",
+      "transaction_type": "DEBIT",
+      "channel": "MOBILE",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "1efa79bc-9564-41fe-9860-24c5274bb609",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69763,
+      "customer_id": null,
+      "account_id": "ACC100332",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-02-24",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "72411.42",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "8e4578c3-fc84-4992-b7a8-1e8e166a897d",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69771,
+      "customer_id": "CUST04560",
+      "account_id": "ACC104559",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-09-24",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "c2949684-e40d-4332-8042-755ad21bdbff",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69773,
+      "customer_id": null,
+      "account_id": "ACC101555",
+      "branch_code": "NDL01",
+      "transaction_date": "2026-02-04",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": "73207.66",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "113d9a59-062e-4070-81d1-0742d0e1769f",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69781,
+      "customer_id": "CUST00105",
+      "account_id": "ACC100104",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-10-16",
+      "transaction_type": "CREDIT",
+      "channel": "MOBILE",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "1e0cecfc-6dde-4912-8496-161d7726de8d",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69783,
+      "customer_id": null,
+      "account_id": "ACC102361",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-08-11",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": "13633.69",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "d16c8d00-f1a8-40fa-a749-3b3b5d2ff54e",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69791,
+      "customer_id": "CUST04912",
+      "account_id": "ACC104911",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-06-18",
+      "transaction_type": "TRANSFER",
+      "channel": "MOBILE",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "cfaf72cd-dcb5-42f1-b190-8e36a68953f9",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69793,
+      "customer_id": null,
+      "account_id": "ACC102096",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-02-27",
+      "transaction_type": "TRANSFER",
+      "channel": "MOBILE",
+      "currency": "USD",
+      "amount": "54360.66",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "6a7d72ab-ceb8-45e0-8b78-490cc16b6d77",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69801,
+      "customer_id": "CUST01314",
+      "account_id": "ACC101313",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-10-02",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "5746d74c-90c0-4bcf-9795-cf64334946cd",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69803,
+      "customer_id": null,
+      "account_id": "ACC103537",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-05-25",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "USD",
+      "amount": "74443.27",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "ece2412b-b720-480a-a8a5-d3b1cdc2c951",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69811,
+      "customer_id": "CUST01914",
+      "account_id": "ACC101913",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-11-20",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "64ee4160-384c-46e7-bb8f-d673545130e5",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69813,
+      "customer_id": null,
+      "account_id": "ACC101206",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-02-19",
+      "transaction_type": "DEBIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": "40751.77",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "96bee43d-b446-47cb-ae95-3b61e634ad84",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69821,
+      "customer_id": "CUST03871",
+      "account_id": "ACC103870",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-06-17",
+      "transaction_type": "TRANSFER",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "0d170c78-2f86-42a6-85c2-875e1d8e1ca7",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69823,
+      "customer_id": null,
+      "account_id": "ACC100905",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-11-29",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": "84958.81",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "f130e264-d2a4-44e7-a5ca-a75363d3da71",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69831,
+      "customer_id": "CUST01303",
+      "account_id": "ACC101302",
+      "branch_code": "CBU01",
+      "transaction_date": "2026-01-17",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "aa0b210f-8dc1-462d-999a-397cea5d9712",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69833,
+      "customer_id": null,
+      "account_id": "ACC103468",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-12-22",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "68660.79",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "4cd9bfb4-e735-492a-8f99-fa4b6a555d69",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69841,
+      "customer_id": "CUST01196",
+      "account_id": "ACC101195",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-12-04",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "031bb7f3-9e56-4c2b-a9fc-0a87f8e4c936",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69843,
+      "customer_id": null,
+      "account_id": "ACC104149",
+      "branch_code": "KIT01",
+      "transaction_date": "2024-02-25",
+      "transaction_type": "DEBIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": "3842.18",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "f3839928-ea53-4136-b2aa-a6635f6934e8",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69851,
+      "customer_id": "CUST01771",
+      "account_id": "ACC101770",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-01-08",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "4e725196-3b33-4783-a022-ccf51a93ee61",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69853,
+      "customer_id": null,
+      "account_id": "ACC102125",
+      "branch_code": "KIT01",
+      "transaction_date": "2024-12-25",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "31055.49",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "614cfb99-8151-4cef-8093-9f8eaf9c645d",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69861,
+      "customer_id": "CUST01046",
+      "account_id": "ACC101045",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-05-03",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "5cb29cc8-66f1-4235-a1d3-c2e12b00e003",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69863,
+      "customer_id": null,
+      "account_id": "ACC101412",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-09-05",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "64411.99",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "09b8e779-55df-4046-a942-6ac71a485701",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69871,
+      "customer_id": "CUST04004",
+      "account_id": "ACC104003",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-02-20",
+      "transaction_type": "DEBIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "b5eb4d32-fa73-44dc-b25a-0681d9a7592d",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69873,
+      "customer_id": null,
+      "account_id": "ACC101673",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-11-09",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "92627.38",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "673eb61a-3d93-447d-8eb7-b2e7c0fbb9a9",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69881,
+      "customer_id": "CUST03916",
+      "account_id": "ACC103915",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-10-05",
+      "transaction_type": "DEBIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "935b10a8-7ab0-4064-afef-f9df3c89477b",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69883,
+      "customer_id": null,
+      "account_id": "ACC103332",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-01-17",
+      "transaction_type": "TRANSFER",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": "11689.88",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "e102eaef-4d69-464f-8aed-9b5f8ad36938",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69891,
+      "customer_id": "CUST01839",
+      "account_id": "ACC101838",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-06-13",
+      "transaction_type": "CREDIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "3cb13765-f8fd-4355-9098-5e01fda59bd5",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69893,
+      "customer_id": null,
+      "account_id": "ACC102828",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-02-09",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "92626.46",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "e1849f57-cf41-4202-b0ea-548e8e2260f1",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69901,
+      "customer_id": "CUST03710",
+      "account_id": "ACC103709",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-03-28",
+      "transaction_type": "CREDIT",
+      "channel": "MOBILE",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "6e8921e8-864b-47b5-82fc-6cf6c93ba1ed",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69903,
+      "customer_id": null,
+      "account_id": "ACC103706",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-02-01",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": "83568.09",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "4d12eaff-a581-40f1-bc28-9d8d721cbf80",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69911,
+      "customer_id": "CUST02966",
+      "account_id": "ACC102965",
+      "branch_code": "LVI01",
+      "transaction_date": "2025-10-20",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "cf87b9aa-d9e5-4f51-8a4c-1edd5b021a91",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69913,
+      "customer_id": null,
+      "account_id": "ACC104950",
+      "branch_code": "LVI01",
+      "transaction_date": "2024-08-17",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": "73714.61",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "09d42e90-c8ed-4afe-8d78-386854c1f05e",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69921,
+      "customer_id": "CUST00076",
+      "account_id": "ACC100075",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-08-30",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "facbd49e-6629-4668-8861-412b96f3d3cf",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69923,
+      "customer_id": null,
+      "account_id": "ACC103326",
+      "branch_code": "LUS01",
+      "transaction_date": "2026-05-20",
+      "transaction_type": "DEBIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": "11308.42",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "ad9a0491-cc8e-4af7-986d-e7c21baa1cb1",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69931,
+      "customer_id": "CUST02791",
+      "account_id": "ACC102790",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-06-29",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "4ca0891e-1930-4544-97d1-b999179398c4",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69933,
+      "customer_id": null,
+      "account_id": "ACC102704",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-12-21",
+      "transaction_type": "TRANSFER",
+      "channel": "MOBILE",
+      "currency": "USD",
+      "amount": "9158.15",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "ee090133-abc0-4532-9fba-1fb3340e2f64",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69941,
+      "customer_id": "CUST00345",
+      "account_id": "ACC100344",
+      "branch_code": "KIT01",
+      "transaction_date": "2024-07-31",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "924a1eab-7d79-41cb-a1f9-fe4b335e213f",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69943,
+      "customer_id": null,
+      "account_id": "ACC104930",
+      "branch_code": "NDL01",
+      "transaction_date": "2024-04-21",
+      "transaction_type": "CREDIT",
+      "channel": "MOBILE",
+      "currency": "ZMW",
+      "amount": "59385.04",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "4b1c6478-133d-4523-8d46-e69385d12244",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69951,
+      "customer_id": "CUST03903",
+      "account_id": "ACC103902",
+      "branch_code": "LVI01",
+      "transaction_date": "2026-03-23",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "0b88de36-2c02-41c6-942d-58b3d250a5fd",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69953,
+      "customer_id": null,
+      "account_id": "ACC101133",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-04-25",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "USD",
+      "amount": "13617.31",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "7969b9dc-a257-48a8-8593-05059763fe3f",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69961,
+      "customer_id": "CUST01396",
+      "account_id": "ACC101395",
+      "branch_code": "LUS01",
+      "transaction_date": "2026-03-01",
+      "transaction_type": "TRANSFER",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "5868b0cf-3792-4b75-a92c-eace8b2d9fa7",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69963,
+      "customer_id": null,
+      "account_id": "ACC104451",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-11-12",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": "38069.55",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "5e634837-ae08-4f86-a91e-f9c6878efc17",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69971,
+      "customer_id": "CUST00505",
+      "account_id": "ACC100504",
+      "branch_code": "LUS01",
+      "transaction_date": "2025-10-24",
+      "transaction_type": "DEBIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "217c53a4-f2ef-4784-bddd-c61797c6bcd0",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69973,
+      "customer_id": null,
+      "account_id": "ACC100234",
+      "branch_code": "NDL01",
+      "transaction_date": "2024-02-11",
+      "transaction_type": "DEBIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": "82201.92",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "b35e0781-860f-42e3-b003-54ea7a764991",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69981,
+      "customer_id": "CUST00723",
+      "account_id": "ACC100722",
+      "branch_code": "KIT01",
+      "transaction_date": "2024-02-20",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "89b87ca3-3fba-4a6d-8529-3551e51fd76a",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69983,
+      "customer_id": null,
+      "account_id": "ACC100395",
+      "branch_code": "KIT01",
+      "transaction_date": "2026-02-03",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": "64967.59",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "04945406-0ad4-4f80-8396-99dfbe6a8f20",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69991,
+      "customer_id": "CUST04912",
+      "account_id": "ACC104911",
+      "branch_code": "NDL01",
+      "transaction_date": "2024-11-25",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "5d9b7cba-e985-45b5-b47e-7926e34865e0",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 69993,
+      "customer_id": null,
+      "account_id": "ACC103863",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-10-19",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": "41378.06",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "564b89c0-3b17-42a3-96cd-b6b56534dd6a",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70001,
+      "customer_id": "CUST01918",
+      "account_id": "ACC101917",
+      "branch_code": "LVI01",
+      "transaction_date": "2025-10-07",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "565149c3-6742-4aa1-a062-980370a7a4b6",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70003,
+      "customer_id": null,
+      "account_id": "ACC101284",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-11-03",
+      "transaction_type": "DEBIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": "86185.83",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "ac61d8a9-59df-4fcd-880c-6f5fc120891e",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70011,
+      "customer_id": "CUST01546",
+      "account_id": "ACC101545",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-03-08",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "294cbd19-9d5a-4406-8db0-3a0950ca2164",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70013,
+      "customer_id": null,
+      "account_id": "ACC102666",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-10-07",
+      "transaction_type": "CREDIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": "25498.29",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "71352e01-ae36-4144-bb89-3f06dc58b911",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70021,
+      "customer_id": "CUST00678",
+      "account_id": "ACC100677",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-07-20",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "bee57d9c-19a2-4e3e-8b45-d41210233677",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70023,
+      "customer_id": null,
+      "account_id": "ACC101483",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-12-02",
+      "transaction_type": "CREDIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": "35045.37",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "bdfba26f-2473-43b9-8997-82870a2947ba",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70031,
+      "customer_id": "CUST02056",
+      "account_id": "ACC102055",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-03-22",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "a9987627-ac6f-438f-8343-d9924ede9444",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70033,
+      "customer_id": null,
+      "account_id": "ACC104448",
+      "branch_code": "CBU01",
+      "transaction_date": "2024-07-30",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": "16425.58",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "2818a6e4-bd2d-4f93-b6ad-6414369ee5c4",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70041,
+      "customer_id": "CUST02505",
+      "account_id": "ACC102504",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-09-27",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "c59538cf-4a11-4e1e-aae7-7f6ee554f595",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70043,
+      "customer_id": null,
+      "account_id": "ACC102784",
+      "branch_code": "LVI01",
+      "transaction_date": "2024-10-25",
+      "transaction_type": "TRANSFER",
+      "channel": "MOBILE",
+      "currency": "USD",
+      "amount": "41227.9",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "fe0058fd-fbe4-49d2-a946-85db5cb51c2c",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70051,
+      "customer_id": "CUST04005",
+      "account_id": "ACC104004",
+      "branch_code": "CBU01",
+      "transaction_date": "2026-01-17",
+      "transaction_type": "TRANSFER",
+      "channel": "POS",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "d7d6e2d9-4474-4f12-9833-e358d46a3105",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70053,
+      "customer_id": null,
+      "account_id": "ACC103252",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-06-11",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": "17121.62",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "52c13b6c-8e11-44d2-b280-d6029cdaa1dc",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70061,
+      "customer_id": "CUST04916",
+      "account_id": "ACC104915",
+      "branch_code": "CBU01",
+      "transaction_date": "2026-01-09",
+      "transaction_type": "CREDIT",
+      "channel": "MOBILE",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "8b6ad818-d965-41ec-8a97-96bab84675dd",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70063,
+      "customer_id": null,
+      "account_id": "ACC102838",
+      "branch_code": "LVI01",
+      "transaction_date": "2024-01-23",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": "37677.45",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "4a8250ed-271e-4bed-b56c-030682e8d90b",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70071,
+      "customer_id": "CUST01407",
+      "account_id": "ACC101406",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-09-16",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "22e9138f-a554-4ba8-af3f-e42e06195015",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70073,
+      "customer_id": null,
+      "account_id": "ACC103568",
+      "branch_code": "KIT01",
+      "transaction_date": "2024-07-14",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": "60264.6",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "7680ed7f-73e7-49b6-84b5-e199128d0c1f",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70081,
+      "customer_id": "CUST02668",
+      "account_id": "ACC102667",
+      "branch_code": "NDL01",
+      "transaction_date": "2024-08-08",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "118ad72c-47e9-46b7-9ee3-8c252c1b18e4",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70083,
+      "customer_id": null,
+      "account_id": "ACC104917",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-11-18",
+      "transaction_type": "DEBIT",
+      "channel": "BRANCH",
+      "currency": "USD",
+      "amount": "60521.19",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "2b9246df-403a-43b4-822d-bcfe381d3094",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70091,
+      "customer_id": "CUST03490",
+      "account_id": "ACC103489",
+      "branch_code": "LVI01",
+      "transaction_date": "2024-09-05",
+      "transaction_type": "CREDIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "f0ae0046-4535-4c76-9dc0-8803087049f0",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70093,
+      "customer_id": null,
+      "account_id": "ACC104140",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-12-03",
+      "transaction_type": "DEBIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": "14609.59",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "4f4b8329-45a7-4be3-a41d-587affea5409",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70101,
+      "customer_id": "CUST04470",
+      "account_id": "ACC104469",
+      "branch_code": "NDL01",
+      "transaction_date": "2026-02-04",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "27eb0f58-3afd-4d57-b94f-472aec66938c",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70103,
+      "customer_id": null,
+      "account_id": "ACC101012",
+      "branch_code": "CBU01",
+      "transaction_date": "2026-06-01",
+      "transaction_type": "TRANSFER",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": "85362.96",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "be8d833b-7614-47c0-9c56-f6fd89f77997",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70111,
+      "customer_id": "CUST01596",
+      "account_id": "ACC101595",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-08-30",
+      "transaction_type": "CREDIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "92ec0936-de7a-4fa4-8c9d-ad6429f03ee3",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70113,
+      "customer_id": null,
+      "account_id": "ACC100941",
+      "branch_code": "CBU01",
+      "transaction_date": "2026-02-12",
+      "transaction_type": "DEBIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": "40833.13",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "15f2dedb-c154-499a-aebe-e530a79342c2",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70121,
+      "customer_id": "CUST04404",
+      "account_id": "ACC104403",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-01-31",
+      "transaction_type": "DEBIT",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "89cd20d4-bc52-493f-9f77-cef27fbc888d",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70123,
+      "customer_id": null,
+      "account_id": "ACC100432",
+      "branch_code": "NDL01",
+      "transaction_date": "2024-01-15",
+      "transaction_type": "TRANSFER",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": "50129.11",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "5d774908-996e-446d-b0b7-127f688dbda3",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70131,
+      "customer_id": "CUST00350",
+      "account_id": "ACC100349",
+      "branch_code": "LUS01",
+      "transaction_date": "2025-05-09",
+      "transaction_type": "CREDIT",
+      "channel": "INTERNET",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "7b918239-e89b-4cc5-803a-dab01dcd2f59",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70133,
+      "customer_id": null,
+      "account_id": "ACC101175",
+      "branch_code": "NDL01",
+      "transaction_date": "2026-05-14",
+      "transaction_type": "DEBIT",
+      "channel": "ATM",
+      "currency": "USD",
+      "amount": "84281.97",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "35bd4d74-6aa1-45b0-b7ac-6ddf0fd37ea2",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70141,
+      "customer_id": "CUST03858",
+      "account_id": "ACC103857",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-10-11",
+      "transaction_type": "DEBIT",
+      "channel": "BRANCH",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "6becba09-4d3b-4f15-87e3-1067d567bc53",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70143,
+      "customer_id": null,
+      "account_id": "ACC102004",
+      "branch_code": "KIT01",
+      "transaction_date": "2025-02-18",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": "17824.36",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "10a3d4c7-470c-4331-9ade-6863750f1e26",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70151,
+      "customer_id": "CUST04489",
+      "account_id": "ACC104488",
+      "branch_code": "CBU01",
+      "transaction_date": "2026-06-05",
+      "transaction_type": "CREDIT",
+      "channel": "MOBILE",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "4310ceda-a9ab-49af-baaf-53b7235eeac2",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70153,
+      "customer_id": null,
+      "account_id": "ACC102200",
+      "branch_code": "NDL01",
+      "transaction_date": "2025-03-04",
+      "transaction_type": "TRANSFER",
+      "channel": "MOBILE",
+      "currency": "ZMW",
+      "amount": "97048.81",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "04c8b157-d488-4194-8830-bc703354fca8",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70161,
+      "customer_id": "CUST02790",
+      "account_id": "ACC102789",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-02-17",
+      "transaction_type": "CREDIT",
+      "channel": "POS",
+      "currency": "ZMW",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  },
+  {
+    "rejection_id": "b715ceeb-33e3-4ba1-8201-611ee4b5f953",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "string_type",
+        "loc": [
+          "customer_id"
+        ],
+        "msg": "Input should be a valid string",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/string_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70163,
+      "customer_id": null,
+      "account_id": "ACC102604",
+      "branch_code": "LUS01",
+      "transaction_date": "2024-11-08",
+      "transaction_type": "CREDIT",
+      "channel": "ATM",
+      "currency": "ZMW",
+      "amount": "22856.52",
+      "data_issue": "missing_customer"
+    }
+  },
+  {
+    "rejection_id": "540d7533-5156-4d58-9f1a-cfa04a21edde",
+    "batch_id": "55a41a38-58fd-4d58-8236-dd2b3bc5a143",
+    "source_system": "ETL_DYNAMIC_UNIFIER",
+    "entity_name": "transaction_master",
+    "rejection_tier": "HARD",
+    "rule_code": "ERR_STRUCTURAL_SCHEMA_VALIDATION",
+    "error_details": [
+      {
+        "type": "float_type",
+        "loc": [
+          "amount"
+        ],
+        "msg": "Input should be a valid number",
+        "input": null,
+        "url": "https://errors.pydantic.dev/2.13/v/float_type"
+      }
+    ],
+    "raw_payload": {
+      "source_id": 70171,
+      "customer_id": "CUST04767",
+      "account_id": "ACC104766",
+      "branch_code": "CBU01",
+      "transaction_date": "2025-08-12",
+      "transaction_type": "DEBIT",
+      "channel": "INTERNET",
+      "currency": "USD",
+      "amount": null,
+      "data_issue": "missing_amount"
+    }
+  }
+]

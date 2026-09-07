@@ -1,0 +1,106 @@
+# ABSA Product Catalog — YAML-driven eligibility and scoring rules.
+# Recommendation Engine (NBO) loads this at startup.
+# Phase 1: heuristic scoring — no ML needed.
+
+products:
+  - id: PERSONAL_LOAN
+    name: "Personal Loan"
+    category: lending
+    eligibility:
+      min_age: 21
+      max_age: 65
+      min_income_band: "LOW"
+      excluded_segments: []
+      required_products: []
+    propensity_base: 0.65
+    propensity_modifiers:
+      has_salary_credit: 0.15
+      high_engagement: 0.10
+      credit_risk_low: 0.10
+
+  - id: CREDIT_CARD
+    name: "Credit Card"
+    category: cards
+    eligibility:
+      min_age: 18
+      max_age: 70
+      min_income_band: "LOW"
+      excluded_segments: []
+      required_products: ["SAVINGS"]
+    propensity_base: 0.55
+    propensity_modifiers:
+      has_salary_credit: 0.20
+      digital_active: 0.15
+      segment_mass_affluent: 0.10
+
+  - id: MORTGAGE
+    name: "Mortgage"
+    category: lending
+    eligibility:
+      min_age: 25
+      max_age: 60
+      min_income_band: "MEDIUM"
+      excluded_segments: ["MASS_MARKET"]
+      required_products: ["SAVINGS"]
+    propensity_base: 0.40
+    propensity_modifiers:
+      high_clv: 0.20
+      segment_affluent: 0.20
+      long_tenure: 0.10
+
+  - id: INSURANCE
+    name: "Insurance"
+    category: protection
+    eligibility:
+      min_age: 18
+      max_age: 75
+      min_income_band: "LOW"
+      excluded_segments: []
+      required_products: []
+    propensity_base: 0.50
+    propensity_modifiers:
+      has_family_products: 0.15
+      high_clv: 0.10
+      health_score_high: 0.10
+
+  - id: INVESTMENT
+    name: "Investment Product"
+    category: wealth
+    eligibility:
+      min_age: 21
+      max_age: 70
+      min_income_band: "MEDIUM"
+      excluded_segments: ["MASS_MARKET"]
+      required_products: ["SAVINGS"]
+    propensity_base: 0.35
+    propensity_modifiers:
+      segment_affluent: 0.25
+      high_clv: 0.20
+      high_balance: 0.15
+
+  - id: FX_SERVICES
+    name: "Foreign Exchange"
+    category: treasury
+    eligibility:
+      min_age: 21
+      max_age: 70
+      min_income_band: "HIGH"
+      excluded_segments: ["MASS_MARKET"]
+      required_products: ["CURRENT_ACCOUNT"]
+    propensity_base: 0.25
+    propensity_modifiers:
+      segment_corporate: 0.30
+      high_clv: 0.20
+      international_txn: 0.25
+
+income_bands:
+  LOW:    { min_annual_zmw: 0,      max_annual_zmw: 50000 }
+  MEDIUM: { min_annual_zmw: 50001,  max_annual_zmw: 200000 }
+  HIGH:   { min_annual_zmw: 200001, max_annual_zmw: 999999999 }
+
+segment_affinity:
+  MASS_MARKET:   [PERSONAL_LOAN, CREDIT_CARD, INSURANCE]
+  MASS_AFFLUENT: [PERSONAL_LOAN, CREDIT_CARD, INSURANCE, INVESTMENT]
+  AFFLUENT:      [PERSONAL_LOAN, CREDIT_CARD, MORTGAGE, INSURANCE, INVESTMENT]
+  SME:           [PERSONAL_LOAN, CREDIT_CARD, MORTGAGE, INSURANCE, FX_SERVICES]
+  CORPORATE:     [MORTGAGE, INVESTMENT, FX_SERVICES]

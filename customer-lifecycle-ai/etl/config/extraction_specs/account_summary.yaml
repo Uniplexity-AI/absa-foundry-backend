@@ -1,0 +1,85 @@
+# Account Summary — Pre-aggregated per customer
+# CTE approach: aggregate accounts_manual per customer_id, then LEFT JOIN to customers.
+# Unlocks: rel_accounts_active, rel_has_savings, rel_products_owned
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/account_summary.yaml
+
+version: "1.0"
+dataset_name: "account_summary"
+trusted_config: true
+description: "Per-customer account aggregates: count, types, status."
+
+# ---- Pre-aggregation CTE ----
+pre_aggregations:
+  - name: "acct_agg"
+    from_table: "public.accounts_manual"
+    alias: "acct"
+    aggregations:
+      - function: COUNT
+        field: "account_id"
+        alias: account_count
+      - function: COUNT
+        field: "account_id"
+        alias: active_accounts
+        # Would need FILTER WHERE status = 'Active' — not yet supported in config
+    group_by:
+      - "acct.customer_id"
+
+primary_entity:
+  table: "public.accounts_manual"
+  alias: "acct"
+  select_fields:
+    - field: "account_id"
+      alias: "account_id"
+      validation: { type: "str", required: true }
+    - field: "customer_id"
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "account_type"
+      alias: "account_type"
+      validation: { type: "str", required: false }
+    - field: "status"
+      alias: "status"
+      validation: { type: "str", required: false }
+    - field: "opened_date"
+      alias: "opened_date"
+      validation: { type: "datetime", required: false }
+
+# Transform: dates are text → datetime; standardize status values
+transform:
+  type_casts:
+    opened_date: datetime
+  standardization:
+    - field_name: status
+      mappings:
+        Active: ACTIVE
+        active: ACTIVE
+        Inactive: INACTIVE
+        inactive: INACTIVE
+        Dormant: DORMANT
+        dormant: DORMANT
+        Closed: CLOSED
+        closed: CLOSED
+      default_value: UNKNOWN
+    - field_name: account_type
+      mappings:
+        Savings: SAVINGS
+        savings: SAVINGS
+        Current: CURRENT
+        current: CURRENT
+        Fixed Deposit: FIXED_DEPOSIT
+        fixed deposit: FIXED_DEPOSIT
+        Loan: LOAN
+        loan: LOAN
+      default_value: UNKNOWN
+
+# Target: accounts data → accounts_clean
+target:
+  clean_table: accounts_clean
+  data_columns:
+    - account_id
+    - customer_id
+    - account_type
+    - status
+    - opened_date

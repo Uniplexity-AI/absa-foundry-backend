@@ -1,0 +1,74 @@
+# Transactions Core Batch 2 — Alternate transaction source
+# 7 columns: transaction_id, customer_id, transaction_date, txn_amount, transaction_type, channel, currency_code
+# txn_amount → amount, currency_code → currency (ETL transform normalizes these)
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/transactions_batch2.yaml
+
+version: "1.0"
+dataset_name: "transactions_core_batch2"
+trusted_config: true
+description: "Transaction batch from core_batch2 — txn_amount + currency_code columns."
+
+primary_entity:
+  table: "public.transactions_core_batch2"
+  alias: "txn"
+  select_fields:
+    - field: "transaction_id"
+      alias: "source_id"
+      validation: { type: "str", required: true }
+    - field: "customer_id"
+      alias: "customer_id"
+      validation: { type: "str", required: true }
+    - field: "transaction_date"
+      alias: "transaction_date"
+      validation: { type: "datetime", required: true }
+    - field: "txn_amount"
+      alias: "amount_raw"
+      validation: { type: "str", required: true }
+    - field: "transaction_type"
+      alias: "transaction_type"
+      validation: { type: "str", required: true }
+    - field: "channel"
+      alias: "channel"
+      validation: { type: "str", required: false, default: "UNKNOWN" }
+    - field: "currency_code"
+      alias: "currency"
+      validation: { type: "str", required: false, default: "ZMW" }
+
+# Transform: txn_amount is text → float; dates are text → datetime
+transform:
+  type_casts:
+    amount_raw: float
+    transaction_date: datetime
+  standardization:
+    - field_name: transaction_type
+      mappings:
+        DR: DEBIT
+        CR: CREDIT
+        dr: DEBIT
+        cr: CREDIT
+      default_value: UNKNOWN
+    - field_name: channel
+      mappings:
+        ATM: ATM
+        POS: POS
+        Mobile: MOBILE
+        Branch: BRANCH
+        Online: ONLINE
+      default_value: UNKNOWN
+    - field_name: currency
+      mappings:
+        ZMW: ZMW
+        USD: USD
+
+# Target: batches 1+2 also feed customer_transactions_clean
+target:
+  clean_table: customer_transactions_clean
+  data_columns:
+    - customer_id
+    - transaction_date
+    - transaction_type
+    - channel
+    - currency
+    - amount

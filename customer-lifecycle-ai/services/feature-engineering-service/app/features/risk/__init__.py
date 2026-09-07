@@ -1,0 +1,1 @@
+"""Risk feature domain."""

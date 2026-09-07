@@ -1,0 +1,197 @@
+{
+  "generated_from": "graph.json",
+  "stale_if_graph_changed": 1787828578.2024653,
+  "totals": {
+    "nodes": 6343,
+    "edges": 9789,
+    "files": 577
+  },
+  "file_types": {
+    ".py": 498,
+    ".md": 74,
+    ".ps1": 4,
+    "": 1
+  },
+  "top_hubs_by_inbound_links": [
+    {
+      "file": "etl/schemas/connector_schemas.py",
+      "inbound_links": 155,
+      "defined_symbols": 28,
+      "outbound_links": 19
+    },
+    {
+      "file": "services/decision-intelligence-service/app/schemas/schemas.py",
+      "inbound_links": 121,
+      "defined_symbols": 31,
+      "outbound_links": 25
+    },
+    {
+      "file": "etl/schemas/validation_schemas.py",
+      "inbound_links": 99,
+      "defined_symbols": 22,
+      "outbound_links": 14
+    },
+    {
+      "file": "etl/extraction/config_models.py",
+      "inbound_links": 69,
+      "defined_symbols": 59,
+      "outbound_links": 40
+    },
+    {
+      "file": "etl/schemas/landing_schemas.py",
+      "inbound_links": 64,
+      "defined_symbols": 20,
+      "outbound_links": 14
+    },
+    {
+      "file": "etl/schemas/ingestion_schemas.py",
+      "inbound_links": 59,
+      "defined_symbols": 18,
+      "outbound_links": 16
+    },
+    {
+      "file": "etl/schemas/orchestration_schemas.py",
+      "inbound_links": 54,
+      "defined_symbols": 23,
+      "outbound_links": 15
+    },
+    {
+      "file": "etl/schemas/transformation_schemas.py",
+      "inbound_links": 52,
+      "defined_symbols": 16,
+      "outbound_links": 11
+    },
+    {
+      "file": "shared/config/settings.py",
+      "inbound_links": 49,
+      "defined_symbols": 18,
+      "outbound_links": 11
+    },
+    {
+      "file": "tests/etl/connectors/test_connectors.py",
+      "inbound_links": 49,
+      "defined_symbols": 80,
+      "outbound_links": 62
+    },
+    {
+      "file": "etl/connectors/interfaces.py",
+      "inbound_links": 46,
+      "defined_symbols": 43,
+      "outbound_links": 29
+    },
+    {
+      "file": "etl/ingestion/service.py",
+      "inbound_links": 46,
+      "defined_symbols": 27,
+      "outbound_links": 34
+    },
+    {
+      "file": "services/feature-engineering-service/tests/conftest.py",
+      "inbound_links": 45,
+      "defined_symbols": 18,
+      "outbound_links": 21
+    },
+    {
+      "file": "shared/auth/models.py",
+      "inbound_links": 44,
+      "defined_symbols": 27,
+      "outbound_links": 15
+    },
+    {
+      "file": "tests/etl/ingestion/test_ingestion.py",
+      "inbound_links": 44,
+      "defined_symbols": 73,
+      "outbound_links": 66
+    },
+    {
+      "file": "tests/etl/validation/test_validation.py",
+      "inbound_links": 44,
+      "defined_symbols": 74,
+      "outbound_links": 61
+    },
+    {
+      "file": "etl/validation/validators/business_rule_validator.py",
+      "inbound_links": 43,
+      "defined_symbols": 35,
+      "outbound_links": 30
+    },
+    {
+      "file": "shared/database/base.py",
+      "inbound_links": 42,
+      "defined_symbols": 20,
+      "outbound_links": 12
+    },
+    {
+      "file": "etl/schemas/loading_schemas.py",
+      "inbound_links": 41,
+      "defined_symbols": 17,
+      "outbound_links": 12
+    },
+    {
+      "file": "tests/etl/staging/test_landing_zone.py",
+      "inbound_links": 41,
+      "defined_symbols": 70,
+      "outbound_links": 54
+    },
+    {
+      "file": "etl/logging/service.py",
+      "inbound_links": 40,
+      "defined_symbols": 22,
+      "outbound_links": 20
+    },
+    {
+      "file": "etl/extraction/query_builder.py",
+      "inbound_links": 39,
+      "defined_symbols": 30,
+      "outbound_links": 30
+    },
+    {
+      "file": "etl/connectors/factory.py",
+      "inbound_links": 38,
+      "defined_symbols": 12,
+      "outbound_links": 12
+    },
+    {
+      "file": "scripts/train_models.py",
+      "inbound_links": 38,
+      "defined_symbols": 64,
+      "outbound_links": 36
+    },
+    {
+      "file": "etl/schemas/staging_schemas.py",
+      "inbound_links": 37,
+      "defined_symbols": 12,
+      "outbound_links": 9
+    },
+    {
+      "file": "etl/staging/repository.py",
+      "inbound_links": 37,
+      "defined_symbols": 27,
+      "outbound_links": 25
+    },
+    {
+      "file": "services/feature-engineering-service/tests/test_generators.py",
+      "inbound_links": 36,
+      "defined_symbols": 56,
+      "outbound_links": 32
+    },
+    {
+      "file": "etl/landing/writer.py",
+      "inbound_links": 35,
+      "defined_symbols": 18,
+      "outbound_links": 22
+    },
+    {
+      "file": "services/prediction-service/app/schemas/schemas.py",
+      "inbound_links": 35,
+      "defined_symbols": 30,
+      "outbound_links": 16
+    },
+    {
+      "file": "docs/database/database-design-specification-v1.md",
+      "inbound_links": 35,
+      "defined_symbols": 128,
+      "outbound_links": 127
+    }
+  ]
+}

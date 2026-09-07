@@ -1,0 +1,77 @@
+# Decision Intelligence Platform — Ranking Rules Config
+# Version: 2.0.0 | Date: 2026-08-07
+# Purpose: Configurable scoring weights for heuristic ranking engine.
+# All magic numbers removed from Python code — non-technical stakeholders
+# can tune these without touching source code.
+
+# Action category membership
+categories:
+  retention:
+    - RETENTION_CALL
+    - FEE_WAIVER
+    - INTEREST_RATE_REVIEW
+    - LOYALTY_REWARD
+    - PRIORITY_SUPPORT
+    - BRANCH_VISIT
+  cross_sell:
+    - OFFER_PERSONAL_LOAN
+    - OFFER_CREDIT_CARD
+    - OFFER_MORTGAGE
+    - OFFER_INSURANCE
+    - OFFER_INVESTMENT
+    - OFFER_OVERDRAFT
+    - OFFER_FX_ACCOUNT
+  engagement:
+    - MOBILE_BANKING_ONBOARDING
+    - DIGITAL_CAMPAIGN
+    - SMS_CAMPAIGN
+    - EMAIL_CAMPAIGN
+    - SALARY_ACCOUNT_MIGRATION
+    - STANDING_ORDER_SETUP
+  service:
+    - KYC_UPDATE
+    - FRAUD_INVESTIGATION
+    - COLLECTIONS_WORKFLOW
+    - MANUAL_REVIEW
+    - RM_CALL
+    - ESCALATE_TO_REGIONAL
+  passive:
+    - NO_ACTION
+    - MONITOR_ONLY
+
+# Scoring parameters
+scoring:
+  baseline: 50.0
+
+  retention:
+    state_at_risk_dormant_bonus: 20.0
+    high_churn_bonus: 10.0        # churn_probability > threshold
+    low_health_bonus: 10.0        # health_score < threshold
+    high_clv_bonus: 5.0           # clv_percentile > threshold
+
+  cross_sell:
+    healthy_bonus: 15.0           # health_score > threshold
+    high_clv_bonus: 10.0          # clv_percentile > threshold
+    salary_credit_bonus: 10.0
+    dormant_churned_penalty: -30.0
+
+  engagement:
+    low_engagement_bonus: 20.0    # engagement_score < threshold
+    young_customer_bonus: 5.0     # age < threshold
+    churned_penalty: -40.0
+
+  service:
+    kyc_expired_bonus: 25.0
+    compliance_issue_bonus: 20.0
+
+  passive:
+    score: 30.0
+
+# Threshold values
+thresholds:
+  churn_probability_high: 0.5
+  health_score_low: 40.0
+  health_score_healthy: 60.0
+  clv_percentile_high: 0.7
+  engagement_score_low: 30.0
+  customer_age_young: 65
