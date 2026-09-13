@@ -22,6 +22,7 @@ from shared.config.settings import settings
 _engine: AsyncEngine | None = None
 _target_engine: AsyncEngine | None = None
 _sync_engine: SyncEngine | None = None
+_sync_target_engine: SyncEngine | None = None
 
 
 def get_engine() -> AsyncEngine:
@@ -81,12 +82,39 @@ def get_sync_engine() -> SyncEngine:
     return _sync_engine
 
 
+def get_sync_target_engine() -> SyncEngine:
+    """Return a singleton synchronous SQLAlchemy engine for the target (clean) DB.
+
+    Used by services that expose synchronous SQLAlchemy Session dependencies
+    (e.g. the Model Management Service, whose tables live in the clean DB).
+    """
+    global _sync_target_engine
+    if _sync_target_engine is None:
+        _sync_target_engine = create_sync_engine(
+            settings.database_target_url_sync,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_timeout=settings.db_pool_timeout,
+            pool_recycle=settings.db_pool_recycle,
+            echo=settings.environment == "development",
+            future=True,
+        )
+    return _sync_target_engine
+
+
 def reset_engine() -> None:
     """Dispose and reset the engine singletons. Used in tests."""
-    global _engine, _target_engine
+    global _engine, _target_engine, _sync_engine, _sync_target_engine
     if _engine is not None:
         _engine.sync_engine.dispose()
         _engine = None
     if _target_engine is not None:
         _target_engine.sync_engine.dispose()
         _target_engine = None
+    if _sync_engine is not None:
+        _sync_engine.dispose()
+        _sync_engine = None
+    if _sync_target_engine is not None:
+        _sync_target_engine.dispose()
+        _sync_target_engine = None
+    return None

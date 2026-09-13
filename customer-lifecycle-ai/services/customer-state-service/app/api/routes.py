@@ -58,6 +58,35 @@ def get_lifecycle_stages(as_of_date: date = Query(..., description="Date for lif
     return portfolio_views.lifecycle_stages(as_of_date)
 
 
+@router.get("/at-risk-cases")
+def get_at_risk_cases(
+    as_of_date: date = Query(..., description="Date for at-risk case list"),
+    limit: int = Query(default=50, ge=1, le=200, description="Max cases to return"),
+):
+    """Top at-risk customers ranked by erosion probability for the Branch Manager case list."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.at_risk_cases(as_of_date, limit)
+
+
+@router.get("/unenrolled-high-risk")
+def get_unenrolled_high_risk(
+    as_of_date: date = Query(..., description="Date for unenrolled customers"),
+    limit: int = Query(default=20, ge=1, le=100, description="Max rows to return"),
+):
+    """AT_RISK customers with no pilot action logged — for the unenrolled campaign panel."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.unenrolled_high_risk(as_of_date, limit)
+
+
+@router.get("/priority-actions")
+def get_priority_actions(
+    as_of_date: date = Query(..., description="Date for priority action aggregates"),
+):
+    """Computed AI priority actions based on real at-risk aggregates."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.priority_actions(as_of_date)
+
+
 @router.get("", response_model=list[StateSnapshot])
 def list_all_states(
     as_of_date: date = Query(..., description="Date for state snapshots"),

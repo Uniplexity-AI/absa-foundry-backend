@@ -41,7 +41,7 @@ flowchart LR
     ETL -.audit.-> AUD
 ```
 
-Five services run on top of these databases:
+Six services run on top of these databases:
 
 | Service | Port | Reads | Writes |
 |---------|------|-------|--------|
@@ -541,7 +541,7 @@ Available specs and their source tables are listed in §2.1.
 ### Phase C — Services
 
 13. [ ] Start services: `.\scripts\pilot_start.ps1`.
-14. [ ] Health-check all five (`/health` on ports 8080, 8002, 8003, 8004, 8005).
+14. [ ] Health-check all six (`/health` on ports 8080, 8002, 8003, 8004, 8005, 8006).
 15. [ ] Compute features: `POST /features/compute-batch`.
 16. [ ] Compute states: `POST /states/compute`.
 17. [ ] Verify predictions: `GET /predict/{customer_id}/churn` and `/health`.
@@ -587,7 +587,7 @@ Available specs and their source tables are listed in §2.1.
 
 ```powershell
 # Health checks
-@(8080,8002,8003,8004,8005) | ForEach-Object {
+@(8080,8002,8003,8004,8005,8006) | ForEach-Object {
     try { Invoke-RestMethod "http://localhost:$_/health" -TimeoutSec 5 | Out-Null; ":$($_) OK" }
     catch { ":$($_) DOWN" }
 }

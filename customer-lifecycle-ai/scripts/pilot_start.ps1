@@ -1,5 +1,5 @@
 # =============================================================================
-# ABSA Backend — Pilot Start (all 5 services, production mode)
+# ABSA Backend — Pilot Start (all 6 services, production mode)
 #
 # Differences from dev start.ps1:
 #   - NO --reload (production mode)
@@ -41,6 +41,7 @@ $featurePort    = Get-Port 'FEATURE_ENGINEERING_SERVICE_PORT' 8002
 $statePort      = Get-Port 'CUSTOMER_STATE_SERVICE_PORT' 8003
 $predictionPort = Get-Port 'PREDICTION_SERVICE_PORT' 8004
 $decisionPort   = Get-Port 'DECISION_INTELLIGENCE_SERVICE_PORT' 8005
+$modelMgmtPort  = Get-Port 'MODEL_MANAGEMENT_SERVICE_PORT' 8006
 
 # name, port, working directory, app target, use --factory
 $services = @(
@@ -48,7 +49,8 @@ $services = @(
     @{ Name = 'feature';    Port = $featurePort;    Dir = "$root\services\feature-engineering-service";       App = 'main:app';                 Factory = $false },
     @{ Name = 'state';      Port = $statePort;      Dir = "$root\services\customer-state-service";            App = 'main:app';                 Factory = $false },
     @{ Name = 'prediction'; Port = $predictionPort; Dir = "$root\services\prediction-service";                App = 'main:app';                 Factory = $false },
-    @{ Name = 'decision';   Port = $decisionPort;   Dir = "$root\services\decision-intelligence-service";     App = 'main:app';                 Factory = $false }
+    @{ Name = 'decision';   Port = $decisionPort;   Dir = "$root\services\decision-intelligence-service";     App = 'main:app';                 Factory = $false },
+    @{ Name = 'modelmgmt';  Port = $modelMgmtPort;  Dir = "$root\services\model-management-service";          App = 'app.main:app';             Factory = $false }
 )
 
 # Stop anything we started previously (by pid file, not blanket taskkill)
@@ -60,7 +62,7 @@ if (Test-Path $pidFile) {
 }
 
 $pids = @()
-Write-Host "Starting 5 services (production mode)..." -ForegroundColor Cyan
+Write-Host "Starting 6 services (production mode)..." -ForegroundColor Cyan
 
 foreach ($s in $services) {
     $args = @('-m', 'uvicorn', $s.App, '--host', '0.0.0.0', '--port', "$($s.Port)")
@@ -83,3 +85,4 @@ Write-Host "  http://localhost:$featurePort/health  (feature)" -ForegroundColor 
 Write-Host "  http://localhost:$statePort/health  (state)" -ForegroundColor DarkGray
 Write-Host "  http://localhost:$predictionPort/health  (prediction)" -ForegroundColor DarkGray
 Write-Host "  http://localhost:$decisionPort/health  (decision)" -ForegroundColor DarkGray
+Write-Host "  http://localhost:$modelMgmtPort/health  (modelmgmt)" -ForegroundColor DarkGray

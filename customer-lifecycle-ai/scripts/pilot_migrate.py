@@ -41,6 +41,7 @@ MIGRATIONS = [
     ("database/state_engine/001_customer_states.sql", "target"),
     ("database/migrations/009_pilot_actions.sql", "target"),
     ("database/migrations/010_market_segment.sql", "target"),
+    ("database/migrations/012_model_management.sql", "target"),
 ]
 
 

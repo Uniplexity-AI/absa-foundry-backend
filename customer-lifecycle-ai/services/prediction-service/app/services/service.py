@@ -1,4 +1,4 @@
-﻿"""PredictionService — Unified prediction orchestration.
+"""PredictionService — Unified prediction orchestration.
 
 Mirrors StateService pattern.
 Follows prediction-service.md §4.6 (chunking) + §8 (API contract).
@@ -183,6 +183,85 @@ class PredictionService:
             "churn_model": self._churn.model_version,
             "duration_seconds": duration,
             "status": "COMPLETED",
+        }
+
+    # ── Value Predictions Batch ─────────────────────────────────────
+
+    def run_value_batch(self, as_of_date: date | None = None) -> dict:
+        """Run ValuePredictionService over all customers and backfill customer_states.
+
+        Loads features from customer_features, scores each customer using the
+        XGBoost erosion classifier + future-value regressor, then writes:
+          erosion_probability, erosion_risk_level, predicted_future_value,
+          future_value_percentile, model_version, prediction_date
+        into customer_states for that as_of_date.
+
+        Idempotent — re-running overwrites previous value scores.
+        Returns a summary dict for the API response.
+        """
+        from app.services.value_prediction import ValuePredictionService
+
+        t0 = time.perf_counter()
+
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+            if as_of_date is None:
+                return {"as_of_date": None, "customers_scored": 0,
+                        "rows_backfilled": 0, "status": "NO_DATA",
+                        "duration_seconds": 0.0}
+
+        features_list = self._repo.load_features(as_of_date)
+        if not features_list:
+            return {"as_of_date": as_of_date.isoformat(), "customers_scored": 0,
+                    "rows_backfilled": 0, "status": "NO_DATA",
+                    "duration_seconds": round(time.perf_counter() - t0, 2)}
+
+        svc = ValuePredictionService()
+        if svc.erosion_model is None:
+            return {"as_of_date": as_of_date.isoformat(), "customers_scored": 0,
+                    "rows_backfilled": 0, "status": "MODEL_NOT_LOADED",
+                    "duration_seconds": round(time.perf_counter() - t0, 2)}
+
+        chunk_size = self._config.batch_chunk_size
+        all_preds: list[dict] = []
+
+        for i in range(0, len(features_list), chunk_size):
+            chunk = features_list[i: i + chunk_size]
+            for row in chunk:
+                pred = svc.predict(row)
+                all_preds.append({
+                    "customer_id": row["customer_id"],
+                    # Explicitly cast to native Python float — np.float64 causes
+                    # psycopg2 to render values as np.float64(...) which Postgres
+                    # misinterprets as a schema reference.
+                    "erosion_probability": float(pred["erosion_probability"]),
+                    "erosion_risk_level": str(pred["erosion_risk_level"]),
+                    "predicted_future_value": float(pred["predicted_future_value"]),
+                    "future_value_percentile": 0.0,  # filled below
+                })
+
+        # Compute percentile rank of predicted_future_value across all customers
+        sorted_vals = sorted(p["predicted_future_value"] for p in all_preds)
+        n = len(sorted_vals)
+        if n:
+            for p in all_preds:
+                p["future_value_percentile"] = float(round(
+                    sum(1 for v in sorted_vals if v < p["predicted_future_value"]) / n, 4
+                ))
+
+        rows_updated = self._repo.backfill_value_predictions(all_preds, as_of_date)
+        duration = round(time.perf_counter() - t0, 2)
+        logger.info(
+            "run_value_batch: date=%s scored=%d backfilled=%d duration=%.1fs",
+            as_of_date, len(all_preds), rows_updated, duration,
+        )
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "customers_scored": len(all_preds),
+            "rows_backfilled": rows_updated,
+            "model_version": "value_erosion_v1",
+            "status": "COMPLETED",
+            "duration_seconds": duration,
         }
 
     # ── Single Customer ────────────────────────────────────────────
@@ -377,13 +456,17 @@ class PredictionService:
                     type=m["type"],
                     status=m["status"],
                     metrics=m.get("metrics"),
-                    version=m.get("version"),
+                    version=str(m["version"]) if m.get("version") is not None else None,
                     framework=m.get("framework"),
                     trained_at=m.get("trained_at"),
                     holdout_date=m.get("holdout_date"),
                     training_dates=m.get("training_dates"),
                     classification=m.get("classification"),
-                    classification_threshold=m.get("classification_f1_threshold"),
+                    classification_threshold=(
+                        m.get("classification_f1_threshold", {}).get("threshold")
+                        if isinstance(m.get("classification_f1_threshold"), dict)
+                        else m.get("classification_f1_threshold")
+                    ),
                     n_training_features=(
                         len(m["training_features"]) if m.get("training_features")
                         else m.get("feature_count_training")

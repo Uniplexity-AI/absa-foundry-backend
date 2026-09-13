@@ -9,7 +9,7 @@
 
 ## 1. Architecture Overview
 
-Five services + one gateway, all running as Uvicorn processes on a single Windows host.
+Six services + one gateway, all running as Uvicorn processes on a single Windows host.
 
 | Service | Port | Purpose |
 |---------|------|---------|
@@ -60,6 +60,7 @@ customer-lifecycle-ai/
 │   ├── customer-state-service/        (:8003)
 │   ├── prediction-service/            (:8004)
 │   └── decision-intelligence-service/ (:8005)
+│   └── model-management-service/      (:8006)
 ├── database/
 │   ├── iam/001_initial_schema.sql         # auth schema (source DB)
 │   ├── migrations/001_etl_schema.sql      # ETL audit/validation (target DB)
@@ -162,9 +163,10 @@ Invoke-RestMethod http://localhost:8002/health   # feature
 Invoke-RestMethod http://localhost:8003/health   # state
 Invoke-RestMethod http://localhost:8004/health   # prediction
 Invoke-RestMethod http://localhost:8005/health   # decision
+Invoke-RestMethod http://localhost:8006/health   # model management
 ```
 
-All five should return a healthy status.
+All six should return a healthy status.
 
 ### Step 7 — Stop the services
 
@@ -203,6 +205,10 @@ Set-Location "C:\path\to\customer-lifecycle-ai\services\prediction-service"
 # Decision Intelligence (:8005)
 Set-Location "C:\path\to\customer-lifecycle-ai\services\decision-intelligence-service"
 ..\..\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 8005
+
+# Model Management (:8006) — model registry / MLOps control plane
+Set-Location "C:\path\to\customer-lifecycle-ai\services\model-management-service"
+..\..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8006
 ```
 
 > **Do NOT use `--reload`** in production — it's a development feature that
@@ -271,8 +277,8 @@ Or trigger it from the UI (ETL Manager → Trigger Manual Run).
 .\scripts\pilot_start.ps1
 .\scripts\pilot_stop.ps1
 
-# Health check all 5 services
-@(8080,8002,8003,8004,8005) | ForEach-Object {
+# Health check all 6 services
+@(8080,8002,8003,8004,8005,8006) | ForEach-Object {
     try { $r = Invoke-RestMethod "http://localhost:$_/health" -TimeoutSec 5; ":$($_ ) OK" }
     catch { ":$($_ ) DOWN" }
 }

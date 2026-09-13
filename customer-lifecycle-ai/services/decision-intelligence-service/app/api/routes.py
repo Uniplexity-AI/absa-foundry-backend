@@ -260,7 +260,7 @@ def llm_explain_customer(
         "customer_id": customer_id,
         "as_of_date": as_of_date,
         "llm_available": llm.is_available,
-        "model": "qwen2.5-coder:7b",
+        "model": llm.health["model"],
         "deterministic_codes": [c.model_dump() for c in reason_codes],
         "llm_explanation": explanation,
         "top_action": top_action,

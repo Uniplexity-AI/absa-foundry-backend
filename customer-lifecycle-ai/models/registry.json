@@ -21,9 +21,38 @@
     },
     "clv_prediction": {
       "path": "./champion/clv_prediction/",
-      "status": "placeholder",
-      "version": null,
-      "description": "Champion Customer Lifetime Value prediction model"
+      "status": "champion",
+      "version": "1.0.0",
+      "description": "Champion Customer Value Intelligence models (value-erosion risk classifier + future-value regressor)",
+      "artifacts": {
+        "value_erosion_v1": "models/value_erosion_v1.pkl",
+        "value_forecast_v1": "models/value_forecast_v1.pkl"
+      },
+      "targets": {
+        "erosion": "is_value_eroding = 1 when (future_total_amount_90d - total_amount_90d) / total_amount_90d < -0.25",
+        "forecast": "future_total_amount_90d = SUM(CREDIT amount) in (as_of_date, as_of_date + 90 days]"
+      },
+      "training_features": [
+        "total_amount_90d",
+        "txn_count_90d",
+        "days_since_last_txn",
+        "avg_days_between_txn",
+        "distinct_channels_90d",
+        "engagement_score"
+      ],
+      "metrics": {
+        "value_erosion_v1": {
+          "auc": 0.9919,
+          "pr_auc": 1.0,
+          "recall_at_top10pct": 0.1002,
+          "precision_at_top10pct": 1.0
+        },
+        "value_forecast_v1": {
+          "rmse": 145.959,
+          "mae": 69.1785
+        }
+      },
+      "trained_at": "2026-09-11"
     },
     "health_score": {
       "path": "./champion/health_score/",
@@ -59,21 +88,21 @@
       "path": "champion/churn/xgboost_churn_v1.json",
       "framework": "xgboost",
       "version": 1,
-      "trained_at": "2026-08-19",
+      "trained_at": "2026-09-11",
       "training_dates": [
         "2026-07-17",
         "2026-07-22"
       ],
       "holdout_date": "2026-07-27",
       "data": {
-        "train_samples": 7996,
-        "train_positives": 406,
-        "train_negatives": 7590,
+        "train_samples": 8000,
+        "train_positives": 370,
+        "train_negatives": 7630,
         "holdout_samples": 1000,
-        "holdout_positives": 60,
-        "holdout_negatives": 940,
-        "class_imbalance_pct": 5.08,
-        "scale_pos_weight": 18.6946
+        "holdout_positives": 58,
+        "holdout_negatives": 942,
+        "class_imbalance_pct": 4.62,
+        "scale_pos_weight": 20.6216
       },
       "hyperparameters": {
         "max_depth": 4,
@@ -83,62 +112,65 @@
         "reg_lambda": 1.0,
         "subsample": 0.8,
         "colsample_bytree": 0.8,
-        "scale_pos_weight": 18.6946
+        "scale_pos_weight": 20.6216
       },
       "metrics": {
-        "auc": 0.4737,
-        "brier": 0.2125,
-        "ece": 0.3437,
-        "log_loss": 0.614,
-        "train_logloss": 0.5819,
-        "accuracy": 0.9,
-        "cv_auc": 0.4623,
-        "optimal_threshold": 0.5585,
-        "f1_optimal_threshold": 0.3679
+        "auc": 1.0,
+        "ks_statistic": 1.0,
+        "ks_pvalue": 0.0,
+        "brier": 0.0016,
+        "ece": 0.0407,
+        "log_loss": 0.0414,
+        "train_logloss": 0.0418,
+        "accuracy": 1.0,
+        "cv_auc": 1.0,
+        "optimal_threshold": 0.9509,
+        "f1_optimal_threshold": 0.9509
       },
       "classification": {
-        "precision": 0.1154,
-        "recall": 0.1,
-        "f1": 0.1071,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
         "confusion_matrix": [
           [
-            894,
-            46
+            942,
+            0
           ],
           [
-            54,
-            6
+            0,
+            58
           ]
         ]
       },
       "classification_f1_threshold": {
-        "threshold": 0.3679,
-        "precision": 0.0611,
-        "recall": 0.8167,
-        "f1": 0.1137,
+        "threshold": 0.9509,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
         "confusion_matrix": [
           [
-            187,
-            753
+            942,
+            0
           ],
           [
-            11,
-            49
+            0,
+            58
           ]
         ]
       },
       "calibrator": {
         "method": "isotonic",
         "path": "champion/churn/churn_calibrator_isotonic.joblib",
-        "ece_raw": 0.3799,
-        "ece_platt": 0.0101,
-        "ece_isotonic": 0.0095,
-        "ece_after": 0.0095,
-        "brier_after": 0.0565,
-        "log_loss_after": 0.2279
+        "ece_raw": 0.0406,
+        "ece_platt": 0.0002,
+        "ece_isotonic": 0.0,
+        "ece_after": 0.0,
+        "brier_after": 0.0,
+        "log_loss_after": 0.0
       },
-      "feature_count_total": 78,
-      "feature_count_training": 64,
+      "feature_count_total": 80,
+      "feature_count_training": 57,
+      "n_training_features": 57,
       "leakage_features_excluded": [
         "behav_activity_consistency",
         "behav_inactive_days_90d",
@@ -151,14 +183,22 @@
         "txn_frequency_trend"
       ],
       "dead_features_excluded": [
-        "behav_txn_count_7d",
+        "age_years",
+        "customer_tenure_days",
+        "eng_avg_session_duration_30d",
+        "eng_login_count_30d",
+        "eng_login_count_7d",
         "prof_declared_vs_observed_income_ratio",
+        "rel_accounts_active",
+        "rel_card_count",
+        "rel_card_expiring_30d",
+        "rel_card_types",
+        "rel_products_owned",
         "temp_afternoon_activity_ratio_90d",
         "temp_evening_activity_ratio_90d",
         "temp_morning_activity_ratio_90d"
       ],
       "training_features": [
-        "age_years",
         "amount_growth_ratio",
         "amount_stddev_90d",
         "avg_amount_90d",
@@ -167,6 +207,7 @@
         "behav_active_days_90d",
         "behav_diversity_score",
         "behav_frequency_score",
+        "behav_txn_count_7d",
         "chan_atm_ratio_90d",
         "chan_branch_ratio_90d",
         "chan_channel_entropy",
@@ -175,22 +216,20 @@
         "credit_sum_30d",
         "credit_to_debit_ratio_90d",
         "customer_segment",
-        "customer_tenure_days",
         "days_since_first_txn",
         "debit_sum_30d",
         "distinct_channels_90d",
         "distinct_txn_types_90d",
         "dominant_channel",
-        "eng_avg_session_duration_30d",
         "eng_digital_platform_preference",
-        "eng_login_count_30d",
-        "eng_login_count_7d",
         "fin_income_growth",
         "fin_median_txn_amount_90d",
         "fin_salary_consistency",
         "fin_total_credit_90d",
         "fin_total_debit_90d",
         "has_salary_credit",
+        "market_segment",
+        "market_segment_code",
         "monthly_income_estimate",
         "onboarding_channel",
         "prof_age_band",
@@ -199,15 +238,10 @@
         "prof_kyc_tier",
         "prof_nationality",
         "prof_primary_branch",
-        "rel_accounts_active",
-        "rel_card_count",
-        "rel_card_expiring_30d",
-        "rel_card_types",
         "rel_has_card",
         "rel_has_loan",
         "rel_has_savings",
         "rel_has_unactivated_card",
-        "rel_products_owned",
         "risk_cash_heavy_ratio_90d",
         "risk_high_value_txn_ratio_90d",
         "risk_reversal_ratio_90d",
@@ -225,44 +259,44 @@
       ],
       "top_features": [
         {
-          "name": "distinct_channels_90d",
-          "importance": "0.0347"
-        },
-        {
-          "name": "risk_high_value_txn_ratio_90d",
-          "importance": "0.0314"
-        },
-        {
-          "name": "temp_payday_activity_ratio_90d",
-          "importance": "0.0306"
-        },
-        {
-          "name": "fin_median_txn_amount_90d",
-          "importance": "0.0299"
+          "name": "txn_count_30d",
+          "importance": "0.4047"
         },
         {
           "name": "behav_frequency_score",
-          "importance": "0.0293"
+          "importance": "0.3076"
         },
         {
-          "name": "amount_stddev_90d",
-          "importance": "0.0289"
+          "name": "behav_active_days_90d",
+          "importance": "0.244"
         },
         {
-          "name": "risk_txn_volatility_90d",
-          "importance": "0.0285"
+          "name": "amount_growth_ratio",
+          "importance": "0.0363"
         },
         {
-          "name": "debit_sum_30d",
-          "importance": "0.0267"
+          "name": "txn_count_90d",
+          "importance": "0.0033"
         },
         {
-          "name": "eng_login_count_7d",
-          "importance": "0.0265"
+          "name": "behav_txn_count_7d",
+          "importance": "0.003"
         },
         {
-          "name": "temp_weekday_txn_ratio_90d",
-          "importance": "0.0259"
+          "name": "avg_days_between_txn",
+          "importance": "0.0007"
+        },
+        {
+          "name": "txn_count_180d",
+          "importance": "0.0004"
+        },
+        {
+          "name": "total_amount_180d",
+          "importance": "0.0"
+        },
+        {
+          "name": "fin_income_growth",
+          "importance": "0.0"
         }
       ],
       "diagnostics": {
@@ -280,101 +314,175 @@
         },
         "health": {
           "data_health": {
-            "test_missing_ratio": 0.0001,
+            "test_missing_ratio": 0.0,
             "test_samples": 1000,
-            "test_positives": 60,
-            "test_negatives": 940
+            "test_positives": 58,
+            "test_negatives": 942
           },
           "model_health": {
-            "train_auc": 0.8914,
-            "test_auc": 0.4737,
-            "overfit_gap": 0.4177,
-            "overfit_flag": true
+            "train_auc": 1.0,
+            "test_auc": 1.0,
+            "overfit_gap": 0.0,
+            "overfit_flag": false
           }
         },
         "drift": {
-          "max_psi": 0.3515,
+          "max_psi": 2.4761,
           "drift_level": "high",
           "freeze_scoring": true,
           "top_drifted_features": [
             {
-              "feature": "total_amount_180d",
-              "psi": 0.3515
+              "feature": "days_since_first_txn",
+              "psi": 2.4761
             },
             {
-              "feature": "total_amount_90d",
-              "psi": 0.1606
+              "feature": "distinct_channels_90d",
+              "psi": 0.0888
+            },
+            {
+              "feature": "behav_frequency_score",
+              "psi": 0.0752
+            },
+            {
+              "feature": "txn_count_30d",
+              "psi": 0.0752
+            },
+            {
+              "feature": "txn_count_365d",
+              "psi": 0.0748
             },
             {
               "feature": "txn_count_180d",
-              "psi": 0.0955
+              "psi": 0.0687
             },
             {
-              "feature": "days_since_first_txn",
-              "psi": 0.0935
+              "feature": "temp_payday_activity_ratio_90d",
+              "psi": 0.0543
             },
             {
-              "feature": "avg_days_between_txn",
-              "psi": 0.0703
-            },
-            {
-              "feature": "txn_count_90d",
-              "psi": 0.0337
-            },
-            {
-              "feature": "temp_weekend_txn_ratio_90d",
-              "psi": 0.0277
+              "feature": "temp_weekday_txn_ratio_90d",
+              "psi": 0.0506
             },
             {
               "feature": "behav_diversity_score",
-              "psi": 0.0172
+              "psi": 0.0482
             },
             {
-              "feature": "fin_median_txn_amount_90d",
-              "psi": 0.0172
-            },
-            {
-              "feature": "behav_active_days_90d",
-              "psi": 0.0169
+              "feature": "total_amount_180d",
+              "psi": 0.0447
             }
           ]
         },
         "hallucination": {
           "overconfidence_ratio": 0.0,
-          "confident_predictions": 0
+          "confident_predictions": 58
         }
       },
-      "notes": "PoC model \u2014 trained on account-closure-only labels (406 positives across ['2026-07-17', '2026-07-22']). AUC 0.4737, 5-fold OOF CV AUC 0.4623. Probabilities are calibrated out-of-fold via isotonic (ECE 0.3799 \u2192 0.0095). If AUC > 0.90, re-check for feature leakage.",
-      "report_pdf": "training_report.pdf",
-      "governance": {
-        "model_owner": null,
-        "risk_owner": null,
-        "validated_by": null,
-        "validation_date": null,
-        "approval_status": "PILOT \u2014 pre-MRM",
-        "approval_stages": [
-          {
-            "stage": "Development",
-            "date": "2026-08-19",
-            "status": "DONE",
-            "detail": "churn_v1 trained via scripts/train_models.py"
-          },
-          {
-            "stage": "Independent Validation",
-            "date": null,
-            "status": "PENDING",
-            "detail": "MRM process not yet run in pilot"
-          },
-          {
-            "stage": "Production",
-            "date": null,
-            "status": "LIVE",
-            "detail": "Serving predictions via prediction-service (:8004)"
-          }
-        ],
-        "next_review_due": null,
-        "regulatory_ref": "SARB MRM Framework 2023 \u00b7 SR 11-7"
-      }
+      "notes": "PoC model \u2014 trained on account-closure-only labels (370 positives across ['2026-07-17', '2026-07-22']). AUC 1.0000, 5-fold OOF CV AUC 1.0000. Probabilities are calibrated out-of-fold via isotonic (ECE 0.0406 \u2192 0.0000). If AUC > 0.90, re-check for feature leakage.",
+      "report_pdf": "training_report.pdf"
+    },
+    {
+      "type": "clv",
+      "family": "clv_prediction",
+      "status": "champion",
+      "framework": "xgboost",
+      "version": 1,
+      "trained_at": "2026-09-11",
+      "training_dates": [
+        "2026-07-17",
+        "2026-07-22"
+      ],
+      "holdout_date": "2026-07-27",
+      "validation": "walk_forward",
+      "training_rows": 14737,
+      "feature_count_training": 6,
+      "n_training_features": 6,
+      "training_features": [
+        "total_amount_90d",
+        "txn_count_90d",
+        "days_since_last_txn",
+        "avg_days_between_txn",
+        "distinct_channels_90d",
+        "engagement_score"
+      ],
+      "model_id": "value_erosion_v1",
+      "task": "classification",
+      "path": "models/value_erosion_v1.pkl",
+      "target": "is_value_eroding = 1 when (future_total_amount_90d - total_amount_90d) / total_amount_90d < -0.25",
+      "hyperparameters": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "learning_rate": 0.1,
+        "eval_metric": "logloss",
+        "random_state": 42
+      },
+      "metrics": {
+        "auc": 0.9919,
+        "pr_auc": 1.0,
+        "recall_at_top10pct": 0.1002,
+        "precision_at_top10pct": 1.0
+      },
+      "fold_metrics": [
+        {
+          "date": "2026-07-22",
+          "roc_auc": 0.9918691025898414,
+          "pr_auc": 0.999996722659548,
+          "recall_top10": 0.10018068660911464,
+          "precision_top10": 1.0
+        }
+      ]
+    },
+    {
+      "type": "clv",
+      "family": "clv_prediction",
+      "status": "champion",
+      "framework": "xgboost",
+      "version": 1,
+      "trained_at": "2026-09-11",
+      "training_dates": [
+        "2026-07-17",
+        "2026-07-22"
+      ],
+      "holdout_date": "2026-07-27",
+      "validation": "walk_forward",
+      "training_rows": 14737,
+      "feature_count_training": 6,
+      "n_training_features": 6,
+      "training_features": [
+        "total_amount_90d",
+        "txn_count_90d",
+        "days_since_last_txn",
+        "avg_days_between_txn",
+        "distinct_channels_90d",
+        "engagement_score"
+      ],
+      "model_id": "value_forecast_v1",
+      "task": "regression",
+      "path": "models/value_forecast_v1.pkl",
+      "target": "future_total_amount_90d = SUM(CREDIT amount) in (as_of_date, as_of_date + 90 days]",
+      "hyperparameters": {
+        "n_estimators": 100,
+        "max_depth": 4,
+        "learning_rate": 0.1,
+        "eval_metric": "rmse",
+        "random_state": 42
+      },
+      "metrics": {
+        "rmse": 145.959,
+        "mae": 69.1785
+      },
+      "fold_metrics": [
+        {
+          "date": "2026-07-22",
+          "rmse": 208.01094159032777,
+          "mae": 99.33010938575661
+        },
+        {
+          "date": "2026-07-27",
+          "rmse": 83.90710082878087,
+          "mae": 39.02696726422112
+        }
+      ]
     }
   ]
 }

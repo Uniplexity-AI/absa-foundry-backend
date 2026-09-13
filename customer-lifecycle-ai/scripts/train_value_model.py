@@ -31,6 +31,23 @@ from dotenv import load_dotenv
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+
+def _jsonable(obj):
+    """Recursively convert numpy / pandas / date values into JSON-serializable ones."""
+    if isinstance(obj, dict):
+        return {k: _jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_jsonable(v) for v in obj]
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (dt.datetime, dt.date)):
+        return obj.isoformat()
+    return obj
+
 def get_db_connection():
     load_dotenv()
     db_url = os.environ.get("DATABASE_TARGET_URL_SYNC") or "postgresql://postgres:wamulehi@localhost:5432/etl_clean"
@@ -102,8 +119,12 @@ def walk_forward_split(df: pd.DataFrame):
         
         yield train_idx, test_idx, test_date
 
-def train_erosion_model(df: pd.DataFrame, feature_cols: list) -> xgb.XGBClassifier:
-    """Train XGBoost Classifier for Value Erosion Risk with Walk-Forward Validation."""
+def train_erosion_model(df: pd.DataFrame, feature_cols: list) -> tuple[xgb.XGBClassifier, list[dict]]:
+    """Train XGBoost Classifier for Value Erosion Risk with Walk-Forward Validation.
+
+    Returns the final model plus the per-fold walk-forward metrics (persisted to
+    models/value_models_metrics.json for registry registration).
+    """
     logger.info("Training Value Erosion Model (Classification)...")
     
     X = df[feature_cols]
@@ -154,10 +175,13 @@ def train_erosion_model(df: pd.DataFrame, feature_cols: list) -> xgb.XGBClassifi
     # Final train on all data
     logger.info("Training final erosion model on all data.")
     model.fit(X, y)
-    return model
+    return model, metrics
 
-def train_forecast_model(df: pd.DataFrame, feature_cols: list) -> xgb.XGBRegressor:
-    """Train XGBoost Regressor for Future Value Forecast."""
+def train_forecast_model(df: pd.DataFrame, feature_cols: list) -> tuple[xgb.XGBRegressor, list[dict]]:
+    """Train XGBoost Regressor for Future Value Forecast.
+
+    Returns the final model plus the per-fold walk-forward metrics.
+    """
     logger.info("Training Future Value Forecast Model (Regression)...")
     
     X = df[feature_cols]
@@ -173,6 +197,7 @@ def train_forecast_model(df: pd.DataFrame, feature_cols: list) -> xgb.XGBRegress
     )
     
     # Walk-forward validation
+    forecast_metrics = []
     for train_idx, test_idx, test_date in walk_forward_split(df):
         X_train, y_train = X.iloc[train_idx], y.iloc[train_idx]
         X_test, y_test = X.iloc[test_idx], y.iloc[test_idx]
@@ -187,12 +212,18 @@ def train_forecast_model(df: pd.DataFrame, feature_cols: list) -> xgb.XGBRegress
         rmse = np.sqrt(mean_squared_error(y_true, y_pred))
         mae = mean_absolute_error(y_true, y_pred)
         
+        forecast_metrics.append({
+            'date': test_date,
+            'rmse': rmse,
+            'mae': mae,
+        })
+        
         logger.info(f"Fold {test_date}: RMSE={rmse:.2f}, MAE={mae:.2f}")
         
     # Final train on all data
     logger.info("Training final forecast model on all data.")
     model.fit(X, y)
-    return model
+    return model, forecast_metrics
 
 def generate_shap_explanations(model, X, is_classification=True):
     """Generate SHAP values for the dataset to verify explainability works."""
@@ -225,18 +256,50 @@ def main():
     ]]
     
     # 1. Train Classification Model (Erosion Risk)
-    erosion_model = train_erosion_model(df, feature_cols)
+    erosion_model, erosion_folds = train_erosion_model(df, feature_cols)
     erosion_model_path = "models/value_erosion_v1.pkl"
     with open(erosion_model_path, "wb") as f:
         pickle.dump({'model': erosion_model, 'features': feature_cols}, f)
     logger.info(f"Saved erosion model to {erosion_model_path}")
     
     # 2. Train Regression Model (Future Value)
-    forecast_model = train_forecast_model(df, feature_cols)
+    forecast_model, forecast_folds = train_forecast_model(df, feature_cols)
     forecast_model_path = "models/value_forecast_v1.pkl"
     with open(forecast_model_path, "wb") as f:
         pickle.dump({'model': forecast_model, 'features': feature_cols}, f)
     logger.info(f"Saved forecast model to {forecast_model_path}")
+
+    # 2b. Persist metrics + lineage so scripts/register_value_models.py can
+    #     register these models without re-evaluating them.
+    dates = sorted({d.isoformat() if hasattr(d, 'isoformat') else str(d) for d in df['as_of_date'].unique()})
+    metadata = {
+        'trained_at': dt.date.today().isoformat(),
+        'training_rows': int(len(df)),
+        'as_of_dates': dates,
+        'features': list(feature_cols),
+        'feature_count': len(feature_cols),
+        'targets': {
+            'erosion': 'is_value_eroding = 1 when (future_total_amount_90d - total_amount_90d) / total_amount_90d < -0.25',
+            'forecast': 'future_total_amount_90d = SUM(CREDIT amount) in (as_of_date, as_of_date + 90 days]',
+        },
+        'hyperparameters': {
+            'erosion': {'n_estimators': 100, 'max_depth': 4, 'learning_rate': 0.1,
+                        'eval_metric': 'logloss', 'random_state': 42},
+            'forecast': {'n_estimators': 100, 'max_depth': 4, 'learning_rate': 0.1,
+                         'eval_metric': 'rmse', 'random_state': 42},
+        },
+        'validation': {
+            'strategy': 'walk_forward',
+            'erosion_folds': erosion_folds,
+            'forecast_folds': forecast_folds,
+        },
+        'shap_available': shap is not None,
+    }
+    metrics_path = "models/value_models_metrics.json"
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(_jsonable(metadata), f, indent=2)
+        f.write("\n")
+    logger.info(f"Saved value-model metrics to {metrics_path}")
     
     # 3. Test SHAP
     logger.info("Testing SHAP integration on a subset...")

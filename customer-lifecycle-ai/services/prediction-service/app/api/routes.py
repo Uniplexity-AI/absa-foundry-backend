@@ -1,4 +1,4 @@
-﻿"""Prediction Service — API Routes.
+"""Prediction Service — API Routes.
 
 Mirrors FeatureService + StateService routes pattern:
 APIRouter + PredictionService singleton.
@@ -39,6 +39,23 @@ def compute_batch(
     running twice on the same date produces identical health_scores.
     """
     return _service.compute_batch(as_of_date)
+
+
+@router.post("/value-batch")
+def run_value_batch(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Date to score value erosion + future value for (default: latest feature date)",
+    ),
+):
+    """Run XGBoost Value Erosion + Future Value models for all customers.
+
+    Writes erosion_probability, erosion_risk_level, predicted_future_value,
+    future_value_percentile, model_version, prediction_date into customer_states.
+    Idempotent — re-running overwrites previous value scores for the date.
+    """
+    return _service.run_value_batch(as_of_date)
+
 
 
 # IMPORTANT: Static routes (/models) and more-specific parameterized
@@ -147,3 +164,47 @@ def get_prediction(
             ),
         )
     return result
+
+
+@router.post("/simulate")
+def simulate_prediction(payload: dict):
+    """Real-time 'What-If' simulation using deterministic feature evaluation."""
+    features = payload.get("features", {})
+    baseline_prob = payload.get("baseline_probability", 0.5)
+    
+    # Deterministic simulation based on feature values
+    delta = 0.0
+    shap_vals = {}
+    
+    # Simple deterministic weight mapping for simulation
+    weights = {
+        "balance_decline_6m": 0.005,
+        "complaints_count": 0.02,
+        "days_since_active": 0.001,
+        "interest_rate_delta": 0.05
+    }
+    
+    for k, v in features.items():
+        weight = weights.get(k, 0.01)
+        # Calculate contribution deterministically
+        contrib = float(v) * weight
+        # Bound the contribution
+        contrib = max(-0.15, min(0.15, contrib))
+        shap_vals[k] = contrib
+        delta += contrib
+
+    simulated_prob = max(0.01, min(0.99, baseline_prob + delta))
+    threshold = payload.get("threshold", 0.5)
+    
+    return {
+        "simulation": True,
+        "model_id": "simulated-churn-xgb",
+        "model_version": "1.4.x",
+        "baseline_probability": round(baseline_prob, 4),
+        "simulated_probability": round(simulated_prob, 4),
+        "delta": round(simulated_prob - baseline_prob, 4),
+        "threshold": threshold,
+        "classification": "HIGH_RISK" if simulated_prob > threshold else "LOW_RISK",
+        "shap_values": {k: round(v, 4) for k, v in shap_vals.items()}
+    }
+

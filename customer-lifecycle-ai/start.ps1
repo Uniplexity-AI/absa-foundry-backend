@@ -33,14 +33,18 @@ Write-Host "  :8004 Prediction (L2)"
 Start-Process -NoNewWindow $py -ArgumentList "-m","uvicorn","main:app","--host","0.0.0.0","--port","8005","--reload" -WorkingDirectory "$root\services\decision-intelligence-service"
 Write-Host "  :8005 Decision Intelligence (L3)"
 
+# Model Management :8006
+Start-Process -NoNewWindow $py -ArgumentList "-m","uvicorn","main:app","--host","0.0.0.0","--port","8006","--reload" -WorkingDirectory "$root\services\model-management-service"
+Write-Host "  :8006 Model Management"
+
 Start-Sleep 10
-$running = netstat -ano 2>$null | Select-String "LISTENING" | Select-String "8002|8003|8004|8005|8080"
+$running = netstat -ano 2>$null | Select-String "LISTENING" | Select-String "8002|8003|8004|8005|8006|8080"
 $count = ($running | Measure-Object -Line).Lines
 
-if ($count -eq 5) {
-    Write-Host "`nAll 5 services running" -ForegroundColor Green
+if ($count -eq 6) {
+    Write-Host "`nAll 6 services running" -ForegroundColor Green
 } else {
-    Write-Host "`n$count/5 services running (some failed - check terminal output above)" -ForegroundColor Yellow
+    Write-Host "`n$count/6 services running (some failed - check terminal output above)" -ForegroundColor Yellow
 }
 $running
 Write-Host "`nRemote: http://${tailscaleIP}:8080/docs" -ForegroundColor Cyan

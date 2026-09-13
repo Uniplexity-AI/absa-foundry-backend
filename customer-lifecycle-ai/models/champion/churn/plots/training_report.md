@@ -1,67 +1,67 @@
 # Churn Model Training Report
 
-- **Trained at:** 2026-08-19
+- **Trained at:** 2026-09-11
 - **Training dates:** 2026-07-17, 2026-07-22
 - **Holdout date:** 2026-07-27
-- **Features:** 64 training (9 leakage excluded, 5 dead excluded)
+- **Features:** 57 training (9 leakage excluded, 14 dead excluded)
 
 ## Data
 
-- Training samples: 7996 (406 positive)
-- Holdout samples: 1000 (60 positive)
+- Training samples: 8000 (370 positive)
+- Holdout samples: 1000 (58 positive)
 
 ## Metrics (raw probabilities)
 
 | Metric | Value |
 |--------|-------|
-| AUC | 0.4737 |
-| 5-fold OOF CV AUC | 0.4622735710067044 |
-| Brier | 0.2125 |
-| LogLoss (test) | 0.614 |
-| LogLoss (train) | 0.5819 |
-| Accuracy (optimal threshold) | 0.9 |
-| ECE (raw) | 0.3437 |
-| Optimal threshold (Youden's J) | 0.5585224032402039 |
+| AUC | 1.0 |
+| 5-fold OOF CV AUC | 0.9999992915589246 |
+| Brier | 0.0016 |
+| LogLoss (test) | 0.0414 |
+| LogLoss (train) | 0.0418 |
+| Accuracy (optimal threshold) | 1.0 |
+| ECE (raw) | 0.0407 |
+| Optimal threshold (Youden's J) | 0.9509361386299133 |
 
 ## Classification (optimal threshold)
 
-- Precision: 0.1154
-- Recall: 0.1
-- F1: 0.1071
+- Precision: 1.0
+- Recall: 1.0
+- F1: 1.0
 
 | | Predicted 0 | Predicted 1 |
 |---|---|---|
-| Actual 0 | 894 | 46 |
-| Actual 1 | 54 | 6 |
+| Actual 0 | 942 | 0 |
+| Actual 1 | 0 | 58 |
 
 ## Calibration
 
 - Method: isotonic
-- ECE raw: 0.3799
-- ECE Platt: 0.0101
-- ECE isotonic: 0.0095
-- ECE after: 0.0095
-- Brier after: 0.0565
-- LogLoss after: 0.2279
+- ECE raw: 0.0406
+- ECE Platt: 0.0002
+- ECE isotonic: 0.0
+- ECE after: 0.0
+- Brier after: 0.0
+- LogLoss after: 0.0
 
 ## Diagnostics
 
-- Overfit gap: 0.4177 (flag=True)
-- Drift max PSI: 0.3515 (high)
+- Overfit gap: 0.0 (flag=False)
+- Drift max PSI: 2.4761 (high)
 - Overconfidence ratio: 0.0
 
 ## Top features
 
-1. `distinct_channels_90d` — 0.034699998795986176
-2. `risk_high_value_txn_ratio_90d` — 0.03139999881386757
-3. `temp_payday_activity_ratio_90d` — 0.03060000017285347
-4. `fin_median_txn_amount_90d` — 0.029899999499320984
-5. `behav_frequency_score` — 0.02930000051856041
-6. `amount_stddev_90d` — 0.02889999933540821
-7. `risk_txn_volatility_90d` — 0.02850000001490116
-8. `debit_sum_30d` — 0.02669999934732914
-9. `eng_login_count_7d` — 0.026499999687075615
-10. `temp_weekday_txn_ratio_90d` — 0.02590000070631504
+1. `txn_count_30d` — 0.40470001101493835
+2. `behav_frequency_score` — 0.3075999915599823
+3. `behav_active_days_90d` — 0.24400000274181366
+4. `amount_growth_ratio` — 0.03629999980330467
+5. `txn_count_90d` — 0.0032999999821186066
+6. `behav_txn_count_7d` — 0.003000000026077032
+7. `avg_days_between_txn` — 0.000699999975040555
+8. `txn_count_180d` — 0.00039999998989515007
+9. `total_amount_180d` — 0.0
+10. `fin_income_growth` — 0.0
 
 ## Plots
 
@@ -85,5 +85,5 @@
 - `reg_lambda` = 1.0
 - `subsample` = 0.8
 - `colsample_bytree` = 0.8
-- `scale_pos_weight` = 18.694581280788178
+- `scale_pos_weight` = 20.62162162162162
 

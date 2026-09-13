@@ -328,6 +328,161 @@ class PortfolioViews:
         out.sort(key=lambda w: -w["prob"])
         return out
 
+    # ------------------------------------------------------------------
+    # Branch Manager — At-Risk Case List
+    # ------------------------------------------------------------------
+
+    # Market segments that belong to RM-managed tracks in this pilot
+    _RM_SEGMENTS: frozenset[int] = frozenset({30, 50, 60, 85})
+
+    def at_risk_cases(self, as_of: date, limit: int = 50) -> list[dict]:
+        """Top at-risk customers ranked by erosion_probability.
+
+        JOINs customer_states → customers_clean → customer_features to
+        surface branch_code, AUM proxy, and days_since_last_txn.
+        Returns a track field: 'rm' for RM-managed segments, 'branch' for
+        campaign-managed segments.
+        """
+        sql = """
+            SELECT
+                cs.customer_id,
+                cs.state,
+                cs.health_score,
+                cs.erosion_probability,
+                COALESCE(cc.branch_code, 'BR000') AS branch_code,
+                COALESCE(CAST(NULLIF(cf.market_segment, '') AS INT), 0) AS segment_code,
+                COALESCE(cf.total_amount_90d, 0)   AS total_amount_90d,
+                COALESCE(cf.days_since_last_txn, 0) AS days_since_last_txn
+            FROM customer_states cs
+            LEFT JOIN customers_clean    cc ON cc.customer_id = cs.customer_id
+            LEFT JOIN customer_features  cf ON cf.customer_id = cs.customer_id
+                                           AND cf.as_of_date  = cs.as_of_date
+            WHERE cs.as_of_date = %(as_of)s
+              AND cs.state IN ('AT_RISK', 'DORMANT', 'CHURNED')
+            ORDER BY cs.erosion_probability DESC NULLS LAST
+            LIMIT %(limit)s
+        """
+        rows = self._q(sql, {"as_of": as_of, "limit": limit}, "at_risk_cases")
+        out = []
+        for r in rows:
+            seg = int(r.get("segment_code") or 0)
+            track = "rm" if seg in self._RM_SEGMENTS else "branch"
+            ep    = float(r.get("erosion_probability") or 0.0)
+            aum   = float(r.get("total_amount_90d") or 0.0)
+            out.append({
+                "id":               r["customer_id"],
+                "name":             r["customer_id"],
+                "state":            r["state"],
+                "health_score":     float(r.get("health_score") or 0.0),
+                "prob":             round(ep * 100, 1),          # 0-100 display
+                "erosion_probability": round(ep, 4),
+                "aum":              _fmt_k(aum),
+                "aum_raw":          aum,
+                "days_flagged":     int(r.get("days_since_last_txn") or 0),
+                "branch_code":      r.get("branch_code") or "BR000",
+                "track":            track,
+                "segment_code":     seg,
+            })
+        return out
+
+    # ------------------------------------------------------------------
+    # Branch Manager — Unenrolled High-Risk Customers
+    # ------------------------------------------------------------------
+
+    def unenrolled_high_risk(self, as_of: date, limit: int = 20) -> list[dict]:
+        """AT_RISK customers with no pilot_action_log entry (unenrolled).
+
+        Uses LEFT JOIN with pilot_action_log — customers with no matching
+        action are the unenrolled population.
+        """
+        sql = """
+            SELECT
+                cs.customer_id,
+                cs.erosion_probability,
+                cs.state,
+                COALESCE(CAST(NULLIF(cf.market_segment, '') AS INT), 0) AS segment_code,
+                COALESCE(cf.days_since_last_txn, 0) AS days_since_last_txn
+            FROM customer_states cs
+            LEFT JOIN customer_features  cf  ON cf.customer_id = cs.customer_id
+                                             AND cf.as_of_date  = cs.as_of_date
+            LEFT JOIN pilot_action_log   pal ON pal.customer_id = cs.customer_id
+            WHERE cs.as_of_date = %(as_of)s
+              AND cs.state       = 'AT_RISK'
+              AND cs.erosion_probability > 0.35
+              AND pal.customer_id IS NULL
+            ORDER BY cs.erosion_probability DESC NULLS LAST
+            LIMIT %(limit)s
+        """
+        rows = self._q(sql, {"as_of": as_of, "limit": limit}, "unenrolled_high_risk")
+        out = []
+        for r in rows:
+            seg = int(r.get("segment_code") or 0)
+            ep  = float(r.get("erosion_probability") or 0.0)
+            out.append({
+                "id":               r["customer_id"],
+                "name":             r["customer_id"],
+                "segment_code":     seg,
+                "prob":             round(ep * 100, 1),
+                "erosion_probability": round(ep, 4),
+                "days_flagged":     int(r.get("days_since_last_txn") or 0),
+                "state":            r["state"],
+            })
+        return out
+
+    # ------------------------------------------------------------------
+    # Branch Manager — Aggregate Priority Actions
+    # ------------------------------------------------------------------
+
+    def priority_actions(self, as_of: date) -> list[dict]:
+        """Compute AI priority action summary from real aggregate data."""
+        sql = """
+            SELECT
+                cs.state,
+                COALESCE(CAST(NULLIF(cf.market_segment, '') AS INT), 0) AS segment_code,
+                COUNT(*) AS cnt,
+                AVG(cs.erosion_probability) AS avg_ep,
+                COUNT(pal.customer_id) AS actioned_cnt
+            FROM customer_states cs
+            LEFT JOIN customer_features cf  ON cf.customer_id = cs.customer_id
+                                           AND cf.as_of_date  = cs.as_of_date
+            LEFT JOIN pilot_action_log  pal ON pal.customer_id = cs.customer_id
+            WHERE cs.as_of_date = %(as_of)s
+              AND cs.state IN ('AT_RISK', 'DORMANT')
+            GROUP BY cs.state, segment_code
+        """
+        rows = self._q(sql, {"as_of": as_of}, "priority_actions")
+
+        rm_unactioned = 0
+        branch_unactioned = 0
+        for r in rows:
+            seg       = int(r.get("segment_code") or 0)
+            cnt       = int(r.get("cnt") or 0)
+            actioned  = int(r.get("actioned_cnt") or 0)
+            unactioned = cnt - actioned
+            if seg in self._RM_SEGMENTS:
+                rm_unactioned += unactioned
+            else:
+                branch_unactioned += unactioned
+
+        actions = []
+        if rm_unactioned > 0:
+            actions.append({
+                "urgency":       "URGENT",
+                "urgency_class": "bg-red-100 text-absa-passion",
+                "title":         f"{rm_unactioned} RM-managed clients with no recorded action",
+                "detail":        "High-value accounts at churn risk with no RM outreach logged. Assign immediately.",
+                "meta":          f"{rm_unactioned} RM-managed",
+            })
+        if branch_unactioned > 0:
+            actions.append({
+                "urgency":       "HIGH",
+                "urgency_class": "bg-amber-100 text-amber-700",
+                "title":         f"{branch_unactioned} branch-managed customers with no campaign enrolment",
+                "detail":        "At-risk branch-track customers not enrolled in any retention campaign.",
+                "meta":          f"{branch_unactioned} branch-managed",
+            })
+        return actions
+
 
 # Singleton
 portfolio_views = PortfolioViews()

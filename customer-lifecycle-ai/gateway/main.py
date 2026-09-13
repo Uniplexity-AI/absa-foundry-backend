@@ -59,18 +59,6 @@ def create_app() -> FastAPI:
     from gateway.middleware.logging import request_logging_middleware
     app.middleware("http")(request_logging_middleware)
 
-    # CORS
-    # Auth is a Bearer-token flow (no cookies), so credentials are NOT required.
-    # allow_credentials=True with allow_origins=["*"] is rejected by browsers on
-    # preflight; with credentials disabled the wildcard origin works.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # TODO: Restrict to frontend origin(s) in production
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     # Auth + RBAC — enforce a valid JWT on every non-public route, then check roles.
     # Runs inside CORS; sets request.state.user for all downstream handlers.
     # HTTPException raised inside an http middleware must be converted to a
@@ -95,6 +83,16 @@ def create_app() -> FastAPI:
                 headers=exc.headers,
             )
         return await call_next(request)
+
+    # CORS MUST be added last to be the outermost middleware!
+    # Auth is a Bearer-token flow (no cookies), so credentials are NOT required.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # TODO: Restrict to frontend origin(s) in production
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     # ---- Routes ----
     app.include_router(auth_routes.router)
