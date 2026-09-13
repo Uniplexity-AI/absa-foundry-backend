@@ -42,6 +42,10 @@ MIGRATIONS = [
     ("database/migrations/009_pilot_actions.sql", "target"),
     ("database/migrations/010_market_segment.sql", "target"),
     ("database/migrations/012_model_management.sql", "target"),
+    ("database/migrations/013_customer_ingest.sql", "target"),
+    ("database/migrations/014_customer_identity.sql", "target"),
+    ("database/migrations/015_customer_features_ingest.sql", "target"),
+    ("database/migrations/016_customer_soft_delete.sql", "target"),
 ]
 
 

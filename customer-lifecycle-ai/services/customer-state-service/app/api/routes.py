@@ -97,6 +97,20 @@ def list_all_states(
     return _service.list_all_states(as_of_date, limit, offset)
 
 
+# NOTE: declared before /{customer_id} so "count" is not read as a customer id.
+@router.get("/count")
+def count_states(
+    as_of_date: date = Query(..., description="Date for state snapshots"),
+) -> dict:
+    """Total state snapshots for the date.
+
+    ``limit`` on the list route is capped at 500 and the response is a bare
+    array, so a caller cannot tell "500 of 500" from "500 of 5,000". This is the
+    authoritative denominator for pagination and portfolio totals.
+    """
+    return {"as_of_date": as_of_date, "total": _service.count_states(as_of_date)}
+
+
 @router.get("/{customer_id}/timeline", response_model=StateTimeline)
 def get_timeline(
     customer_id: str,

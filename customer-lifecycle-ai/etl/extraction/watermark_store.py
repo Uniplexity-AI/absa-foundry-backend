@@ -69,7 +69,7 @@ class WatermarkStore:
             data = self._load_locked()
             data[dataset_name] = watermark.isoformat()
             self._write_atomically(data)
-            logger.debug("Watermark updated: %s → %s", dataset_name, watermark.isoformat())
+            logger.debug("Watermark updated: %s -> %s", dataset_name, watermark.isoformat())
         finally:
             self._release_lock(lock_fd)
 

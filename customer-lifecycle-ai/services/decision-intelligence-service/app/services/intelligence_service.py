@@ -70,9 +70,25 @@ class IntelligenceService:
             logger.warning("portfolio-scores unavailable: %s", e)
             return {}
 
+    def _deletion_generation(self) -> int:
+        """Change-detector for the soft-delete flag, used to bust the cache.
+
+        Deleting a customer happens in the gateway, so it cannot invalidate this
+        in-process cache; without the guard a just-deleted customer stays in the
+        totals for the rest of the TTL. Never raises — on a probe failure the
+        cache falls back to TTL-only behaviour.
+        """
+        try:
+            return self._repo.deleted_customer_count()
+        except Exception as exc:  # noqa: BLE001 - a probe failure must not break the endpoint
+            logger.warning("deletion-generation probe failed, using TTL only: %s", exc)
+            return -1
+
     def _snapshot(self, as_of_date: date | None) -> dict:
         """Resolved as-of date + scores + feature profiles, from cache when fresh."""
-        key = f"snapshot:{as_of_date or 'latest'}"
+        # The deletion count is part of the key, so a soft delete (or a restore)
+        # is a cache miss on the very next request.
+        key = f"snapshot:{as_of_date or 'latest'}:{self._deletion_generation()}"
         with self._cache_lock:
             hit = self._cache.get(key)
             if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:

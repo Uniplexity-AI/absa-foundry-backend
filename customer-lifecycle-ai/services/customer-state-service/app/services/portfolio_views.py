@@ -26,6 +26,7 @@ import psycopg2
 from psycopg2 import extras
 
 from shared.config.settings import settings
+from shared.database.soft_delete import live_customer_filter
 
 logger = logging.getLogger("state.portfolio_views")
 
@@ -38,6 +39,9 @@ _AT_RISK_CUTOFF = float(os.getenv("INTEL_AT_RISK_CUTOFF", "0.50"))
 _ADAPTIVE_AT_RISK = os.getenv("INTEL_ADAPTIVE_AT_RISK", "true").lower() in ("1", "true", "yes")
 
 _CACHE_TTL = 120.0
+#: Aggregate cache TTL for unchanged data. Bounded by ``_deletion_generation``:
+#: a change to the soft-delete flag misses the cache on the next request, so
+#: this only governs how long identical data may be reused.
 _STAGE_META = {
     "NEW":      ("Onboarding", "text-gray-600",   "bg-gray-100",  "bg-gray-500"),
     "GROWING":  ("Growing",    "text-absa-passion", "bg-red-50",  "bg-absa-passion"),
@@ -94,14 +98,40 @@ class PortfolioViews:
             logger.warning("portfolio-scores unavailable: %s", e)
             return []
 
+    def _deletion_generation(self) -> int:
+        """Change-detector for the soft-delete flag, used to bust the cache.
+
+        Deleting a customer happens in the gateway, so it cannot invalidate this
+        in-process cache. Without a guard the aggregates keep answering from a
+        cached build for the rest of the TTL, and an operator who just deleted a
+        customer still sees the old totals — the "deletion did not happen"
+        report. Reading the deleted count is a single count on ~5k rows, so it
+        is cheaper than rebuilding CLV (which calls the prediction service).
+
+        Never raises: if the probe fails the cache simply falls back to
+        TTL-only behaviour.
+        """
+        try:
+            rows = self._q(
+                "SELECT count(*) AS n FROM public.customers_clean WHERE is_deleted",
+                {}, "deletion_generation",
+            )
+            return int(rows[0]["n"])
+        except Exception as exc:  # noqa: BLE001 - a probe failure must not break the endpoint
+            logger.warning("deletion-generation probe failed, using TTL only: %s", exc)
+            return -1
+
     def _cached(self, key: str, build) -> dict:
+        # The deletion count is part of the key, so a soft delete (or a restore)
+        # is a cache miss on the very next request.
+        tagged = (key, self._deletion_generation())
         with self._lock:
-            hit = self._cache.get(key)
+            hit = self._cache.get(tagged)
             if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
                 return hit[1]
         val = build()
         with self._lock:
-            self._cache[key] = (time.monotonic(), val)
+            self._cache[tagged] = (time.monotonic(), val)
         return val
 
     # ------------------------------------------------------------------
@@ -119,6 +149,7 @@ class PortfolioViews:
                    COALESCE(days_since_last_txn, 999) AS days_since_contact,
                    customer_segment
             FROM customer_features WHERE as_of_date = %(d)s
+            {live_customer_filter("customer_features.customer_id")}
             """, {"d": as_of}, "clv_profiles")
         scores = {s["customer_id"]: s for s in self._scores(as_of)}
         total_protected = self._q(
@@ -214,15 +245,21 @@ class PortfolioViews:
 
     def _build_lifecycle(self, as_of: date) -> dict:
         counts_rows = self._q(
-            "SELECT state, COUNT(*) AS n FROM customer_states WHERE as_of_date = %(d)s GROUP BY state",
+            f"""
+            SELECT state, COUNT(*) AS n FROM customer_states
+            WHERE as_of_date = %(d)s
+            {live_customer_filter("customer_states.customer_id")}
+            GROUP BY state
+            """,
             {"d": as_of}, "state_counts")
         counts = {r["state"]: int(r["n"]) for r in counts_rows}
         total = sum(counts.values()) or 1
 
         prev_rows = self._q(
-            """
+            f"""
             SELECT state, COUNT(*) AS n FROM customer_states
             WHERE as_of_date = (SELECT MAX(as_of_date) FROM customer_states WHERE as_of_date < %(d)s)
+            {live_customer_filter("customer_states.customer_id")}
             GROUP BY state
             """, {"d": as_of}, "prev_counts")
         prev = {r["state"]: int(r["n"]) for r in prev_rows}
@@ -239,10 +276,11 @@ class PortfolioViews:
             })
 
         trows = self._q(
-            """
+            f"""
             SELECT from_state, to_state, COUNT(*) AS n
             FROM state_transitions
             WHERE transition_date >= %(d)s - 30 AND transition_date <= %(d)s
+            {live_customer_filter("state_transitions.customer_id")}
             GROUP BY from_state, to_state
             """, {"d": as_of}, "transitions")
         states = ["NEW", "GROWING", "ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
@@ -263,6 +301,7 @@ class PortfolioViews:
               COUNT(*) FILTER (WHERE eng_login_count_30d > 0) AS digital_enrolled,
               COUNT(*) AS total_cust
             FROM customer_features WHERE as_of_date = %(d)s
+            {live_customer_filter("customer_features.customer_id")}
             """, {"d": as_of}, "onboarding")[0]
         onboarding = {
             "total_new": int(onboard["total_new"]),
@@ -304,6 +343,7 @@ class PortfolioViews:
                 WHERE f.customer_id = cs.customer_id AND f.as_of_date = cs.as_of_date LIMIT 1
             ) f ON TRUE
             WHERE cs.state = 'CHURNED' AND cs.as_of_date = %(d)s
+            {live_customer_filter("cs.customer_id")}
             ORDER BY 3 DESC NULLS LAST
             LIMIT %(lim)s
             """, {"d": as_of, "lim": limit}, "winback")
@@ -343,7 +383,7 @@ class PortfolioViews:
         Returns a track field: 'rm' for RM-managed segments, 'branch' for
         campaign-managed segments.
         """
-        sql = """
+        sql = f"""
             SELECT
                 cs.customer_id,
                 cs.state,
@@ -359,6 +399,7 @@ class PortfolioViews:
                                            AND cf.as_of_date  = cs.as_of_date
             WHERE cs.as_of_date = %(as_of)s
               AND cs.state IN ('AT_RISK', 'DORMANT', 'CHURNED')
+            {live_customer_filter("cs.customer_id")}
             ORDER BY cs.erosion_probability DESC NULLS LAST
             LIMIT %(limit)s
         """
@@ -395,7 +436,7 @@ class PortfolioViews:
         Uses LEFT JOIN with pilot_action_log — customers with no matching
         action are the unenrolled population.
         """
-        sql = """
+        sql = f"""
             SELECT
                 cs.customer_id,
                 cs.erosion_probability,
@@ -410,6 +451,7 @@ class PortfolioViews:
               AND cs.state       = 'AT_RISK'
               AND cs.erosion_probability > 0.35
               AND pal.customer_id IS NULL
+            {live_customer_filter("cs.customer_id")}
             ORDER BY cs.erosion_probability DESC NULLS LAST
             LIMIT %(limit)s
         """
@@ -435,7 +477,7 @@ class PortfolioViews:
 
     def priority_actions(self, as_of: date) -> list[dict]:
         """Compute AI priority action summary from real aggregate data."""
-        sql = """
+        sql = f"""
             SELECT
                 cs.state,
                 COALESCE(CAST(NULLIF(cf.market_segment, '') AS INT), 0) AS segment_code,
@@ -448,6 +490,7 @@ class PortfolioViews:
             LEFT JOIN pilot_action_log  pal ON pal.customer_id = cs.customer_id
             WHERE cs.as_of_date = %(as_of)s
               AND cs.state IN ('AT_RISK', 'DORMANT')
+            {live_customer_filter("cs.customer_id")}
             GROUP BY cs.state, segment_code
         """
         rows = self._q(sql, {"as_of": as_of}, "priority_actions")

@@ -26,6 +26,21 @@ async def proxy_clv_summary(request: Request):
     return await _forward(request, "/states/clv-summary")
 
 
+@router.post("/compute-states")
+async def proxy_compute_states(request: Request):
+    """Recompute the lifecycle state snapshot for one as_of_date.
+
+    The portfolio list, counts and KPIs all read ``customer_states`` — a derived
+    per-snapshot table — so a customer that was just added (master record and/or
+    feature snapshot) stays invisible until the state engine has run for that
+    date. Exposed here, beside the other ``/customers`` reads, because that is
+    exactly what the Add Customer form has to call after writing a snapshot.
+
+    Idempotent: ``/states/compute`` upserts, so re-running is safe.
+    """
+    return await _forward(request, "/states/compute")
+
+
 @router.get("/lifecycle-stages")
 async def proxy_lifecycle_stages(request: Request):
     """Forward lifecycle stages query."""
@@ -36,6 +51,18 @@ async def proxy_lifecycle_stages(request: Request):
 async def proxy_list_all(request: Request):
     """Forward list-all customer states query."""
     return await _forward(request, "/states")
+
+
+# NOTE: must be declared BEFORE the /{customer_id} catch-all below, otherwise
+# "count" is captured as a customer id.
+@router.get("/count")
+async def proxy_count(request: Request):
+    """Forward the total state-snapshot count for a date.
+
+    The list endpoint caps ``limit`` at 500 and returns a bare array, so the UI
+    has no way to know the true portfolio size from it; this is that denominator.
+    """
+    return await _forward(request, "/states/count")
 
 
 @router.get("/{customer_id}")

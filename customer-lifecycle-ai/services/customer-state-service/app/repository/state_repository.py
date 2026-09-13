@@ -16,6 +16,7 @@ import psycopg2
 from psycopg2 import extras
 
 from shared.config.settings import settings
+from shared.database.soft_delete import live_customer_filter
 
 logger = logging.getLogger("customer_state.repository")
 
@@ -37,29 +38,38 @@ ON CONFLICT (customer_id, as_of_date) DO UPDATE SET
     -- Layer 2 backfill is preserved across Layer 1 re-runs.
 """
 
-FETCH_STATE_SQL = """
+#: Soft-deleted customers (``customers_clean.is_deleted``) must never surface in
+#: a customer-facing read. The rule itself lives in one place
+#: (``shared.database.soft_delete``) so it cannot drift between queries — every
+#: list/count/aggregate below composes it.
+_LIVE_CUSTOMER_FILTER = live_customer_filter("customer_states.customer_id")
+
+FETCH_STATE_SQL = f"""
 SELECT customer_id, as_of_date, state, classification_rules,
        health_score, component_scores, computed_at
 FROM customer_states
 WHERE customer_id = %(customer_id)s
   AND as_of_date = %(as_of_date)s
+{_LIVE_CUSTOMER_FILTER}
 """
 
-FETCH_TIMELINE_SQL = """
+FETCH_TIMELINE_SQL = f"""
 SELECT as_of_date, state
 FROM customer_states
 WHERE customer_id = %(customer_id)s
+{_LIVE_CUSTOMER_FILTER}
 ORDER BY as_of_date DESC
 LIMIT %(limit)s
 """
 
-PORTFOLIO_SQL = """
+PORTFOLIO_SQL = f"""
 SELECT
     state,
     COUNT(*) AS count,
     ROUND(COUNT(*)::numeric / NULLIF(SUM(COUNT(*)) OVER(), 0) * 100, 1) AS pct
 FROM customer_states
 WHERE as_of_date = %(as_of_date)s
+{_LIVE_CUSTOMER_FILTER}
 GROUP BY state
 ORDER BY COUNT(*) DESC
 """
@@ -72,13 +82,22 @@ WHERE customer_id = ANY(%(customer_ids)s)
 ORDER BY customer_id, as_of_date DESC
 """
 
-LIST_ALL_SQL = """
+LIST_ALL_SQL = f"""
 SELECT customer_id, as_of_date, state, classification_rules,
        health_score, component_scores, computed_at
 FROM customer_states
 WHERE as_of_date = %(as_of_date)s
+{_LIVE_CUSTOMER_FILTER}
 ORDER BY customer_id
 LIMIT %(limit)s OFFSET %(offset)s
+"""
+
+#: Total rows for the date. LIST_ALL_SQL is capped (le=500) and returns a bare
+#: array, so callers have no way to tell "500 of 500" from "500 of 5,000";
+#: this is the authoritative denominator for pagination and portfolio totals.
+COUNT_STATES_SQL = f"""
+SELECT COUNT(*) FROM customer_states WHERE as_of_date = %(as_of_date)s
+{_LIVE_CUSTOMER_FILTER}
 """
 
 
@@ -251,6 +270,16 @@ class StateRepository:
                 "offset": offset,
             })
             return [dict(r) for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def count_states(self, as_of_date) -> int:
+        """Total customer states for the date (the real denominator for paging)."""
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            cur.execute(COUNT_STATES_SQL, {"as_of_date": as_of_date})
+            return int(cur.fetchone()[0])
         finally:
             conn.close()
 

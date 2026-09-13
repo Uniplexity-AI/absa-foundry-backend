@@ -49,6 +49,12 @@ models/**/*.bin
 models/**/*.h5
 models/**/*.pb
 
+# Local DB backup dumps (large, machine-local)
+backups/
+
+# Ingest landing zone (runtime uploaded files)
+datasets/landing/
+
 # Logs
 logs/
 *.log
