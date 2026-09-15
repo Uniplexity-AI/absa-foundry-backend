@@ -333,11 +333,11 @@ def get_revenue_at_risk(as_of_date: date | None = Query(default=None), horizon_d
 
 @forecast_router.get("/balance")
 def get_balance_forecast(as_of_date: date | None = Query(default=None)):
-    """AUM forecast in the legacy frontend contract shape.
+    """AUM forecast in the frontend contract shape.
 
-    Serves live data from the intelligence aggregation service (previously
-    a hardcoded payload). Series are in millions; by_segment/sensitivity/
-    confidence bounds are derived from the same per-customer projection.
+    Serves live data from the intelligence aggregation service. All monetary
+    values are absolute ZMW; by_segment/sensitivity/confidence bounds are
+    derived from the same per-customer ML balance-growth projection.
     """
     from app.services.intelligence_service import intelligence_service
 
@@ -351,79 +351,119 @@ def get_balance_forecast(as_of_date: date | None = Query(default=None)):
         (snap_date + timedelta(weeks=w + 1)).strftime("%b %d")
         for w in range(weeks)
     ]
-    m = 1_000_000.0
-    base_m = fc["scenarios"]["base"]
+    # aum_forecast returns its series in absolute ZMW.
+    scenarios = {
+        name: [round(v, 2) for v in series]
+        for name, series in fc["scenarios"].items()
+    }
+    base_series = scenarios["base"]
     total = fc["current_aum"]
+    bg_model_used = fc.get("balance_growth_model_used", False)
 
-    # Analytic P10/P90 around the base path: per-customer churn decay is a
-    # sum of independent Bernoulli-weighted balances; normal approx.
-    # var_t = sum a_i^2 * q^t * (1 - q^t) with q = 1 - churn_i.
-    profiles = intelligence_service._snapshot(as_of_date)["profiles"]
-    scores = {s["customer_id"]: s for s in intelligence_service._snapshot(as_of_date)["scores"]}
-    var_rows = []
-    for cid, p in profiles.items():
-        a = float(p.get("current_aum") or 0)
-        c = (scores.get(cid) or {}).get("churn_probability") or 0.0
-        if a > 0:
-            var_rows.append((a, 1.0 - c))
+    snapshot = intelligence_service._snapshot(as_of_date)
+    profiles = snapshot["profiles"]
+    scores = {s["customer_id"]: s for s in snapshot["scores"]}
+
+    # ── Confidence bounds (P10 / P90) ─────────────────────────────────────
+    # Use the variance around the compound growth path:
+    #   var_t = sum_i [ AUM_i * weekly_growth_factor_i^(t+1) ]^2 * sigma^2
+    # where sigma is derived from the cross-section std of growth_pct values.
     z = 1.2816  # 80% two-sided
     p10, p90 = [], []
-    for t in range(weeks):
-        mean_t = sum(a * (q ** (t + 1)) for a, q in var_rows) / m
-        var_t = sum((a * q ** (t + 1)) ** 2 * (1 - q ** (t + 1)) for a, q in var_rows) / (m * m)
-        sd = var_t ** 0.5
-        p10.append(round(mean_t - z * sd, 1))
-        p90.append(round(mean_t + z * sd, 1))
 
-    # Per-segment projection from profiles grouped by customer_segment
+    growth_vals = [
+        float((scores.get(cid) or {}).get("balance_growth_pct") or 0.0)
+        for cid in profiles
+    ]
+    n_g = len(growth_vals)
+    mean_g = sum(growth_vals) / n_g if n_g else 0.0
+    var_g = sum((g - mean_g) ** 2 for g in growth_vals) / n_g if n_g > 1 else 1.0
+    sigma_g = var_g ** 0.5  # cross-section std of growth_pct (in %)
+
+    for t in range(weeks):
+        # Expected portfolio AUM at week t (same formula as ml_series(0))
+        aum_vals = [float(p.get("current_aum") or 0) for p in profiles.values()]
+        mean_t = sum(
+            a * ((1.0 + g / 100.0) ** ((t + 1) / weeks))
+            for a, g in zip(aum_vals, growth_vals)
+        )
+        # Variance approximation: linearise around mean_g
+        # dAUM_i/dg_i ≈ AUM_i * (t+1)/weeks * (1 + g/100)^((t+1)/weeks - 1) / 100
+        var_t = sum(
+            (a * (t + 1) / weeks * (1.0 + g / 100.0) ** max(0, (t + 1) / weeks - 1) / 100.0) ** 2 * var_g
+            for a, g in zip(aum_vals, growth_vals)
+        )
+        sd = var_t ** 0.5
+        p10.append(round(mean_t - z * sd, 2))
+        p90.append(round(mean_t + z * sd, 2))
+
+    # ── Per-segment projection ─────────────────────────────────────────────
     by_segment = []
     seg_rows: dict[str, list] = {}
     for cid, prof in profiles.items():
-        seg_rows.setdefault(prof.get("customer_segment") or "Unclassified", []).append(
-            (float(prof.get("current_aum") or 0),
-             (scores.get(cid) or {}).get("churn_probability") or 0.0)
+        seg = prof.get("customer_segment") or "Unclassified"
+        aum = float(prof.get("current_aum") or 0)
+        s = scores.get(cid) or {}
+        g = float(s.get("balance_growth_pct") or 0.0)
+        seg_rows.setdefault(seg, []).append((aum, g))
+
+    for seg, rows in sorted(seg_rows.items(), key=lambda kv: -sum(r[0] for r in kv[1]))[:5]:
+        seg_aum = sum(r[0] for r in rows)
+        # project each customer to end of horizon
+        remaining = sum(
+            a * (1.0 + g / 100.0)
+            for a, g in rows
         )
-    for seg, rows in sorted(seg_rows.items(), key=lambda kv: -sum(a for a, _ in kv[1]))[:5]:
-        seg_aum = sum(a for a, _ in rows)
-        exits = sum(1 for _, c in rows if c > 0.5)
-        at_risk = sum(a * c for a, c in rows if c > 0.5)
-        remaining = sum(a * (1 - c) ** weeks for a, c in rows)
+        exits = 0  # growth model doesn't predict exits directly
+        at_risk = max(0.0, seg_aum - remaining)
+        
         by_segment.append({
             "segment": seg,
             "current_aum": round(seg_aum, 2),
             "projected_exits": exits,
             "aum_at_risk": round(at_risk, 2),
             "projected_remaining": round(remaining, 2),
+            "pct_change": (
+                round((remaining - seg_aum) / seg_aum * 100, 1) if seg_aum else 0.0
+            ),
         })
 
-    base_end = base_m[-1] * m
-    opt_end = fc["scenarios"]["optimistic"][-1] * m
-    pes_end = fc["scenarios"]["pessimistic"][-1] * m
-    delta_1pp = (base_end - pes_end) / 2
+    base_end = base_series[-1]
+    opt_end = scenarios["optimistic"][-1]
+    pes_end = scenarios["pessimistic"][-1]
+
+    def _pct_change(value: float) -> float:
+        return round((value / base_end - 1) * 100, 1) if base_end else 0.0
+
+    sens_labels = [
+        {"scenario": "Growth +2pp (Best)", "churn_assumption": "+2pp balance growth vs base"},
+        {"scenario": "Base Scenario",       "churn_assumption": "Base ML growth prediction"},
+        {"scenario": "Growth -2pp (Stress)", "churn_assumption": "-2pp balance growth vs base"},
+    ]
 
     return {
         "current_aum": round(total, 2),
+        "base_scenario_aum_90d": round(base_end, 2),
+        "aum_at_risk": round(abs(total - base_end), 2),
+        "best_case_aum_90d": round(opt_end, 2),
         "as_of_date": fc["as_of_date"],
-        "scenarios": {
-            "optimistic": fc["scenarios"]["optimistic"],
-            "base": base_m,
-            "pessimistic": fc["scenarios"]["pessimistic"],
-        },
+        "scenarios": scenarios,
         "labels": short_labels,
         "by_segment": by_segment,
         "sensitivity": [
-            {"churn_delta": "-2%", "label": "Churn ↓ 2pp (Best)",  "projected_aum": round(opt_end, 2), "delta_vs_base": round(opt_end - base_end, 2), "aum_change": f"{(opt_end / base_end - 1) * 100:+.1f}%" if base_end else "Baseline"},
-            {"churn_delta": "Base", "label": "Base Scenario",       "projected_aum": round(base_end, 2), "delta_vs_base": 0, "aum_change": "Baseline"},
-            {"churn_delta": "+2%", "label": "Churn ↑ 2pp (Stress)", "projected_aum": round(pes_end, 2), "delta_vs_base": round(pes_end - base_end, 2), "aum_change": f"{(pes_end / base_end - 1) * 100:+.1f}%" if base_end else "Baseline"},
+            {**sl, "projected_aum": round(v, 2), "delta": round(v - base_end, 2),
+             "pct_change": _pct_change(v), "is_base": sl["scenario"] == "Base Scenario"}
+            for sl, v in zip(sens_labels, [opt_end, base_end, pes_end])
         ],
         "confidence_bounds": {"p10": p10, "p90": p90},
         "ci_checkpoints": [
-            {"label": f"Now ({short_labels[0]})", "base": base_m[0], "p10": p10[0], "p90": p90[0]},
-            {"label": "30D", "base": base_m[min(3, weeks - 1)], "p10": p10[min(3, weeks - 1)], "p90": p90[min(3, weeks - 1)]},
-            {"label": f"{weeks * 7}D", "base": base_m[-1], "p10": p10[-1], "p90": p90[-1]},
+            {"label": f"Now ({short_labels[0]})", "base": base_series[0], "p10": p10[0], "p90": p90[0]},
+            {"label": "30D", "base": base_series[min(3, weeks - 1)], "p10": p10[min(3, weeks - 1)], "p90": p90[min(3, weeks - 1)]},
+            {"label": f"{weeks * 7}D", "base": base_series[-1], "p10": p10[-1], "p90": p90[-1]},
         ],
         "model_meta": {
-            "version": "churn-decay v1",
+            "version": "balance-growth-lgbm v1",
+            "model_used": "lightgbm_balance_growth_model",
             "last_run": f"{fc['as_of_date']} (on request)",
             "n_customers": fc["customers"],
             "method": fc["method"],

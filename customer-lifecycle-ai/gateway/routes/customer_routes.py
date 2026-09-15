@@ -65,6 +65,12 @@ async def proxy_count(request: Request):
     return await _forward(request, "/states/count")
 
 
+@router.get("/snapshots")
+async def proxy_snapshots(request: Request):
+    """Forward the distinct snapshot dates to the state service."""
+    return await _forward(request, "/states/snapshots")
+
+
 @router.get("/{customer_id}")
 async def proxy_customer_detail(request: Request, customer_id: str):
     """Forward single customer state snapshot."""

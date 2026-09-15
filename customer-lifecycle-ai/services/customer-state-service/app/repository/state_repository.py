@@ -100,6 +100,17 @@ SELECT COUNT(*) FROM customer_states WHERE as_of_date = %(as_of_date)s
 {_LIVE_CUSTOMER_FILTER}
 """
 
+#: Distinct snapshot dates that already have computed states (newest first).
+#: These are the options the UI's "as-of" selector offers; a date with features
+#: but no states yet only appears once /states/compute has run for it.
+SNAPSHOT_DATES_SQL = f"""
+SELECT DISTINCT as_of_date
+FROM customer_states
+WHERE as_of_date IS NOT NULL
+{_LIVE_CUSTOMER_FILTER}
+ORDER BY as_of_date DESC
+"""
+
 
 class StateRepository:
     """Data access for customer_states table.
@@ -282,6 +293,18 @@ class StateRepository:
             return int(cur.fetchone()[0])
         finally:
             conn.close()
+
+    def list_snapshot_dates(self) -> list[str]:
+        """Distinct as_of_date values that have computed states (newest first)."""
+        def _query():
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                cur.execute(SNAPSHOT_DATES_SQL)
+                return [row[0].isoformat() for row in cur.fetchall() if row[0]]
+            finally:
+                conn.close()
+        return self._retry_db_op(_query, "list_snapshot_dates")
 
     def get_previous_states(
         self, customer_ids: list[str], as_of_date: date

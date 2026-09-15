@@ -45,10 +45,30 @@ def get_portfolio(
 
 
 @router.get("/clv-summary")
-def get_clv_summary(as_of_date: date = Query(..., description="Date for CLV summary")):
-    """Live CLV summary: bands + at-risk top customers (frontend contract shape)."""
+def get_clv_summary(
+    as_of_date: date = Query(..., description="Date for CLV summary"),
+    band_ranges: str | None = Query(
+        default=None,
+        description=(
+            "Optional absolute CLV bands in ZMW, e.g. "
+            "'Platinum:50000-;Gold:20000-50000;Silver:5000-20000;Bronze:-5000'. "
+            "Blank side = open end; the four ranges must be contiguous and cover "
+            "everything. Omitted = percentile bands (top 10% / 75th-90th / "
+            "50th-75th / below 50th)."
+        ),
+    ),
+):
+    """Live CLV summary: bands + at-risk top customers (frontend contract shape).
+
+    ``band_ranges`` lets the caller define the value bands in absolute ZMW rather
+    than percentiles. Invalid specs are rejected with 400 rather than guessed at —
+    a misshapen band set would silently corrupt the counts and the KPIs.
+    """
     from app.services.portfolio_views import portfolio_views
-    return portfolio_views.clv_summary(as_of_date)
+    try:
+        return portfolio_views.clv_summary(as_of_date, band_ranges)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid band_ranges: {exc}") from exc
 
 
 @router.get("/lifecycle-stages")
@@ -109,6 +129,16 @@ def count_states(
     authoritative denominator for pagination and portfolio totals.
     """
     return {"as_of_date": as_of_date, "total": _service.count_states(as_of_date)}
+
+
+@router.get("/snapshots")
+def list_snapshots() -> dict:
+    """Distinct as-of dates that have computed states (newest first).
+
+    These are the options for the UI's snapshot selector — the dates the
+    portfolio/list/count views can actually answer for.
+    """
+    return {"dates": _service.list_snapshot_dates()}
 
 
 @router.get("/{customer_id}/timeline", response_model=StateTimeline)

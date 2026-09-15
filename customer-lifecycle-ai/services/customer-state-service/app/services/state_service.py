@@ -190,6 +190,10 @@ class StateService:
         """Total state snapshots for the date — the real pagination denominator."""
         return self._state_repo.count_states(as_of_date)
 
+    def list_snapshot_dates(self) -> list[str]:
+        """Distinct snapshot dates that have computed states (newest first)."""
+        return self._state_repo.list_snapshot_dates()
+
     # ------------------------------------------------------------------
     # Markov Chain
     # ------------------------------------------------------------------
