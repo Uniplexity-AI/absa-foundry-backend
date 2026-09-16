@@ -70,9 +70,25 @@ class IntelligenceService:
             logger.warning("portfolio-scores unavailable: %s", e)
             return {}
 
+    def _deletion_generation(self) -> int:
+        """Change-detector for the soft-delete flag, used to bust the cache.
+
+        Deleting a customer happens in the gateway, so it cannot invalidate this
+        in-process cache; without the guard a just-deleted customer stays in the
+        totals for the rest of the TTL. Never raises — on a probe failure the
+        cache falls back to TTL-only behaviour.
+        """
+        try:
+            return self._repo.deleted_customer_count()
+        except Exception as exc:  # noqa: BLE001 - a probe failure must not break the endpoint
+            logger.warning("deletion-generation probe failed, using TTL only: %s", exc)
+            return -1
+
     def _snapshot(self, as_of_date: date | None) -> dict:
         """Resolved as-of date + scores + feature profiles, from cache when fresh."""
-        key = f"snapshot:{as_of_date or 'latest'}"
+        # The deletion count is part of the key, so a soft delete (or a restore)
+        # is a cache miss on the very next request.
+        key = f"snapshot:{as_of_date or 'latest'}:{self._deletion_generation()}"
         with self._cache_lock:
             hit = self._cache.get(key)
             if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
@@ -167,42 +183,55 @@ class IntelligenceService:
         scores = {s["customer_id"]: s for s in snap["scores"]}
         profiles = snap["profiles"]
 
-        rows = []
+        weeks = max(1, horizon_days // 7)
+
+        # ── Build per-customer rows ────────────────────────────────────
+        # Exclusively using the LightGBM balance-growth model output.
+        bg_rows = []   # (aum, growth_pct_per_horizon)
+
         for cid, prof in profiles.items():
             aum = float(prof.get("current_aum") or 0)
-            churn = (scores.get(cid) or {}).get("churn_probability") or 0.0
-            rows.append((aum, churn))
+            s = scores.get(cid) or {}
+            # Default to 0.0 growth if the model hasn't scored this customer
+            g = float(s.get("balance_growth_pct") or 0.0)
+            bg_rows.append((aum, g))
 
-        total_aum = sum(a for a, _ in rows)
-        base_total = sum(a * (1 - c) for a, c in rows)
-        opt_total = sum(a * (1 - max(0.0, c - 0.02)) for a, c in rows)
-        pes_total = sum(a * (1 - min(1.0, c + 0.02)) for a, c in rows)
-
-        weeks = max(1, horizon_days // 7)
-        weekly_r = lambda end_total: (end_total / total_aum) ** (1 / weeks) if total_aum > 0 else 1.0
-
-        def series(end_total: float) -> list[float]:
-            r = weekly_r(end_total)
-            return [round(total_aum * (r ** (w + 1)) / 1_000_000, 1) for w in range(weeks)]
-
+        total_aum = sum(a for a, _ in bg_rows)
         start = date.fromisoformat(snap["as_of_date"]) if snap["as_of_date"] else date.today()
         labels = [f"Wk {w+1} ({(start + timedelta(weeks=w + 1)).isoformat()})" for w in range(weeks)]
+
+        # ── ML path: weekly compound growth ───────────────────────
+        def ml_series(shift_pp: float) -> list[float]:
+            if total_aum == 0:
+                return [0.0] * weeks
+            portfolio_t = []
+            for w in range(weeks):
+                t_aum = sum(
+                    aum * ((1.0 + (g + shift_pp) / 100.0) ** ((w + 1) / weeks))
+                    for aum, g in bg_rows
+                )
+                portfolio_t.append(round(t_aum, 2))
+            return portfolio_t
+
+        method = (
+            "ML balance-growth projection: LightGBM balance_growth_pct model "
+            "(lightgbm_balance_growth_model.pkl), weekly compound growth, "
+            "±2pp growth shift for optimistic/pessimistic scenarios."
+        )
 
         return {
             "as_of_date": snap["as_of_date"],
             "horizon_days": horizon_days,
             "current_aum": round(total_aum, 2),
             "scenarios": {
-                "optimistic": series(opt_total),
-                "base": series(base_total),
-                "pessimistic": series(pes_total),
+                "optimistic":  ml_series(+2.0),
+                "base":        ml_series(0.0),
+                "pessimistic": ml_series(-2.0),
             },
             "labels": labels,
-            "method": (
-                "Deterministic churn-decay projection: AUM_i x (1 - P(churn_i))^t "
-                "per scenario band (±2pp churn), weekly intervals."
-            ),
-            "customers": len(rows),
+            "method": method,
+            "customers": len(bg_rows),
+            "balance_growth_model_used": True,
         }
 
     # ------------------------------------------------------------------

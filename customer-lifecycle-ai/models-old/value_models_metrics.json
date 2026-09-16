@@ -1,0 +1,63 @@
+{
+  "trained_at": "2026-09-11",
+  "training_rows": 14737,
+  "as_of_dates": [
+    "2026-07-17",
+    "2026-07-22",
+    "2026-07-27"
+  ],
+  "features": [
+    "total_amount_90d",
+    "txn_count_90d",
+    "days_since_last_txn",
+    "avg_days_between_txn",
+    "distinct_channels_90d",
+    "engagement_score"
+  ],
+  "feature_count": 6,
+  "targets": {
+    "erosion": "is_value_eroding = 1 when (future_total_amount_90d - total_amount_90d) / total_amount_90d < -0.25",
+    "forecast": "future_total_amount_90d = SUM(CREDIT amount) in (as_of_date, as_of_date + 90 days]"
+  },
+  "hyperparameters": {
+    "erosion": {
+      "n_estimators": 100,
+      "max_depth": 4,
+      "learning_rate": 0.1,
+      "eval_metric": "logloss",
+      "random_state": 42
+    },
+    "forecast": {
+      "n_estimators": 100,
+      "max_depth": 4,
+      "learning_rate": 0.1,
+      "eval_metric": "rmse",
+      "random_state": 42
+    }
+  },
+  "validation": {
+    "strategy": "walk_forward",
+    "erosion_folds": [
+      {
+        "date": "2026-07-22",
+        "roc_auc": 0.9918691025898414,
+        "pr_auc": 0.999996722659548,
+        "recall_top10": 0.10018068660911464,
+        "precision_top10": 1.0
+      }
+    ],
+    "forecast_folds": [
+      {
+        "date": "2026-07-22",
+        "rmse": 208.01094159032777,
+        "mae": 99.33010938575661
+      },
+      {
+        "date": "2026-07-27",
+        "rmse": 83.90710082878087,
+        "mae": 39.02696726422112
+      }
+    ]
+  },
+  "shap_available": false
+}

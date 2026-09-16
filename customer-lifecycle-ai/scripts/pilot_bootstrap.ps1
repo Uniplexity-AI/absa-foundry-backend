@@ -75,11 +75,28 @@ Invoke-Step 'State engine (customer_states)' {
 }
 if (-not $SkipTrain) {
     Invoke-Step 'Train / register champion model' { & $py "$root\scripts\train_models.py" }
+    Invoke-Step 'Train / register value models (CLV family)' {
+        & $py "$root\scripts\train_value_model.py"
+        & $py "$root\scripts\register_value_models.py"
+    }
 }
 if (-not $SkipStart) {
     Invoke-Step 'Start backend services' { powershell -ExecutionPolicy Bypass -File "$root\scripts\pilot_start.ps1" }
     Write-Host "`nWaiting 15s for services to come up..." -ForegroundColor Yellow
     Start-Sleep 15
+
+    # Value-model scoring needs the prediction service up (it loads the pickles).
+    # Writes erosion_probability / predicted_future_value into customer_states — the
+    # Branch Manager "at risk cases" list and the CLV views read those columns.
+    Invoke-Step 'Score value models (erosion + future value)' {
+        $login = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8080/auth/login' `
+                 -ContentType application/json -Body '{"username":"admin","password":"Pilot@2025"}'
+        $hdr = @{ Authorization = "Bearer $($login.access_token)" }
+        foreach ($d in $Dates) {
+            Invoke-RestMethod -Method Post -Headers $hdr `
+                -Uri "http://127.0.0.1:8080/api/v1/predictions/value-batch?as_of_date=$d" | Out-Null
+        }
+    }
 }
 
 Write-Host @"

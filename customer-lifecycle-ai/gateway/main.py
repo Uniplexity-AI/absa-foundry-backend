@@ -19,11 +19,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from gateway.routes import auth_routes, admin_routes, api_key_routes, etl_routes, feature_routes
 from gateway.routes import customer_routes, prediction_routes, models_routes
+from gateway.routes import customer_profile_routes
+from gateway.routes import customer_admin_routes
 from gateway.routes import recommendation_routes, insight_routes
 from gateway.routes import churn_intel_routes, forecast_routes
 from gateway.routes import monitoring_routes, outcome_routes
 from gateway.routes import intelligence_routes
 from gateway.routes import pilot_action_routes
+from gateway.routes import ingest_routes
 from shared.config.settings import settings
 
 # ---------------------------------------------------------------------------
@@ -59,18 +62,6 @@ def create_app() -> FastAPI:
     from gateway.middleware.logging import request_logging_middleware
     app.middleware("http")(request_logging_middleware)
 
-    # CORS
-    # Auth is a Bearer-token flow (no cookies), so credentials are NOT required.
-    # allow_credentials=True with allow_origins=["*"] is rejected by browsers on
-    # preflight; with credentials disabled the wildcard origin works.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # TODO: Restrict to frontend origin(s) in production
-        allow_credentials=False,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
     # Auth + RBAC — enforce a valid JWT on every non-public route, then check roles.
     # Runs inside CORS; sets request.state.user for all downstream handlers.
     # HTTPException raised inside an http middleware must be converted to a
@@ -96,13 +87,26 @@ def create_app() -> FastAPI:
             )
         return await call_next(request)
 
+    # CORS MUST be added last to be the outermost middleware!
+    # Auth is a Bearer-token flow (no cookies), so credentials are NOT required.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # TODO: Restrict to frontend origin(s) in production
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     # ---- Routes ----
     app.include_router(auth_routes.router)
     app.include_router(admin_routes.router)
     app.include_router(api_key_routes.router)
     app.include_router(etl_routes.router)
+    app.include_router(ingest_routes.router)
     app.include_router(feature_routes.router)
     app.include_router(customer_routes.router)
+    app.include_router(customer_profile_routes.router)
+    app.include_router(customer_admin_routes.router)
     app.include_router(prediction_routes.router)
     app.include_router(models_routes.router)
     app.include_router(recommendation_routes.router)

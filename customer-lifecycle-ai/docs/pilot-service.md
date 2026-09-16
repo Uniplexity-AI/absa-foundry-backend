@@ -1,8 +1,8 @@
 # Pilot Backend as a Windows Service (pywin32)
 
 For the pilot Windows box the backend can run as a single **Windows service**
-that supervises the five uvicorn services (gateway 8080, feature 8002, state
-8003, prediction 8004, decision 8005). This is an alternative to
+that supervises the six uvicorn services (gateway 8080, feature 8002, state
+8003, prediction 8004, decision 8005, model management 8006). This is an alternative to
 `scripts/pilot_start.ps1` and lives **alongside** it — only one should run at a
 time because they bind the same ports.
 

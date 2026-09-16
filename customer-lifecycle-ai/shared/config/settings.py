@@ -1,4 +1,4 @@
-﻿"""
+"""
 Shared Configuration Settings — Global settings used across all services.
 
 Reads from environment variables via pydantic-settings.
@@ -10,14 +10,23 @@ Add service-specific settings classes that extend these base settings.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Repo root: shared/config/settings.py -> shared/config -> shared -> <repo root>
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _REPO_ROOT / ".env"
 
 
 class Settings(BaseSettings):
     """Global application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Resolve the repo-root .env absolutely so services launched from their
+        # own directory (services/<name>/) still pick up real credentials
+        # instead of silently falling back to defaults.
+        env_file=str(_ENV_FILE) if _ENV_FILE.exists() else ".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -93,8 +102,16 @@ class Settings(BaseSettings):
     # ---- JWT / Auth ----
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 15
+    jwt_access_token_expire_minutes: int = 120
     jwt_refresh_token_expire_days: int = 7
+
+    # ---- LLM narration (Ollama) — ADR-005: narration only, never a decision ----
+    ollama_url: str = "http://localhost:11434"
+    llm_model: str = "qwen2.5-coder:7b"
+    llm_max_tokens: int = 300
+    llm_timeout_seconds: float = 180.0
+    # gateway -> decision-service proxy timeout for the slow narration call
+    llm_gateway_timeout_seconds: float = 180.0
 
     # ---- LDAP / Active Directory ----
     ldap_enabled: bool = False

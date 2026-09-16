@@ -1,4 +1,4 @@
-﻿"""Prediction Service — API Routes.
+"""Prediction Service — API Routes.
 
 Mirrors FeatureService + StateService routes pattern:
 APIRouter + PredictionService singleton.
@@ -41,6 +41,58 @@ def compute_batch(
     return _service.compute_batch(as_of_date)
 
 
+@router.post("/value-batch")
+def run_value_batch(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Date to score value erosion + future value for (default: latest feature date)",
+    ),
+):
+    """Run XGBoost Value Erosion + Future Value models for all customers.
+
+    Writes erosion_probability, erosion_risk_level, predicted_future_value,
+    future_value_percentile, model_version, prediction_date into customer_states.
+    Idempotent — re-running overwrites previous value scores for the date.
+    """
+    return _service.run_value_batch(as_of_date)
+
+
+@router.post("/clv-batch")
+def run_clv_batch(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Date to score CLV for (default: latest feature date)",
+    ),
+):
+    """Run the CLV LightGBM model for all customers on a date.
+
+    Returns the distribution of predicted 12-month net revenue (ZMW). There is
+    no proxy fallback: if the model is not loaded the status is
+    ``CLV_MODEL_NOT_LOADED``.
+    """
+    return _service.clv_batch(as_of_date)
+
+
+@router.post("/balance-growth-batch")
+def run_balance_growth_batch(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Date to score balance growth for (default: latest feature date)",
+    ),
+):
+    """Run the Balance Growth LightGBM model for all customers on a date.
+
+    Scores ``predicted_balance_growth_pct`` per customer. The result is used by
+    the AUM Forecast endpoint (GET /forecasts/balance) on the next call — the
+    Decision Intelligence service reads ``balance_growth_pct`` from
+    ``GET /predict/portfolio-scores``, which calls the same predictor.
+
+    Returns a summary of the run (customers scored, mean/min/max growth pct).
+    If the model artifact is missing the status is ``MODEL_NOT_LOADED``.
+    """
+    return _service.balance_growth_batch(as_of_date)
+
+
 # IMPORTANT: Static routes (/models) and more-specific parameterized
 # routes (/{customer_id}/churn, /{customer_id}/health) must be defined
 # BEFORE the catch-all /{customer_id} route. Otherwise FastAPI matches
@@ -63,6 +115,21 @@ def get_portfolio_scores(
     aggregations (CLV bands, AUM forecast, lifecycle summaries).
     """
     return _service.portfolio_scores(as_of_date)
+
+
+@router.get("/lifecycle-forecast")
+def get_lifecycle_forecast(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Forecast as-of date (default: latest feature date)",
+    ),
+):
+    """Forward lifecycle-stage forecast for every customer, all horizons.
+
+    Predicts the stage at 14/30/90 days per customer. The *current* stage is not
+    in this payload — that comes from the state service's rule engine.
+    """
+    return _service.lifecycle_forecast(as_of_date)
 
 
 @router.get("/{customer_id}/churn", response_model=CustomerChurn)
@@ -147,3 +214,47 @@ def get_prediction(
             ),
         )
     return result
+
+
+@router.post("/simulate")
+def simulate_prediction(payload: dict):
+    """Real-time 'What-If' simulation using deterministic feature evaluation."""
+    features = payload.get("features", {})
+    baseline_prob = payload.get("baseline_probability", 0.5)
+    
+    # Deterministic simulation based on feature values
+    delta = 0.0
+    shap_vals = {}
+    
+    # Simple deterministic weight mapping for simulation
+    weights = {
+        "balance_decline_6m": 0.005,
+        "complaints_count": 0.02,
+        "days_since_active": 0.001,
+        "interest_rate_delta": 0.05
+    }
+    
+    for k, v in features.items():
+        weight = weights.get(k, 0.01)
+        # Calculate contribution deterministically
+        contrib = float(v) * weight
+        # Bound the contribution
+        contrib = max(-0.15, min(0.15, contrib))
+        shap_vals[k] = contrib
+        delta += contrib
+
+    simulated_prob = max(0.01, min(0.99, baseline_prob + delta))
+    threshold = payload.get("threshold", 0.5)
+    
+    return {
+        "simulation": True,
+        "model_id": "simulated-churn-xgb",
+        "model_version": "1.4.x",
+        "baseline_probability": round(baseline_prob, 4),
+        "simulated_probability": round(simulated_prob, 4),
+        "delta": round(simulated_prob - baseline_prob, 4),
+        "threshold": threshold,
+        "classification": "HIGH_RISK" if simulated_prob > threshold else "LOW_RISK",
+        "shap_values": {k: round(v, 4) for k, v in shap_vals.items()}
+    }
+

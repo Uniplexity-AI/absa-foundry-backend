@@ -1,8 +1,16 @@
 """LLM Gateway — connects to Ollama for natural language generation.
 
-Ollama endpoint: http://localhost:11434
-Model: qwen2.5-coder:7b (4.7 GB)
-ADR-005: LLM is an ADVISOR — never a decision-maker.
+ADR-005: the LLM is an ADVISOR — it only narrates a decision that was already
+made by the deterministic rule engine (ActionGenerator -> RankingEngine ->
+RoutingEngine). It never chooses, ranks or overrides an action.
+
+Configuration (repo-root .env via shared.config.settings; real environment
+variables take precedence):
+    OLLAMA_URL                 default http://localhost:11434
+    LLM_MODEL                  default qwen2.5-coder:7b  (4.7 GB, ~90-120s/narration on CPU)
+                               gemma3:1b is ~10x faster if a shorter narrative is acceptable
+    LLM_MAX_TOKENS             default 300
+    LLM_TIMEOUT_SECONDS        default 180
 """
 from __future__ import annotations
 
@@ -11,17 +19,22 @@ from pathlib import Path
 
 import httpx
 
+from shared.config.settings import settings
+
 logger = logging.getLogger("decision.insight.llm")
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "prompts"
-_OLLAMA_URL = "http://localhost:11434"
+_OLLAMA_URL = settings.ollama_url.rstrip("/")
+_DEFAULT_MODEL = settings.llm_model
+_MAX_TOKENS = settings.llm_max_tokens
+_TIMEOUT = settings.llm_timeout_seconds
 
 
 class LLMGateway:
-    """LLM inference gateway via Ollama."""
+    """LLM inference gateway via Ollama (narration only — ADR-005)."""
 
-    def __init__(self, model: str = "qwen2.5-coder:7b") -> None:
-        self._model = model
+    def __init__(self, model: str | None = None) -> None:
+        self._model = model or _DEFAULT_MODEL
         self._available = self._check_ollama()
 
     def _check_ollama(self) -> bool:
@@ -82,7 +95,8 @@ class LLMGateway:
         })
         return self._generate(prompt, max_tokens=400)
 
-    def _generate(self, prompt: str, max_tokens: int = 300) -> str:
+    def _generate(self, prompt: str, max_tokens: int | None = None) -> str:
+        num_predict = max_tokens or _MAX_TOKENS
         try:
             resp = httpx.post(
                 f"{_OLLAMA_URL}/api/generate",
@@ -90,9 +104,9 @@ class LLMGateway:
                     "model": self._model,
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"num_predict": max_tokens, "temperature": 0.3},
+                    "options": {"num_predict": num_predict, "temperature": 0.3},
                 },
-                timeout=120.0,
+                timeout=_TIMEOUT,
             )
             if resp.status_code == 200:
                 return resp.json().get("response", "").strip()

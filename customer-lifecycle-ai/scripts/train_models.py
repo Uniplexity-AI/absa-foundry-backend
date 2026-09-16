@@ -1368,6 +1368,8 @@ def train_churn_model() -> dict:
         "calibrator": calibration_info,
         "feature_count_total": len(training_features) + len(all_excluded),
         "feature_count_training": len(training_features),
+        # alias consumed by the Models page (Model Details -> "Features Used")
+        "n_training_features": len(training_features),
         "leakage_features_excluded": sorted(LEAKAGE_FEATURES),
         "dead_features_excluded": sorted(dead_features),
         "training_features": training_features,

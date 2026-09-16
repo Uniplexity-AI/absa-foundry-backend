@@ -1,11 +1,38 @@
 import logging
+import os
 import pickle
 import numpy as np
 
 logger = logging.getLogger("prediction.value_prediction")
 
+# Project root — models/ is relative to this, NOT the process CWD (each service is
+# started from its own directory). Same idiom as app/models/churn_predictor.py.
+# app/services/value_prediction.py -> app/services -> app -> prediction-service -> services -> <repo>
+_PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__))
+            )
+        )
+    )
+)
+
+
+def _resolve_model_path(path: str) -> str:
+    """Return an absolute model path: absolute paths pass through, relative paths
+    are tried against the project root before falling back to the CWD-relative form.
+    """
+    if os.path.isabs(path):
+        return path
+    rooted = os.path.join(_PROJECT_ROOT, path)
+    return rooted if os.path.exists(rooted) else path
+
+
 class ValuePredictionService:
     def __init__(self, erosion_model_path="models/value_erosion_v1.pkl", forecast_model_path="models/value_forecast_v1.pkl"):
+        erosion_model_path = _resolve_model_path(erosion_model_path)
+        forecast_model_path = _resolve_model_path(forecast_model_path)
         self.erosion_model = None
         self.forecast_model = None
         self.features = None
@@ -17,7 +44,7 @@ class ValuePredictionService:
                 self.features = data['features']
             logger.info(f"Loaded erosion model from {erosion_model_path}")
         except Exception as e:
-            logger.warning(f"Failed to load erosion model: {e}")
+            logger.warning(f"Failed to load erosion model from {erosion_model_path}: {e}")
             
         try:
             with open(forecast_model_path, "rb") as f:
@@ -25,7 +52,7 @@ class ValuePredictionService:
                 self.forecast_model = data['model']
             logger.info(f"Loaded forecast model from {forecast_model_path}")
         except Exception as e:
-            logger.warning(f"Failed to load forecast model: {e}")
+            logger.warning(f"Failed to load forecast model from {forecast_model_path}: {e}")
 
     def predict(self, feature_row: dict) -> dict:
         """
@@ -68,10 +95,12 @@ class ValuePredictionService:
         # and map the highest magnitude features to human-readable strings.
         top_factors = []
         if risk_level in ["High", "Medium"]:
-            # naive mock based on generic heuristics for the PoC
-            if feature_row.get('txn_count_90d', 0) < 5:
+            # None-safe coercion — DB NULLs arrive as Python None
+            txn_count = feature_row.get('txn_count_90d') or 0
+            total_amount = feature_row.get('total_amount_90d') or 0
+            if txn_count < 5:
                 top_factors.append("Transaction frequency dropped")
-            if feature_row.get('total_amount_90d', 0) < 1000:
+            if total_amount < 1000:
                 top_factors.append("Low overall deposit volume")
             if not top_factors:
                 top_factors.append("Overall engagement is declining")

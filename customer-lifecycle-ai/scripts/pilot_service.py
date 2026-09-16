@@ -3,14 +3,14 @@
 ABSA Pilot Backend — Windows Service (pywin32)
 ================================================
 
-Runs the five backend services (gateway + feature-engineering +
-customer-state + prediction + decision-intelligence) as supervised child
-uvicorn processes, from a single Windows service.
+Runs the six backend services (gateway + feature-engineering +
+customer-state + prediction + decision-intelligence + model-management) as
+supervised child uvicorn processes, from a single Windows service.
 
 This is an ALTERNATIVE to scripts/pilot_start.ps1 for the pilot Windows box and
 is kept ALONGSIDE it — only one should run at a time, because both bind the
 same ports (gateway 8080, feature 8002, state 8003, prediction 8004,
-decision 8005).
+decision 8005, model-management 8006).
 
 Admin install / manage (run in an ELEVATED PowerShell, from the repo root):
 
@@ -61,7 +61,7 @@ SERVICE_NAME = "AbsaPilotBackend"
 SERVICE_DISPLAY = "ABSA Customer Lifecycle Pilot Backend"
 SERVICE_DESCRIPTION = (
     "Runs the ABSA pilot backend (gateway, feature engineering, customer state, "
-    "prediction, decision intelligence) as supervised child uvicorn processes."
+    "prediction, decision intelligence, model management) as supervised child uvicorn processes."
 )
 
 # name, app target, factory (gateway uses create_app), env port key, default port, working subdir
@@ -71,6 +71,7 @@ _SERVICE_DEFS = [
     ("state",      "main:app",                False, "CUSTOMER_STATE_SERVICE_PORT",      8003, "services/customer-state-service"),
     ("prediction", "main:app",                False, "PREDICTION_SERVICE_PORT",          8004, "services/prediction-service"),
     ("decision",   "main:app",                False, "DECISION_INTELLIGENCE_SERVICE_PORT", 8005, "services/decision-intelligence-service"),
+    ("modelmgmt",  "app.main:app",            False, "MODEL_MANAGEMENT_SERVICE_PORT",    8006, "services/model-management-service"),
 ]
 
 

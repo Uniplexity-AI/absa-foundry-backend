@@ -22,8 +22,9 @@ migrate ──► seed_iam ──► generate_synthetic ──► customer_id_ma
 | 3 · ID mapping | `customer_id_mapping` (identity join) | auto-built by `scripts/run_full_pipeline_all_dates.py` |
 | 4 · Feature store | `customer_features` (~64 features × as-of date) | `scripts/run_full_pipeline_all_dates.py` (Phase-1 SQL `compute_batch` + 7 domain generators) |
 | 5 · State engine | `customer_states`, `state_transitions` | `scripts/seed_states.py --as-of-date <d>` |
-| 6 · Models (optional) | `models/champion/churn/…` + `models/registry.json` | `scripts/train_models.py` |
-| 7 · Runtime | gateway 8080 + feature/state/prediction/decision (8002–8005) | `scripts/pilot_start.ps1` **or** pywin32 service |
+| 6 · Models (optional) | `models/champion/churn/…`, `models/value_*_v1.pkl`, `models/registry.json`, `etl_clean.model_registry` | `scripts/train_models.py` → `scripts/train_value_model.py` → `scripts/register_value_models.py` |
+| 7 · Runtime | gateway 8080 + feature/state/prediction/decision/model-management (8002–8006) | `scripts/pilot_start.ps1` **or** pywin32 service |
+| 8 · Value scores | `customer_states.erosion_probability`, `predicted_future_value` | `POST /api/v1/predictions/value-batch?as_of_date=<d>` (needs layer 7 up) |
 
 **ETL note:** `run_etl.py` (repo root) is the **CSV onboarding** path (validates + loads real
 CSV files into `etl_clean` with an audit trail). It is **not** required for the synthetic demo —
@@ -88,7 +89,9 @@ powershell -ExecutionPolicy Bypass -File scripts\pilot_stop.ps1
 & $py scripts\seed_states.py --as-of-date 2026-07-27
 
 # 5) (Optional) models page: train + write registry (GET /api/v1/models reads registry.json)
-& $py scripts\train_models.py
+& $py scripts\train_models.py                       # churn champion -> models[] (type: churn)
+& $py scripts\train_value_model.py                  # CLV family -> models/value_*_v1.pkl + metrics JSON
+& $py scripts\register_value_models.py              # CLV entries -> models[] + etl_clean.model_registry
 
 # 6) Start services
 powershell -ExecutionPolicy Bypass -File scripts\pilot_start.ps1
@@ -99,9 +102,9 @@ powershell -ExecutionPolicy Bypass -File scripts\pilot_start.ps1
 ## 4. Verification (do all of these)
 
 ```powershell
-# 4.1 Health
+# 4.1 Health (6 services)
 Invoke-RestMethod http://127.0.0.1:8080/health      # gateway
-foreach ($p in 8002,8003,8004,8005) { try { Invoke-RestMethod "http://127.0.0.1:$p/health" | Out-Null; "$p OK" } catch { "$p DOWN" } }
+foreach ($p in 8002,8003,8004,8005,8006) { try { Invoke-RestMethod "http://127.0.0.1:$p/health" | Out-Null; "$p OK" } catch { "$p DOWN" } }
 
 # 4.2 Row counts (source of truth)
 psql -h 127.0.0.1 -U postgres -d etl_clean -c "SELECT 'customers' t,count(*) FROM customers_clean UNION ALL SELECT 'transactions',count(*) FROM customer_transactions_clean UNION ALL SELECT 'features',count(*) FROM customer_features UNION ALL SELECT 'states',count(*) FROM customer_states;"
@@ -115,7 +118,58 @@ Invoke-RestMethod -Uri http://127.0.0.1:8080/auth/me -Headers @{ Authorization =
 $h = @{ Authorization = "Bearer $($r.access_token)" }
 Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/customers/portfolio?as_of_date=2026-07-27" -Headers $h
 Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/predictions/markov-matrix" -Headers $h
+
+# 4.5 Models page
+#   GET /api/v1/models  -> registry document (served from models/registry.json)
+#   GET /api/v1/models/features, /audit, /champion -> proxied to Model Management (:8006)
+(Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/models" -Headers $h).models | Select-Object model_id,type,status
+# Expect 3 entries: churn_v1 (churn) + value_erosion_v1 / value_forecast_v1 (clv)
+(Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/models/champion" -Headers $h).optimal_threshold
+# Expect 0.9509 (the trained churn threshold — NOT the 0.5 service mock)
+(Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/models/challengers" -Headers $h)
+# Expect the 2 APPROVED CLV artifacts
+
+# 4.6 Ollama narration (ADR-005: narration only, never a decision)
+#   The action itself is deterministic (ActionGenerator -> RankingEngine -> RoutingEngine);
+#   Ollama only writes the RM-facing narrative around the already-chosen action.
+Invoke-RestMethod -Uri "http://localhost:11434/api/tags"        # Ollama up + model pulled
+$c = "CUST0000239"
+$d = Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/insights/llm-explain/$c`?as_of_date=2026-07-27" `
+     -Headers $h -TimeoutSec 300
+$d.llm_available; $d.model; $d.top_action          # True | qwen2.5-coder:7b | FEE_WAIVER
+$d.llm_explanation
+# Expect 200 and a written narrative. ALLOW ~60-120s — the 7B model runs on CPU.
+# Tunables (repo-root .env): LLM_MODEL, LLM_MAX_TOKENS, LLM_TIMEOUT_SECONDS,
+#   LLM_GATEWAY_TIMEOUT_SECONDS. gemma3:1b is already pulled and is far faster.
+#   In the UI this is the "AI Explanation" card on the customer page (button-triggered,
+#   never on page load, because of the CPU latency).
 ```
+
+### 4.7 MLOps governance flow (Models page, :8006)
+
+The Models page controls now do real work — "Request Retrain" runs the actual trainer.
+
+```powershell
+# Retrain: queues a background job that runs scripts/train_models.py (~20s)
+$job = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8080/api/v1/models/training" `
+       -Headers $h -ContentType application/json -Body '{"feature_ids":[],"dataset_version":"2026-07-27"}'
+$job.job_id
+
+# ...wait for the row to reach TRAINED, then walk the governance chain:
+$chall = (Invoke-RestMethod -Uri "http://127.0.0.1:8080/api/v1/models/compare" -Headers $h).challenger
+$chall.status; $chall.evaluation_metrics.auc
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8080/api/v1/models/$($chall.id)/validate" -Headers $h
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8080/api/v1/models/$($chall.id)/approve"  -Headers $h
+# Invoke-RestMethod -Method Post .../$($chall.id)/promote ...   # retires the current champion
+
+# Calibration simulator — uses the champion's real confusion matrix
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8080/api/v1/models/simulate-calibration" `
+     -Headers $h -ContentType application/json -Body '{"threshold":0.6}'
+```
+
+> `compare` pairs models **within the same family only**, so the approved CLV artifacts are
+> never presented as churn challengers. `/approve` accepts `VALIDATED` (nomination is implicit),
+> matching the three buttons the UI shows: Validate → Approve → Promote.
 
 ---
 
@@ -138,7 +192,15 @@ psql -h 127.0.0.1 -U postgres -d etl_clean -c "SELECT count(*) FROM customer_fea
 | `InvalidForeignKey ... customers_clean` during migrate | stale clean schema from an old generator | `pilot_reset_clean.py` + drop clean tables if needed (see migration guide §6), re-migrate |
 | Dashboards 0 customers | `customer_features`/`customer_states` empty | run feature pipeline + `seed_states.py` (bootstrap steps 3–4) |
 | `401` on `/api/*` | JWT enforced | login → `Authorization: Bearer …` (see §4.3) |
-| `GET /api/v1/models` 500 | models registry empty (no `models/registry.json`) | run `train_models.py` (or restore a champion artifact) |
+| `GET /api/v1/models` 502 `Model Management Service unavailable` | the 6th service (:8006) is not running | `pilot_start.ps1` (it starts 6 services) or `pilot_service.py start`; verify `http://127.0.0.1:8006/health` |
+| Models page shows no champion / 0 models | `models/registry.json` not written yet | run `train_models.py` (writes `models[]` + champion block) |
+| CLV family missing from `models[]` / Model Comparison | `train_value_model.py` + `register_value_models.py` not run | run both (bootstrap does this in the train step) |
+| Value/erosion views empty, or `MODEL_NOT_LOADED` from `value-batch` | value scores never computed (layer 8), or the pickles aren't found | run `value-batch` per date (bootstrap does this after services start); pickles must be at `<repo>/models/value_*_v1.pkl` |
+| `/api/v1/insights/llm-explain/*` → `llm_available: false` | Ollama not running or the model isn't pulled | `ollama serve` + `ollama pull qwen2.5-coder:7b` (see §4.6) |
+| `/api/v1/insights/llm-explain/*` → 504 | CPU narration exceeds the proxy timeout | raise `LLM_GATEWAY_TIMEOUT_SECONDS` / `LLM_TIMEOUT_SECONDS`, or set `LLM_MODEL=gemma3:1b` |
+| narration returns “LLM generation failed” | Ollama up but the model errored / OOM | check `ollama ps` + the decision-service log; try a smaller model |
+| Retrain stays `TRAINING` forever | trainer subprocess failed | check `logs/pilot/modelmgmt.err.log`; the row records `evaluation_metrics.error` when it fails |
+| Calibration slider errors | champion has no `confusion_matrix` in `evaluation_metrics` | re-run `register_value_models.py` (it copies the matrix from `registry.json`) |
 | generator loads to wrong DB | default `DATABASE_URL` = `etl_validation` | always pass `--database-url …/etl_clean` |
 | feature pipeline fails per date | feature SQL expects consistent txn history | re-run after a clean load (never generator alone over stale data) |
 | demo login invalid | users not seeded | `seed_iam.py` (password `Pilot@2025`) |

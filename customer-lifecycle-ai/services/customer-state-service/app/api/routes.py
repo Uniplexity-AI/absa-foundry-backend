@@ -45,10 +45,30 @@ def get_portfolio(
 
 
 @router.get("/clv-summary")
-def get_clv_summary(as_of_date: date = Query(..., description="Date for CLV summary")):
-    """Live CLV summary: bands + at-risk top customers (frontend contract shape)."""
+def get_clv_summary(
+    as_of_date: date = Query(..., description="Date for CLV summary"),
+    band_ranges: str | None = Query(
+        default=None,
+        description=(
+            "Optional absolute CLV bands in ZMW, e.g. "
+            "'Platinum:50000-;Gold:20000-50000;Silver:5000-20000;Bronze:-5000'. "
+            "Blank side = open end; the four ranges must be contiguous and cover "
+            "everything. Omitted = percentile bands (top 10% / 75th-90th / "
+            "50th-75th / below 50th)."
+        ),
+    ),
+):
+    """Live CLV summary: bands + at-risk top customers (frontend contract shape).
+
+    ``band_ranges`` lets the caller define the value bands in absolute ZMW rather
+    than percentiles. Invalid specs are rejected with 400 rather than guessed at —
+    a misshapen band set would silently corrupt the counts and the KPIs.
+    """
     from app.services.portfolio_views import portfolio_views
-    return portfolio_views.clv_summary(as_of_date)
+    try:
+        return portfolio_views.clv_summary(as_of_date, band_ranges)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid band_ranges: {exc}") from exc
 
 
 @router.get("/lifecycle-stages")
@@ -56,6 +76,35 @@ def get_lifecycle_stages(as_of_date: date = Query(..., description="Date for lif
     """Live lifecycle distribution, 30d transitions, onboarding funnel, win-back."""
     from app.services.portfolio_views import portfolio_views
     return portfolio_views.lifecycle_stages(as_of_date)
+
+
+@router.get("/at-risk-cases")
+def get_at_risk_cases(
+    as_of_date: date = Query(..., description="Date for at-risk case list"),
+    limit: int = Query(default=50, ge=1, le=200, description="Max cases to return"),
+):
+    """Top at-risk customers ranked by erosion probability for the Branch Manager case list."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.at_risk_cases(as_of_date, limit)
+
+
+@router.get("/unenrolled-high-risk")
+def get_unenrolled_high_risk(
+    as_of_date: date = Query(..., description="Date for unenrolled customers"),
+    limit: int = Query(default=20, ge=1, le=100, description="Max rows to return"),
+):
+    """AT_RISK customers with no pilot action logged — for the unenrolled campaign panel."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.unenrolled_high_risk(as_of_date, limit)
+
+
+@router.get("/priority-actions")
+def get_priority_actions(
+    as_of_date: date = Query(..., description="Date for priority action aggregates"),
+):
+    """Computed AI priority actions based on real at-risk aggregates."""
+    from app.services.portfolio_views import portfolio_views
+    return portfolio_views.priority_actions(as_of_date)
 
 
 @router.get("", response_model=list[StateSnapshot])
@@ -66,6 +115,30 @@ def list_all_states(
 ) -> list[StateSnapshot]:
     """List all customer state snapshots for a given date (paginated)."""
     return _service.list_all_states(as_of_date, limit, offset)
+
+
+# NOTE: declared before /{customer_id} so "count" is not read as a customer id.
+@router.get("/count")
+def count_states(
+    as_of_date: date = Query(..., description="Date for state snapshots"),
+) -> dict:
+    """Total state snapshots for the date.
+
+    ``limit`` on the list route is capped at 500 and the response is a bare
+    array, so a caller cannot tell "500 of 500" from "500 of 5,000". This is the
+    authoritative denominator for pagination and portfolio totals.
+    """
+    return {"as_of_date": as_of_date, "total": _service.count_states(as_of_date)}
+
+
+@router.get("/snapshots")
+def list_snapshots() -> dict:
+    """Distinct as-of dates that have computed states (newest first).
+
+    These are the options for the UI's snapshot selector — the dates the
+    portfolio/list/count views can actually answer for.
+    """
+    return {"dates": _service.list_snapshot_dates()}
 
 
 @router.get("/{customer_id}/timeline", response_model=StateTimeline)

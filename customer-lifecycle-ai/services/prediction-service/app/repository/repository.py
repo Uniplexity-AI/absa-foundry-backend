@@ -1,4 +1,4 @@
-﻿"""Prediction Repository — Data access for customer_features + customer_states.
+"""Prediction Repository — Data access for customer_features + customer_states.
 
 Mirrors FeatureRepository + StateRepository exactly:
 - psycopg2 (sync) with connection timeouts + TCP keepalives
@@ -315,6 +315,78 @@ class PredictionRepository:
                 self._backfill_health_sql,
                 values,
                 template="(%s, %s, %s, %s)",
+                page_size=1000,
+            )
+            conn.commit()
+            return cur.rowcount
+        finally:
+            conn.close()
+
+    # ------------------------------------------------------------------
+    # Write — Value Predictions Backfill
+    # ------------------------------------------------------------------
+
+    def backfill_value_predictions(
+        self, predictions: list[dict], as_of_date: date, model_version: str = "value_erosion_v1"
+    ) -> int:
+        """Batch UPDATE customer_states SET erosion/value ML columns.
+
+        Uses psycopg2.extras.execute_values for performance.
+        Skips rows where customer_state doesn't exist (no health backfill needed yet).
+        Returns number of rows updated.
+
+        Args:
+            predictions: list of {customer_id, erosion_probability, erosion_risk_level,
+                          predicted_future_value, future_value_percentile}
+            as_of_date: snapshot date
+            model_version: tag for audit column
+        """
+        if not predictions:
+            return 0
+
+        st = settings.table_customer_states
+        cc = settings.col_customer_id
+        ac = settings.col_as_of_date
+
+        sql = f"""
+UPDATE {st} cs
+SET
+    erosion_probability     = pred.erosion_probability,
+    erosion_risk_level      = pred.erosion_risk_level,
+    predicted_future_value  = pred.predicted_future_value,
+    future_value_percentile = pred.future_value_percentile,
+    model_version           = pred.model_version,
+    prediction_date         = pred.prediction_date
+FROM (
+    VALUES %s
+) AS pred({cc}, {ac}, erosion_probability, erosion_risk_level,
+           predicted_future_value, future_value_percentile,
+           model_version, prediction_date)
+WHERE cs.{cc} = pred.{cc}::text
+  AND cs.{ac} = pred.{ac}::date
+"""
+        values = [
+            (
+                p["customer_id"],
+                as_of_date,
+                p.get("erosion_probability", 0.0),
+                p.get("erosion_risk_level", "Unknown"),
+                p.get("predicted_future_value", 0.0),
+                p.get("future_value_percentile", 0.0),
+                model_version,
+                as_of_date,
+            )
+            for p in predictions
+        ]
+
+        conn = self._connect()
+        try:
+            cur = conn.cursor()
+            extras.execute_values(
+                cur,
+                sql,
+                values,
+                template="(%s, %s, %s, %s, %s, %s, %s, %s)",
                 page_size=1000,
             )
             conn.commit()

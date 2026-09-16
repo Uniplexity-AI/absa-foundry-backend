@@ -8,21 +8,26 @@ Provides async SQLAlchemy sessions with automatic transaction handling:
 Use get_session() / get_target_session() as FastAPI dependencies
 or with session_context() / target_session_context() for scripts.
 
+get_db() is a SYNC dependency for the target (clean) DB, used by services whose
+route handlers are written with synchronous SQLAlchemy (Model Management Service).
+
 TODO:
 Add read/write session routing when read replicas are introduced.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
 
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from shared.database.postgres import get_engine, get_target_engine
+from shared.database.postgres import get_engine, get_sync_target_engine, get_target_engine
 
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 _target_session_factory: async_sessionmaker[AsyncSession] | None = None
+_sync_target_factory: sessionmaker[Session] | None = None
 
 
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
@@ -95,8 +100,54 @@ async def get_target_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def _get_sync_target_session_factory() -> sessionmaker[Session]:
+    """Return the singleton SYNC session factory for the target (clean) DB."""
+    global _sync_target_factory
+    if _sync_target_factory is None:
+        _sync_target_factory = sessionmaker(
+            bind=get_sync_target_engine(),
+            class_=Session,
+            expire_on_commit=False,
+            autoflush=False,
+        )
+    return _sync_target_factory
+
+
+def get_db() -> Generator[Session, None, None]:
+    """FastAPI dependency yielding a SYNC target (clean) DB session.
+
+    Provided for services whose route handlers use synchronous SQLAlchemy
+    (e.g. the Model Management Service: model_registry, feature_registry,
+    calibration_proposals, audit_logs). Commits on success, rolls back on error.
+    """
+    session = _get_sync_target_session_factory()()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def SessionLocal() -> Session:  # noqa: N802 - legacy name, kept for existing callers
+    """Return a new SYNC target (clean) DB session.
+
+    Exposed as a plain callable factory rather than a module-level sessionmaker so
+    that importing this module never opens a connection. Use as a context manager:
+
+        with SessionLocal() as db:
+            ...
+
+    Callers: Model Management Service training background task, scripts/seed_database.py.
+    """
+    return _get_sync_target_session_factory()()
+
+
 def reset_session_factory() -> None:
     """Reset all session factories. Used in tests."""
-    global _session_factory, _target_session_factory
+    global _session_factory, _target_session_factory, _sync_target_factory
     _session_factory = None
     _target_session_factory = None
+    _sync_target_factory = None

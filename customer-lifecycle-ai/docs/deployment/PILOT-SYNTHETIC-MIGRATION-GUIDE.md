@@ -204,11 +204,11 @@ Validated 81,059 recent transactions across 4,757 customers.
 powershell -ExecutionPolicy Bypass -File scripts\pilot_start.ps1
 ```
 
-Wait ~15s, then confirm all five services are listening:
+Wait ~15s, then confirm all six services are listening:
 
 ```powershell
 Start-Sleep 15
-foreach ($port in 8002,8003,8004,8005,8080) {
+foreach ($port in 8002,8003,8004,8005,8006,8080) {
   $r = Test-NetConnection -ComputerName 127.0.0.1 -Port $port -WarningAction SilentlyContinue
   "$port : $($r.TcpTestSucceeded)"
 }
@@ -217,7 +217,7 @@ foreach ($port in 8002,8003,8004,8005,8080) {
 
 > **Alternative:** the backend can run as a Windows service via pywin32 (`scripts/pilot_service.py`)
 > instead of `pilot_start.ps1` — see `docs/pilot-service.md`. Only one of the two runs at a time
-> (they share ports 8080/8002-8005).
+> (they share ports 8080/8002-8006).
 
 ---
 
@@ -240,6 +240,7 @@ Expect approximately: customers **5,000**, transactions **~348k**, accounts ~5.7
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8080/health
 Invoke-RestMethod http://127.0.0.1:8005/health
+Invoke-RestMethod http://127.0.0.1:8006/health   # model management (models page data)
 ```
 
 ### 5.3 Feature store populated
