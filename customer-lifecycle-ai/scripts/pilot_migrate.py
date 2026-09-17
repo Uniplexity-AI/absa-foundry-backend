@@ -38,7 +38,10 @@ MIGRATIONS = [
     ("database/migrations/001_etl_schema.sql", "target"),
     ("database/migrations/002_clean_data_tables.sql", "target"),
     ("database/feature_store/001_customer_features.sql", "target"),
+    ("database/feature_store/002_add_product_engagement_features.sql", "target"),
     ("database/state_engine/001_customer_states.sql", "target"),
+    ("database/migrations/007_decision_outcomes.sql", "target"),
+    ("database/migrations/008_prediction_log.sql", "target"),
     ("database/migrations/009_pilot_actions.sql", "target"),
     ("database/migrations/010_market_segment.sql", "target"),
     ("database/migrations/012_model_management.sql", "target"),
@@ -46,6 +49,7 @@ MIGRATIONS = [
     ("database/migrations/014_customer_identity.sql", "target"),
     ("database/migrations/015_customer_features_ingest.sql", "target"),
     ("database/migrations/016_customer_soft_delete.sql", "target"),
+    ("database/migrations/017_customer_features_full_schema.sql", "target"),
 ]
 
 

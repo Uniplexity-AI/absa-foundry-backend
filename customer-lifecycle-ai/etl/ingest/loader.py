@@ -187,15 +187,19 @@ def upsert(
         return 0, 0
 
     table = _reflected_table(engine, dataset.table)
-    key_columns = list(dataset.key_columns)
-    update_columns = [c for c in dataset.data_columns if c not in key_columns]
+    table_col_names = set(table.columns.keys())
+    key_columns = [c for c in dataset.key_columns if c in table_col_names]
+    update_columns = [c for c in dataset.data_columns if c not in key_columns and c in table_col_names]
 
     inserted = 0
     updated = 0
 
     with engine.begin() as conn:
         for start in range(0, len(records), chunk_size):
-            chunk = records[start:start + chunk_size]
+            chunk = [
+                {k: v for k, v in record.items() if k in table_col_names}
+                for record in records[start:start + chunk_size]
+            ]
             stmt = pg_insert(table).values(chunk)
             stmt = stmt.on_conflict_do_update(
                 index_elements=[table.c[column] for column in key_columns],

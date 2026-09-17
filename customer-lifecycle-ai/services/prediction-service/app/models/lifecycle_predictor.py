@@ -428,8 +428,9 @@ class LifecyclePredictor:
             if name in frame.columns:
                 frame[name] = [_code_for(v, categories) for v in frame[name]]
 
-        matrix = frame.apply(pd.to_numeric, errors="coerce").astype("float64").to_numpy()
-        probs = model.predict_proba(matrix)  # type: ignore[attr-defined]
+        df_in = frame.apply(pd.to_numeric, errors="coerce").astype("float64")
+        probs = model.predict_proba(df_in)  # type: ignore[attr-defined]
+
 
         out: list[dict] = []
         for row, vector in zip(engineered, probs):

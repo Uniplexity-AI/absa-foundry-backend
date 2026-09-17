@@ -293,7 +293,10 @@ CUSTOMER_FIELDS: tuple[CustomerField, ...] = (
         },
         example="Active",
         notes="Churn label source (pilot_data_config.churn_label). Dormant/Closed count as churned.",
-        aliases=("status", "customer_status", "customerstatus", "account_status", "state", "lifecycle_status"),
+        aliases=(
+            "status", "customer_status", "customerstatus", "account_status", "state",
+            "lifecycle_status", "rel_customer_status", "relcustomerstatus",
+        ),
     ),
     CustomerField(
         name="full_name",
