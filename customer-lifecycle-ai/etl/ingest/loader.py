@@ -23,7 +23,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
-from sqlalchemy import MetaData, Table, text
+from sqlalchemy import MetaData, Table, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -55,6 +55,75 @@ def _reflected_table(engine: Engine, qualified: str) -> Table:
         table = Table(name, MetaData(), schema=schema or None, autoload_with=engine)
         _TABLE_CACHE[cache_key] = table
     return table
+
+
+def _reflect_fresh(engine: Engine, qualified: str) -> Table:
+    """Re-reflect ``qualified`` and replace the cached entry.
+
+    ``_TABLE_CACHE`` is keyed on the engine and never expires, so a long-running
+    gateway started before a migration would otherwise keep seeing the old
+    column set for the lifetime of the process.
+    """
+    schema, _, name = qualified.partition(".")
+    table = Table(name, MetaData(), schema=schema or None, autoload_with=engine)
+    _TABLE_CACHE[f"{id(engine)}::{qualified}"] = table
+    return table
+
+
+def missing_columns(engine: Engine | None, dataset: DatasetSpec) -> list[str]:
+    """Dataset columns that have no matching column on the target table.
+
+    :func:`upsert` writes only the columns it can see in the reflected table, so
+    a column added by a migration this process has not re-reflected would be
+    **silently dropped** while the load still reported success — this is how
+    ``customers_clean.mobile_number`` edits were lost. Re-reflect once so a stale
+    cache self-heals, then report whatever is genuinely absent from the database.
+    """
+    try:
+        engine = engine or get_sync_target_engine()
+        table = _reflected_table(engine, dataset.table)
+        missing = [c for c in dataset.data_columns if c not in table.columns]
+        if missing:
+            table = _reflect_fresh(engine, dataset.table)
+            missing = [c for c in dataset.data_columns if c not in table.columns]
+        return missing
+    except Exception as exc:  # noqa: BLE001 - a probe must not break the load
+        logger.warning("Could not inspect %s for column drift: %s", dataset.table, exc)
+        return []
+
+
+def fetch_master_row(
+    customer_id: str,
+    *,
+    include_deleted: bool = False,
+    engine: Engine | None = None,
+) -> dict[str, Any] | None:
+    """Read one master row, keyed by the dataset's own field names.
+
+    This is the read side of the Edit Customer form: it returns exactly the
+    fields ``PATCH /api/v1/ingest/customer`` writes, so the form pre-fills from
+    the same contract it submits to. Columns the database does not have are
+    omitted (see :func:`missing_columns`) instead of aborting the read — the
+    caller is told about them separately.
+    """
+    engine = engine or get_sync_target_engine()
+    spec = get_dataset(DEFAULT_DATASET)
+    missing_columns(engine, spec)  # self-heal a stale reflection first
+    table = _reflected_table(engine, spec.table)
+
+    key_column = spec.key_columns[0]
+    columns = [c for c in spec.data_columns if c in table.columns]
+    if not columns:
+        return None
+
+    stmt = select(*[table.c[c] for c in columns]).where(table.c[key_column] == customer_id)
+    if not include_deleted and "is_deleted" in table.columns:
+        stmt = stmt.where(table.c.is_deleted.is_(False))
+
+    with engine.connect() as conn:
+        row = conn.execute(stmt).mappings().first()
+
+    return dict(row) if row is not None else None
 
 
 def new_batch_id() -> str:
@@ -409,10 +478,20 @@ def load_batch(
             "rows_inserted": 0,
             "rows_updated": 0,
             "rows_loaded": 0,
+            "columns_dropped": missing_columns(engine, spec),
             "duration_seconds": round((datetime.now(timezone.utc) - started_at).total_seconds(), 3),
             "rejected_samples": list(rejects[:20]),
             "dry_run": True,
         }
+
+    columns_dropped = missing_columns(engine, spec)
+    if columns_dropped:
+        logger.error(
+            "Batch %s targets %s, which has no column(s) %s — those fields are "
+            "NOT written. Apply the missing migration (scripts/pilot_migrate.py) "
+            "and reload.",
+            batch_id, spec.table, ", ".join(columns_dropped),
+        )
 
     prepared = prepare_records(records, dataset=spec, batch_id=batch_id, loaded_at=loaded_at)
     prepared, duplicates = dedupe_by_key(prepared, spec.key_columns)
@@ -468,6 +547,7 @@ def load_batch(
         "rows_updated": updated,
         "rows_loaded": inserted + updated,
         "duplicates_detected": duplicates,
+        "columns_dropped": columns_dropped,
         "rejects_persisted": rejected_written,
         "duration_seconds": duration,
         "rejected_samples": list(rejects[:20]),

@@ -42,7 +42,14 @@ from etl.ingest.customer_schema import (
     describe_schema,
     get_dataset,
 )
-from etl.ingest.loader import customer_exists, load_batch, recent_ingest_runs, row_count
+from etl.ingest.loader import (
+    customer_exists,
+    fetch_master_row,
+    load_batch,
+    missing_columns,
+    recent_ingest_runs,
+    row_count,
+)
 
 logger = logging.getLogger("gateway.routes.ingest")
 
@@ -263,8 +270,43 @@ async def load_csv(request: Request, body: CsvLoadRequest):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Single customer (Add Customer form)
+# Single customer (Add / Edit Customer form)
 # ═══════════════════════════════════════════════════════════════════
+
+@router.get("/customer/{customer_id}")
+async def get_customer(customer_id: str, include_deleted: bool = False):
+    """The master row for one customer — the Edit Customer form's pre-fill.
+
+    Returns the fields keyed exactly as ``PATCH /customer`` expects them, so a
+    form can load, diff and submit against one contract. ``columns_missing``
+    lists any dataset field the target table does not have: the form must not
+    accept edits to those, because :func:`loader.upsert` cannot write them (and
+    the previous, silent version of this is how mobile-number edits were lost).
+    """
+    spec = get_dataset(DEFAULT_DATASET)
+    try:
+        row = await run_in_threadpool(
+            fetch_master_row, customer_id, include_deleted=include_deleted
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Could not read customer %s", customer_id)
+        raise HTTPException(status_code=500, detail=f"Could not read customer: {exc}") from exc
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found.")
+
+    try:
+        missing = await run_in_threadpool(missing_columns, None, spec)
+    except Exception:  # noqa: BLE001 - informational only
+        missing = []
+
+    return {
+        "customer_id": customer_id,
+        "row": row,
+        "columns_missing": missing,
+        "target_table": spec.table,
+    }
+
 
 @router.post("/customer")
 async def add_customer(request: Request, body: CustomerAddRequest):
@@ -372,3 +414,103 @@ async def run_core_banking(request: Request, body: CoreBankingRunRequest):
     except Exception as exc:  # noqa: BLE001
         logger.exception("Core banking pull failed for dataset %s", body.dataset)
         raise HTTPException(status_code=500, detail=f"Core banking pull failed: {exc}") from exc
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Partial customer update (Edit Customer form)
+# ═══════════════════════════════════════════════════════════════════
+
+class CustomerPatchRequest(BaseModel):
+    """Partial update for an existing customer — only supplied fields are written.
+
+    Unlike ``/customer`` (which upserts every column), this endpoint does a
+    targeted SQL UPDATE so omitted fields keep their current database values.
+    """
+
+    customer_id: str = Field(..., description="The customer to update")
+    fields: dict[str, Any] = Field(
+        ...,
+        description="Field name → value pairs to update. Only these columns are touched.",
+    )
+
+
+@router.patch("/customer")
+async def patch_customer(request: Request, body: CustomerPatchRequest):
+    """Partially update one customer — only the supplied fields are written.
+
+    This is the safe edit path: unset form fields are not sent, so they
+    are never nulled out in the database.
+    """
+    from sqlalchemy import text as sa_text
+    from shared.database.postgres import get_sync_target_engine
+
+    spec = get_dataset(DEFAULT_DATASET)
+    valid_field_names = set(spec.fields_by_name.keys()) - {"customer_id"}
+
+    # Fields the target table has no column for cannot be written. Report them
+    # rather than letting the UPDATE raise UndefinedColumn as an opaque 500 —
+    # and never drop them silently, which is how mobile-number edits were lost.
+    try:
+        unwritable = await run_in_threadpool(missing_columns, None, spec)
+    except Exception:  # noqa: BLE001 - informational only
+        unwritable = []
+
+    # Strip unknown or empty fields
+    updates = {
+        k: v for k, v in body.fields.items()
+        if k in valid_field_names and v not in (None, "")
+    }
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    blocked = sorted(set(updates) & set(unwritable))
+    if blocked:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{', '.join(blocked)} cannot be stored: no such column on "
+                f"{spec.table}. Apply the outstanding migration "
+                "(scripts/pilot_migrate.py) and retry."
+            ),
+        )
+
+    # Coerce each value through the schema
+    mapping = {name: name for name in spec.fields_by_name}
+    row_input = {"customer_id": body.customer_id, **updates}
+    record, errors = coerce_row(row_input, mapping, spec.key)
+    if errors:
+        raise HTTPException(status_code=400, detail=errors)
+
+    # Remove the key from the SET clause
+    updates_coerced = {k: v for k, v in record.items() if k != "customer_id"}
+    if not updates_coerced:
+        raise HTTPException(status_code=400, detail="No valid fields to update after coercion.")
+
+    def _do_patch() -> int:
+        engine = get_sync_target_engine()
+        set_clause = ", ".join(f"{col} = :{col}" for col in updates_coerced)
+        sql = sa_text(
+            f"UPDATE public.customers_clean SET {set_clause} "  # noqa: S608
+            "WHERE customer_id = :customer_id AND NOT is_deleted"
+        )
+        params = {**updates_coerced, "customer_id": body.customer_id}
+        with engine.begin() as conn:
+            result = conn.execute(sql, params)
+            return result.rowcount
+
+    try:
+        rows_updated = await run_in_threadpool(_do_patch)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Patch customer failed for %s", body.customer_id)
+        raise HTTPException(status_code=500, detail=f"Patch failed: {exc}") from exc
+
+    if rows_updated == 0:
+        raise HTTPException(status_code=404, detail=f"Customer {body.customer_id} not found.")
+
+    logger.info("Patch customer %s: updated %d row(s) [by %s]", body.customer_id, rows_updated, _actor(request))
+    return {
+        "customer_id": body.customer_id,
+        "rows_updated": rows_updated,
+        "columns_missing": unwritable,
+    }

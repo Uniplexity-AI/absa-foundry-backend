@@ -210,6 +210,31 @@ FROM customer_features
 WHERE customer_id = %s AND as_of_date = %s
 """
 
+
+NEAREST_SQL = """
+SELECT customer_id, as_of_date,
+       days_since_last_txn, days_since_first_txn,
+       txn_count_30d, txn_count_90d, txn_count_180d, txn_count_365d,
+       avg_days_between_txn,
+       total_amount_90d, avg_amount_90d, total_amount_180d,
+       amount_growth_ratio,
+       credit_sum_30d, debit_sum_30d, credit_to_debit_ratio_90d,
+       balance_trend_90d, has_salary_credit, monthly_income_estimate,
+       distinct_channels_90d, distinct_txn_types_90d,
+       dominant_channel, amount_stddev_90d,
+       computed_at
+FROM customer_features
+WHERE customer_id = %s AND as_of_date <= %s
+ORDER BY as_of_date DESC
+LIMIT 1
+"""
+
+ACTIVITY_SQL = """
+SELECT COUNT(*) as txn_count, COALESCE(SUM(amount), 0) as total_amount
+FROM customer_transactions_clean
+WHERE customer_id = %s AND transaction_date >= %s AND transaction_date < %s
+"""
+
 LATEST_SQL = """
 SELECT customer_id, as_of_date,
        days_since_last_txn, days_since_first_txn,
@@ -301,6 +326,29 @@ class FeatureRepository:
             cur.execute(FETCH_SQL, (customer_id, as_of_date))
             row = cur.fetchone()
             return dict(row) if row else None
+        finally:
+            conn.close()
+
+
+    def get_nearest(self, customer_id: str, as_of_date: date) -> dict | None:
+        """Fetch the most recent feature snapshot on or before a date."""
+        conn = self._connect()
+        try:
+            cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cur.execute(NEAREST_SQL, (customer_id, as_of_date))
+            row = cur.fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+
+    def get_gap_activity(self, customer_id: str, start_date: date, end_date: date) -> dict:
+        """Fetch transaction counts/amounts in a date range."""
+        conn = self._connect()
+        try:
+            cur = conn.cursor(cursor_factory=extras.RealDictCursor)
+            cur.execute(ACTIVITY_SQL, (customer_id, start_date, end_date))
+            row = cur.fetchone()
+            return dict(row) if row else {"txn_count": 0, "total_amount": 0}
         finally:
             conn.close()
 

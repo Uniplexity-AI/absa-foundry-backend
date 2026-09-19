@@ -24,7 +24,8 @@ BEGIN
     IF to_regclass('public.customers_clean') IS NOT NULL THEN
         ALTER TABLE public.customers_clean
             ADD COLUMN IF NOT EXISTS account_number VARCHAR(64),
-            ADD COLUMN IF NOT EXISTS national_id    VARCHAR(32);
+            ADD COLUMN IF NOT EXISTS national_id    VARCHAR(32),
+            ADD COLUMN IF NOT EXISTS mobile_number  VARCHAR(32);
     END IF;
 END $$;
 

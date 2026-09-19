@@ -158,16 +158,8 @@
           ]
         ]
       },
-      "calibrator": {
-        "method": "isotonic",
-        "path": "champion/churn/churn_calibrator_isotonic.joblib",
-        "ece_raw": 0.0406,
-        "ece_platt": 0.0002,
-        "ece_isotonic": 0.0,
-        "ece_after": 0.0,
-        "brier_after": 0.0,
-        "log_loss_after": 0.0
-      },
+      "calibrator": null,
+      "_calibrator_todo": "Re-run scripts/train_models.py to regenerate churn_calibrator_isotonic.joblib — artifact missing from models/champion/churn/",
       "feature_count_total": 80,
       "feature_count_training": 57,
       "n_training_features": 57,

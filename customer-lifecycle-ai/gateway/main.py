@@ -27,6 +27,7 @@ from gateway.routes import monitoring_routes, outcome_routes
 from gateway.routes import intelligence_routes
 from gateway.routes import pilot_action_routes
 from gateway.routes import ingest_routes
+from gateway.routes import crm_routes
 from shared.config.settings import settings
 
 # ---------------------------------------------------------------------------
@@ -117,6 +118,7 @@ def create_app() -> FastAPI:
     app.include_router(outcome_routes.router)
     app.include_router(intelligence_routes.router)
     app.include_router(pilot_action_routes.router)
+    app.include_router(crm_routes.router)
 
     # ---- Health check ----
     @app.get("/health")

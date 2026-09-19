@@ -33,6 +33,7 @@ deliberate decisions are documented there:
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 
@@ -100,6 +101,37 @@ except ImportError:  # pragma: no cover - environment dependent
 from app.models.clv_predictor import _code_for, _derive_categorical_spec  # noqa: E402
 
 _perturbation_warned = False
+
+@contextlib.contextmanager
+def _quiet_lgbm_stderr():
+    """Suppress LightGBM's C-level stderr during model deserialisation.
+
+    LightGBM writes model-parsing diagnostics directly to the OS file
+    descriptor 2 (not Python's sys.stderr), so ``contextlib.redirect_stderr``
+    has no effect.  When multiple uvicorn workers load the same ``.pkl`` files
+    concurrently at startup those raw fd-2 writes interleave into the terminal
+    and look like fatal errors even though the load succeeds.
+
+    This redirects fd 2 to ``os.devnull`` for the duration of the block,
+    then unconditionally restores it — even if an exception propagates.
+    The approach is safe on Windows (os.dup / os.dup2 are available since
+    Python 3.2) and has no effect on the Python logger output which goes
+    through sys.stderr *after* the fd has been restored.
+    """
+    try:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        saved_fd = os.dup(2)
+        os.dup2(devnull_fd, 2)
+        os.close(devnull_fd)
+        try:
+            yield
+        finally:
+            os.dup2(saved_fd, 2)
+            os.close(saved_fd)
+    except OSError:
+        # If the fd redirect itself fails (e.g. in a sandboxed environment),
+        # fall through silently — a noisy load is better than a crash.
+        yield
 
 
 def _num(value, default: float = 0.0) -> float:
@@ -222,7 +254,8 @@ def _load_disk_encoder(horizon: int, model_dir: str):
         try:
             import joblib
 
-            encoder = joblib.load(path)
+            with _quiet_lgbm_stderr():
+                encoder = joblib.load(path)
             logger.info("lifecycle %dd: encoder loaded from %s", horizon, name)
             return encoder
         except Exception as exc:  # noqa: BLE001 - a bad encoder must not stop boot
@@ -260,7 +293,8 @@ class LifecyclePredictor:
         try:
             import joblib
 
-            obj = joblib.load(path)
+            with _quiet_lgbm_stderr():
+                obj = joblib.load(path)
         except Exception as exc:  # noqa: BLE001 - a bad artifact must not stop boot
             logger.error("lifecycle %dd model load failed (%s): %s", horizon, path, exc)
             return
@@ -364,9 +398,10 @@ class LifecyclePredictor:
             if labels and all(s in STAGES for s in labels):
                 return tuple(labels)
             if labels:
-                logger.warning(
-                    "lifecycle %dd: encoder holds %s, which are not stage names - "
-                    "ignoring it.", horizon, repr(raw)[:60],
+                logger.debug(
+                    "lifecycle %dd: encoder holds %s (not stage names, expected for "
+                    "models whose internal _le stores encoded ints) - ignoring it, "
+                    "will use integer-range fallback.", horizon, repr(raw)[:60],
                 )
 
         classes = [int(c) for c in _as_list(getattr(model, "classes_", None))]
@@ -429,8 +464,7 @@ class LifecyclePredictor:
                 frame[name] = [_code_for(v, categories) for v in frame[name]]
 
         df_in = frame.apply(pd.to_numeric, errors="coerce").astype("float64")
-        probs = model.predict_proba(df_in)  # type: ignore[attr-defined]
-
+        probs = model.predict_proba(df_in.values)  # type: ignore[attr-defined]
 
         out: list[dict] = []
         for row, vector in zip(engineered, probs):

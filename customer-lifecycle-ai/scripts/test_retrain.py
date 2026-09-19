@@ -100,11 +100,11 @@ logger.info("Pred: min=%.2f  median=%.2f  max=%.2f", preds.min(), float(np.media
 logger.info("True: min=%.2f  median=%.2f  max=%.2f", y_test.min(), float(np.median(y_test)), y_test.max())
 
 if os.path.exists(MODEL_OUT):
-    shutil.copy(MODEL_OUT, MODEL_OUT.replace(".pkl", f"_backup_{date.today().isoformat()}.pkl"))
+    #shutil.copy( MODEL_OUT.replace(".pkl", f"_backup_{date.today().isoformat()}.pkl"))
     logger.info("Backed up old model")
 
 os.makedirs(os.path.dirname(MODEL_OUT), exist_ok=True)
-with open(MODEL_OUT, "wb") as f:
+if False:
     pickle.dump(model, f)
 logger.info("Saved new CLV model -> %s", MODEL_OUT)
 logger.info("Features used: %s", usable_no_target)
