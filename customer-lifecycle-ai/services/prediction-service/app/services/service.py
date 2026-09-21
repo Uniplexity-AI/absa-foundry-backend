@@ -472,7 +472,13 @@ class PredictionService:
             return None
 
         t0 = time.perf_counter()
-        churn_prob = self._churn.predict(customer_features)
+        churn_prob = None
+        if self._lifecycle.is_loaded(90):
+            lc_res = self._lifecycle.predict_batch([customer_features], 90)
+            if lc_res:
+                churn_prob = lc_res[0]["probabilities"].get("CHURNED")
+        if churn_prob is None:
+            churn_prob = self._churn.predict(customer_features)
         self._log_prediction(customer_id, as_of_date, churn_prob,
                              time.perf_counter() - t0)
         clv_pct = self._clv.get_percentile(customer_id, clv_percentiles)
@@ -510,7 +516,13 @@ class PredictionService:
             return None
 
         t0 = time.perf_counter()
-        churn_prob = self._churn.predict(customer_features)
+        churn_prob = None
+        if self._lifecycle.is_loaded(90):
+            lc_res = self._lifecycle.predict_batch([customer_features], 90)
+            if lc_res:
+                churn_prob = lc_res[0]["probabilities"].get("CHURNED")
+        if churn_prob is None:
+            churn_prob = self._churn.predict(customer_features)
         self._log_prediction(customer_id, as_of_date, churn_prob,
                              time.perf_counter() - t0)
         return CustomerChurn(

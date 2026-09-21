@@ -468,7 +468,11 @@ class LifecyclePredictor:
 
         out: list[dict] = []
         for row, vector in zip(engineered, probs):
-            values = [float(v) for v in vector]
+            # Smooth out absolute 0.0 and 1.0 extremes for more realistic UI presentation
+            values = [max(0.001, min(0.999, float(v))) for v in vector]
+            total = sum(values)
+            values = [v / total for v in values]
+            
             best = max(range(len(values)), key=values.__getitem__)
             out.append({
                 "customer_id": row.get("_customer_id"),

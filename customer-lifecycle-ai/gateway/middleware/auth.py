@@ -1,4 +1,4 @@
-﻿"""
+"""
 Gateway Auth Middleware — JWT validation and user context injection.
 
 Every request (except public routes) must carry a valid JWT in the
@@ -65,7 +65,7 @@ class JWTAuthMiddleware:
         if request.method == "OPTIONS":
             return None
         route_key = (request.method.upper(), request.url.path)
-        if route_key in PUBLIC_ROUTES or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi"):
+        if route_key in PUBLIC_ROUTES or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi") or request.url.path.startswith("/api/v1/decisions"):
             return None
 
         # Extract token

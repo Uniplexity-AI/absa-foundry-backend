@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.schemas import (
@@ -32,6 +33,66 @@ def compute_batch(
 ) -> BatchDecisionResponse:
     return _service.compute_batch(as_of_date, strategy, max_customers)
 
+
+_NBA_CACHE: dict[str, dict] = {}
+
+@router.get("/{customer_id}/nba")
+async def get_nba_decision(customer_id: str):
+    """Dynamically generate the Next Best Action using the local LLM NBA Engine."""
+    from app.context.builder import build_decision_context
+    from app.engines.action_generator import ActionGenerator
+    from app.engines.llm_nba_engine import LLMNBAEngine
+    
+
+    try:
+        # Check cache to simulate pre-computed nightly inference
+        if customer_id in _NBA_CACHE:
+            return _NBA_CACHE[customer_id]
+
+        # Build the context and fetch candidates
+        ctx = build_decision_context(customer_id, date.today())
+        candidates = ActionGenerator().generate()
+        candidate_strings = [c.action for c in candidates]
+        
+        # Convert context model to dict for prompt
+        context_dict = ctx.model_dump()
+        
+        # Call the LLM NBA engine
+        engine = LLMNBAEngine(model_name="absa-nba")
+        decision = await engine.determine_next_best_action_async(context_dict, candidate_strings)
+        
+        # Save to cache
+        _NBA_CACHE[customer_id] = decision
+        
+        # The frontend AiNbaPanel expects certain keys. If the LLM generates them, return as-is.
+        # But we must map to the shape expected by AiNbaPanel.
+        return decision
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CohortCustomerSummary(BaseModel):
+    customer_id: str
+    churn_probability: float | None = 0.0
+    clv: float | None = 0.0
+    segment: str | None = "MASS_MARKET"
+    health_score: float | None = 50.0
+
+class CohortCampaignRequest(BaseModel):
+    customers: list[CohortCustomerSummary]
+
+@router.post("/cohort-campaigns")
+async def generate_cohort_campaigns(request: CohortCampaignRequest):
+    """Dynamically generate campaign strategies for a cohort using the LLM."""
+    from app.engines.llm_cohort_engine import LLMCohortEngine
+    try:
+        engine = LLMCohortEngine(model_name="absa-nba")
+        # Convert to dict for the LLM prompt
+        customers_data = [c.model_dump() for c in request.customers]
+        return await engine.generate_campaigns_async(customers_data)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/digital-retention")
 def get_digital_retention(limit: int = Query(default=20)):

@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import lightgbm as lgb
 from sklearn.preprocessing import LabelEncoder
+from sklearn.calibration import CalibratedClassifierCV
 import joblib
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -94,7 +95,7 @@ def train_horizon(horizon: int):
     y = le.transform(y_labels)
 
     X_df = pd.DataFrame(X, columns=feature_cols)
-    clf = lgb.LGBMClassifier(
+    base_clf = lgb.LGBMClassifier(
         objective="multiclass",
         num_class=len(STAGE_ORDER),
         n_estimators=100,
@@ -104,6 +105,7 @@ def train_horizon(horizon: int):
         verbosity=-1,
         n_jobs=-1,
     )
+    clf = CalibratedClassifierCV(estimator=base_clf, method='sigmoid', cv=5)
     clf.fit(X_df, y)
 
 
@@ -114,16 +116,13 @@ def train_horizon(horizon: int):
 
     # Save model artifact
     model_path = os.path.join(MODEL_DIR, f"lgbm_{horizon}d_model.pkl")
-    if horizon == 30:
-        bundle = {
-            "model": clf,
-            "feature_names": feature_cols,
-            "target_encoder": le,
-            "categorical_features": [],
-        }
-        joblib.dump(bundle, model_path)
-    else:
-        joblib.dump(clf, model_path)
+    bundle = {
+        "model": clf,
+        "feature_names": feature_cols,
+        "target_encoder": le,
+        "categorical_features": [],
+    }
+    joblib.dump(bundle, model_path)
 
     logger.info("Horizon %dd model & encoder saved successfully.", horizon)
 

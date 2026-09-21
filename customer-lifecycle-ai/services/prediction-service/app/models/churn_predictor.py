@@ -184,7 +184,8 @@ class ChurnPredictor:
             raise RuntimeError("Churn model is not loaded")
         vector = self._dict_to_vector(features)
         raw = float(self._model.predict_proba([vector])[0, 1])
-        return self._apply_calibrator(raw)
+        result = self._apply_calibrator(raw) if self._calibrator is not None else raw
+        return max(0.001, min(0.999, result))
 
     def predict_batch(self, feature_rows: list[dict]) -> list[float]:
         """Receive list of full 56-feature dicts; extract training_features from each."""
@@ -193,8 +194,9 @@ class ChurnPredictor:
         vectors = [self._dict_to_vector(r) for r in feature_rows]
         raw = self._model.predict_proba(vectors)[:, 1].tolist()
         if self._calibrator is not None:
-            return [self._apply_calibrator(r) for r in raw]
-        return raw
+            raw = [self._apply_calibrator(r) for r in raw]
+        # Smooth out extremes
+        return [max(0.001, min(0.999, r)) for r in raw]
 
     def _dict_to_vector(self, features: dict) -> list[float]:
         """Map a full feature dict to the exact training vector layout.
