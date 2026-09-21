@@ -21,6 +21,7 @@ import psycopg2
 from psycopg2 import extras
 
 from shared.config.settings import settings
+from shared.database.soft_delete import live_customer_filter
 
 logger = logging.getLogger("decision.intelligence_repo")
 
@@ -87,6 +88,24 @@ class IntelligenceRepository:
                 conn.close()
         return self._retry(_q, "latest_feature_date")
 
+    def deleted_customer_count(self) -> int:
+        """How many customers are soft-deleted.
+
+        Used as a cheap change-detector so callers can bust their caches when an
+        operator deletes or restores a customer: the delete happens in the
+        gateway, so it cannot invalidate them directly. A single count on ~5k
+        rows is far cheaper than rebuilding a portfolio snapshot.
+        """
+        def _q():
+            conn = self._connect()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT count(*) FROM public.customers_clean WHERE is_deleted")
+                return int(cur.fetchone()[0])
+            finally:
+                conn.close()
+        return self._retry(_q, "deleted_customer_count")
+
     # ------------------------------------------------------------------
     # AUM proxy + segment + branch (customer_features)
     # ------------------------------------------------------------------
@@ -109,6 +128,7 @@ class IntelligenceRepository:
                            prof_primary_branch AS branch_id
                     FROM customer_features
                     WHERE as_of_date = %(d)s
+                    {live_customer_filter("customer_features.customer_id")}
                     """,
                     {"d": as_of_date},
                 )
@@ -127,10 +147,11 @@ class IntelligenceRepository:
             try:
                 cur = conn.cursor()
                 cur.execute(
-                    """
+                    f"""
                     SELECT state, COUNT(*)
                     FROM customer_states
                     WHERE as_of_date = %(d)s
+                    {live_customer_filter("customer_states.customer_id")}
                     GROUP BY state
                     """,
                     {"d": as_of_date},
@@ -152,11 +173,12 @@ class IntelligenceRepository:
             try:
                 cur = conn.cursor(cursor_factory=extras.RealDictCursor)
                 cur.execute(
-                    """
+                    f"""
                     SELECT from_state, to_state, COUNT(*) AS n
                     FROM state_transitions
                     WHERE transition_date >= %(anchor)s - %(w)s::int
                       AND transition_date <= %(anchor)s
+                    {live_customer_filter("state_transitions.customer_id")}
                     GROUP BY from_state, to_state
                     """,
                     {"anchor": anchor, "w": window_days},
@@ -186,7 +208,7 @@ class IntelligenceRepository:
             try:
                 cur = conn.cursor(cursor_factory=extras.RealDictCursor)
                 cur.execute(
-                    """
+                    f"""
                     SELECT cs.customer_id,
                            cs.as_of_date,
                            st.to_state,
@@ -213,6 +235,7 @@ class IntelligenceRepository:
                     ) f ON TRUE
                     WHERE cs.state = 'CHURNED'
                       AND cs.as_of_date = %(d)s
+                    {live_customer_filter("cs.customer_id")}
                     ORDER BY st.transition_date DESC NULLS LAST
                     LIMIT %(lim)s
                     """,

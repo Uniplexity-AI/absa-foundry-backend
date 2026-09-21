@@ -122,3 +122,7 @@ class ComputeBatchResponse(BaseModel):
     phase2_updated: int = 0
     duration_seconds: float
     status: str = "COMPLETED"
+
+class GapActivityResponse(BaseModel):
+    txn_count: int
+    total_amount: float

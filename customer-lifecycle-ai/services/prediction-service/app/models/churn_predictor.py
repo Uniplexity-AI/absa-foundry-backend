@@ -68,10 +68,33 @@ class ChurnPredictor:
         if registry_path is None:
             registry_path = os.path.join(_PROJECT_ROOT, "models/registry.json")
 
+        self._calibrator = None  # PoC default — no calibrator (D12)
+        self._is_loaded = False
+        self._training_features: list[str] = []
+        self._leakage_excluded: list[str] = []
+        self._model_version = "not_loaded"
+
+        # A missing/broken churn model must not stop the service booting — the
+        # CLV model may still be usable. Churn is then reported as UNAVAILABLE;
+        # there is deliberately no fallback.
+        if not os.path.exists(model_path):
+            self._model = None
+            logger.error(
+                "Churn model file missing (%s) — churn predictions UNAVAILABLE "
+                "(no fallback applied).", model_path,
+            )
+            return
+
         self._model = xgb.XGBClassifier()
         self._model.load_model(model_path)
-        self._calibrator = None  # PoC default — no calibrator (D12)
-        self._model_version = "churn_v1"
+
+        if not os.path.exists(registry_path):
+            self._model = None
+            logger.error(
+                "Churn model registry missing (%s) — churn predictions UNAVAILABLE "
+                "(no fallback applied).", registry_path,
+            )
+            return
 
         # Load training feature list from registry (written at training time)
         with open(registry_path) as f:
@@ -122,12 +145,17 @@ class ChurnPredictor:
                 f"XGBoost."
             )
 
+        self._is_loaded = True
         logger.info(
             "ChurnPredictor loaded: model=%s, features=%d (leakage excluded: %d)",
             self._model_version,
             len(self._training_features),
             len(self._leakage_excluded),
         )
+
+    @property
+    def is_model_loaded(self) -> bool:
+        return self._is_loaded
 
     @property
     def model_version(self) -> str:
@@ -152,17 +180,23 @@ class ChurnPredictor:
         Returns the calibrated churn probability when a calibrator is
         registered, otherwise the raw XGBoost ranking score.
         """
+        if not self._is_loaded:
+            raise RuntimeError("Churn model is not loaded")
         vector = self._dict_to_vector(features)
         raw = float(self._model.predict_proba([vector])[0, 1])
-        return self._apply_calibrator(raw)
+        result = self._apply_calibrator(raw) if self._calibrator is not None else raw
+        return max(0.001, min(0.999, result))
 
     def predict_batch(self, feature_rows: list[dict]) -> list[float]:
         """Receive list of full 56-feature dicts; extract training_features from each."""
+        if not self._is_loaded:
+            return []
         vectors = [self._dict_to_vector(r) for r in feature_rows]
         raw = self._model.predict_proba(vectors)[:, 1].tolist()
         if self._calibrator is not None:
-            return [self._apply_calibrator(r) for r in raw]
-        return raw
+            raw = [self._apply_calibrator(r) for r in raw]
+        # Smooth out extremes
+        return [max(0.001, min(0.999, r)) for r in raw]
 
     def _dict_to_vector(self, features: dict) -> list[float]:
         """Map a full feature dict to the exact training vector layout.

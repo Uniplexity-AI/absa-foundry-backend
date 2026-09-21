@@ -1,4 +1,4 @@
-﻿"""
+"""
 Shared Auth Permissions — RBAC matrix and role-checking utilities.
 
 Defines which roles can access which routes. Used by the RBAC middleware
@@ -42,6 +42,16 @@ PERMISSIONS: list[RoutePermission] = [
 
     # ---- Customer analytics / NBA — RELATIONSHIP_MANAGER ----
     RoutePermission("*", "/api/v1/customers/**",       ["RELATIONSHIP_MANAGER"]),
+    # ---- Customer administration (soft delete / restore) — ADMIN (bypass) + Ops ----
+    # A DELIBERATELY separate prefix. This matrix is a union with no deny rules:
+    # has_permission() returns True if ANY matching entry grants the role, so a
+    # narrower DELETE rule under the wildcard above would NOT stop an RM — the
+    # wildcard would still authorise them. Only routes outside
+    # /api/v1/customers/** can be restricted. To also allow RMs, add
+    # "RELATIONSHIP_MANAGER" to the list below.
+    RoutePermission("*", "/api/v1/customer-admin/**", ["OPERATIONS"]),
+    # ---- Data ingest (CSV onboarding + core-banking pull) — RM workspace & Ops ----
+    RoutePermission("*", "/api/v1/ingest/**", ["RELATIONSHIP_MANAGER", "OPERATIONS"]),
     RoutePermission("*", "/api/v1/predictions/**",     ["RELATIONSHIP_MANAGER"]),
     RoutePermission("*", "/api/v1/recommendations/**", ["RELATIONSHIP_MANAGER"]),
     RoutePermission("*", "/api/v1/forecasts/**",       ["RELATIONSHIP_MANAGER"]),
@@ -60,7 +70,8 @@ PERMISSIONS: list[RoutePermission] = [
     RoutePermission("*", "/api/etl/**",           ["OPERATIONS"]),
 
     # ---- Admin management — ADMIN only (explicit for clarity) ----
-    RoutePermission("*", "/admin/**", ["ADMIN"]),
+    RoutePermission("*", "/admin/**",       ["ADMIN"]),
+    RoutePermission("*", "/auth/admin/**",  ["ADMIN"]),  # admin user-management API
 ]
 
 

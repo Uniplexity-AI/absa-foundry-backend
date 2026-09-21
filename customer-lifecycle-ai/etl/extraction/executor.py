@@ -348,7 +348,7 @@ class ExtractionExecutor:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(records, f, indent=2, default=str)
 
-        logger.info("  DLQ persisted: %d records → %s", len(records), path)
+        logger.info("  DLQ persisted: %d records -> %s", len(records), path)
         return path
 
     # ------------------------------------------------------------------

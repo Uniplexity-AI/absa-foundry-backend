@@ -123,15 +123,58 @@ class UserRepository:
     # ------------------------------------------------------------------
 
     def get_roles(self) -> list[dict]:
-        """List all roles."""
+        """List all roles, auto-seeding defaults if empty."""
         conn = self._pool.getconn()
         try:
             cur = conn.cursor()
-            cur.execute("SELECT role_id, role_name, description FROM iam.roles ORDER BY role_id")
+            cur.execute("SELECT role_id, role_name, description FROM iam.roles WHERE role_name != 'SERVICE_ACCOUNT' ORDER BY role_id")
+            rows = cur.fetchall()
+            
+            if not rows:
+                default_roles = [
+                    ("ADMIN", "System Administrator with full access."),
+                    ("RELATIONSHIP_MANAGER", "Manages customer portfolios and NBA."),
+                    ("DATA_SCIENTIST", "Handles model training and evaluation."),
+                    ("OPERATIONS", "Oversees system monitoring and ETL pipelines.")
+                ]
+                for r_name, r_desc in default_roles:
+                    cur.execute("SELECT 1 FROM iam.roles WHERE role_name = %s", (r_name,))
+                    if not cur.fetchone():
+                        cur.execute(
+                            "INSERT INTO iam.roles (role_name, description) VALUES (%s, %s)",
+                            (r_name, r_desc)
+                        )
+                conn.commit()
+                cur.execute("SELECT role_id, role_name, description FROM iam.roles WHERE role_name != 'SERVICE_ACCOUNT' ORDER BY role_id")
+                rows = cur.fetchall()
+                
             return [
                 {"role_id": r[0], "role_name": r[1], "description": r[2]}
-                for r in cur.fetchall()
+                for r in rows
             ]
+        finally:
+            self._pool.putconn(conn)
+
+    def create_role(self, role_name: str, description: str = "") -> dict:
+        """Create a new role."""
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            role_name_upper = role_name.upper().strip().replace(" ", "_")
+            cur.execute(
+                """
+                INSERT INTO iam.roles (role_name, description)
+                VALUES (%s, %s)
+                RETURNING role_id, role_name, description
+                """,
+                (role_name_upper, description)
+            )
+            row = cur.fetchone()
+            conn.commit()
+            return {"role_id": row[0], "role_name": row[1], "description": row[2]}
+        except psycopg2.IntegrityError:
+            conn.rollback()
+            raise ValueError(f"Role {role_name} already exists")
         finally:
             self._pool.putconn(conn)
 
@@ -414,6 +457,123 @@ class UserRepository:
             )
             conn.commit()
             return cur.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
+
+    def update_user_roles(self, user_id: str, role_names: list[str]) -> None:
+        """Replace ALL roles for a user (granted-only model).
+
+        Removes any roles not in *role_names* and grants any that are missing.
+        """
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            # Delete roles not in the new list
+            cur.execute(
+                """
+                DELETE FROM iam.user_roles
+                WHERE user_id = %s
+                  AND role_id NOT IN (
+                      SELECT role_id FROM iam.roles WHERE role_name = ANY(%s)
+                  )
+                """,
+                (user_id, role_names),
+            )
+            # Insert missing roles
+            if role_names:
+                cur.execute(
+                    """
+                    INSERT INTO iam.user_roles (user_id, role_id)
+                    SELECT %s, r.role_id FROM iam.roles r
+                    WHERE r.role_name = ANY(%s)
+                    ON CONFLICT (user_id, role_id) DO NOTHING
+                    """,
+                    (user_id, role_names),
+                )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
+
+    def set_active(self, user_id: str, is_active: bool) -> bool:
+        """Activate or deactivate a user. Returns True if found."""
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE iam.users SET is_active = %s, updated_at = CURRENT_TIMESTAMP WHERE user_id = %s",
+                (is_active, user_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
+
+    def delete_user(self, user_id: str) -> bool:
+        """Permanently delete a user from the database."""
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            # Nullify references to this user as a creator/granter
+            cur.execute("UPDATE iam.users SET created_by = NULL WHERE created_by = %s", (user_id,))
+            cur.execute("UPDATE iam.user_roles SET granted_by = NULL WHERE granted_by = %s", (user_id,))
+            cur.execute("UPDATE iam.api_keys SET created_by = NULL WHERE created_by = %s", (user_id,))
+            cur.execute("UPDATE iam.service_accounts SET created_by = NULL WHERE created_by = %s", (user_id,))
+            
+            # Delete audit logs and tokens
+            cur.execute("DELETE FROM iam.auth_audit WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM iam.refresh_tokens WHERE user_id = %s", (user_id,))
+            
+            # Delete roles then user
+            cur.execute("DELETE FROM iam.user_roles WHERE user_id = %s", (user_id,))
+            cur.execute("DELETE FROM iam.users WHERE user_id = %s", (user_id,))
+            
+            conn.commit()
+            return cur.rowcount > 0
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
+
+    def create_local_user(
+        self,
+        username: str,
+        email: str,
+        display_name: str,
+        password_hash: str,
+        branch_code: str | None = None,
+        department: str | None = None,
+    ) -> str:
+        """Create a local (non-LDAP) user. Returns the new user_id (str)."""
+        conn = self._pool.getconn()
+        try:
+            cur = conn.cursor()
+            new_id = str(uuid4())
+            cur.execute(
+                """
+                INSERT INTO iam.users
+                    (user_id, username, email, display_name, dn,
+                     branch_code, department, password_hash, must_change_pwd)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE)
+                ON CONFLICT (username) DO NOTHING
+                RETURNING user_id
+                """,
+                (new_id, username, email, display_name, f"LOCAL:{username}", branch_code, department, password_hash),
+            )
+            row = cur.fetchone()
+            conn.commit()
+            if row is None:
+                raise ValueError(f"Username '{username}' already exists")
+            return str(row[0])
         except Exception:
             conn.rollback()
             raise

@@ -19,7 +19,12 @@ async def request_logging_middleware(request: Request, call_next):
     """ASGI middleware: log every request with timing and context.
 
     Output format:
-        [timestamp] METHOD /path → STATUS  duration_ms  (user/service, ip)
+        [timestamp] METHOD /path -> STATUS  duration_ms  (user/service, ip)
+
+    The format string is deliberately ASCII: the Windows console runs cp1252,
+    so a non-ASCII arrow in the log message raises UnicodeEncodeError and turns
+    every request into a 500. Logging is also wrapped, because a logging failure
+    must never take down a response that was produced successfully.
     """
     t_start = time.monotonic()
 
@@ -40,14 +45,17 @@ async def request_logging_middleware(request: Request, call_next):
     duration_ms = (time.monotonic() - t_start) * 1000
     status = response.status_code if hasattr(response, "status_code") else 0
 
-    logger.info(
-        "%s %s → %d  %.0fms  (%s, %s)",
-        request.method,
-        request.url.path,
-        status,
-        duration_ms,
-        caller,
-        ip,
-    )
+    try:
+        logger.info(
+            "%s %s -> %d  %.0fms  (%s, %s)",
+            request.method,
+            request.url.path,
+            status,
+            duration_ms,
+            caller,
+            ip,
+        )
+    except Exception:  # noqa: BLE001 - never fail a served request over a log line
+        logger.debug("Request logging failed", exc_info=True)
 
     return response

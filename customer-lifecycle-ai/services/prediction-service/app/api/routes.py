@@ -57,6 +57,41 @@ def run_value_batch(
     return _service.run_value_batch(as_of_date)
 
 
+@router.post("/clv-batch")
+def run_clv_batch(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Date to score CLV for (default: latest feature date)",
+    ),
+):
+    """Run the CLV LightGBM model for all customers on a date.
+
+    Returns the distribution of predicted 12-month net revenue (ZMW). There is
+    no proxy fallback: if the model is not loaded the status is
+    ``CLV_MODEL_NOT_LOADED``.
+    """
+    return _service.clv_batch(as_of_date)
+
+
+@router.post("/balance-growth-batch")
+def run_balance_growth_batch(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Date to score balance growth for (default: latest feature date)",
+    ),
+):
+    """Run the Balance Growth LightGBM model for all customers on a date.
+
+    Scores ``predicted_balance_growth_pct`` per customer. The result is used by
+    the AUM Forecast endpoint (GET /forecasts/balance) on the next call — the
+    Decision Intelligence service reads ``balance_growth_pct`` from
+    ``GET /predict/portfolio-scores``, which calls the same predictor.
+
+    Returns a summary of the run (customers scored, mean/min/max growth pct).
+    If the model artifact is missing the status is ``MODEL_NOT_LOADED``.
+    """
+    return _service.balance_growth_batch(as_of_date)
+
 
 # IMPORTANT: Static routes (/models) and more-specific parameterized
 # routes (/{customer_id}/churn, /{customer_id}/health) must be defined
@@ -80,6 +115,21 @@ def get_portfolio_scores(
     aggregations (CLV bands, AUM forecast, lifecycle summaries).
     """
     return _service.portfolio_scores(as_of_date)
+
+
+@router.get("/lifecycle-forecast")
+def get_lifecycle_forecast(
+    as_of_date: date | None = Query(
+        default=None,
+        description="Forecast as-of date (default: latest feature date)",
+    ),
+):
+    """Forward lifecycle-stage forecast for every customer, all horizons.
+
+    Predicts the stage at 14/30/90 days per customer. The *current* stage is not
+    in this payload — that comes from the state service's rule engine.
+    """
+    return _service.lifecycle_forecast(as_of_date)
 
 
 @router.get("/{customer_id}/churn", response_model=CustomerChurn)

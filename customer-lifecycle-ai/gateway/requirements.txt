@@ -5,3 +5,6 @@ pydantic>=2.0.0
 pydantic-settings>=2.0.0
 redis>=5.0.0
 ldap3>=2.9.0
+# Required by the customer-ingest CSV upload endpoint (POST /api/v1/ingest/csv/preview).
+# FastAPI raises at route-registration time if this is missing.
+python-multipart>=0.0.9

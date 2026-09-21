@@ -19,11 +19,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from gateway.routes import auth_routes, admin_routes, api_key_routes, etl_routes, feature_routes
 from gateway.routes import customer_routes, prediction_routes, models_routes
+from gateway.routes import customer_profile_routes
+from gateway.routes import customer_admin_routes
 from gateway.routes import recommendation_routes, insight_routes
 from gateway.routes import churn_intel_routes, forecast_routes
 from gateway.routes import monitoring_routes, outcome_routes
 from gateway.routes import intelligence_routes
 from gateway.routes import pilot_action_routes
+from gateway.routes import ingest_routes
+from gateway.routes import crm_routes
 from shared.config.settings import settings
 
 # ---------------------------------------------------------------------------
@@ -86,6 +90,13 @@ def create_app() -> FastAPI:
 
     # CORS MUST be added last to be the outermost middleware!
     # Auth is a Bearer-token flow (no cookies), so credentials are NOT required.
+    from gateway.routes import (
+        admin_routes, api_key_routes, auth_routes, churn_intel_routes, crm_routes,
+        customer_admin_routes, customer_profile_routes, customer_routes, etl_routes,
+        feature_routes, forecast_routes, ingest_routes, insight_routes,
+        intelligence_routes, models_routes, monitoring_routes, outcome_routes,
+        pilot_action_routes, prediction_routes, recommendation_routes, decision_routes
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # TODO: Restrict to frontend origin(s) in production
@@ -99,8 +110,11 @@ def create_app() -> FastAPI:
     app.include_router(admin_routes.router)
     app.include_router(api_key_routes.router)
     app.include_router(etl_routes.router)
+    app.include_router(ingest_routes.router)
     app.include_router(feature_routes.router)
     app.include_router(customer_routes.router)
+    app.include_router(customer_profile_routes.router)
+    app.include_router(customer_admin_routes.router)
     app.include_router(prediction_routes.router)
     app.include_router(models_routes.router)
     app.include_router(recommendation_routes.router)
@@ -111,6 +125,8 @@ def create_app() -> FastAPI:
     app.include_router(outcome_routes.router)
     app.include_router(intelligence_routes.router)
     app.include_router(pilot_action_routes.router)
+    app.include_router(crm_routes.router)
+    app.include_router(decision_routes.router)
 
     # ---- Health check ----
     @app.get("/health")

@@ -18,9 +18,10 @@ class PredictionConfig(BaseSettings):
     # ---- Model ----
     model_type: str = "xgboost"          # xgboost | lightgbm
     churn_model_path: str = "models/champion/churn/xgboost_churn_v1.json"
-    clv_model_path: str = ""              # POST-POC: switch to trained regressor file
-                                          # Empty string = use percentile-rank (PoC default).
-                                          # Service boot skips CLV model loading if path is empty.
+    clv_model_path: str = "models/customer-lifetime-value-prediction/lightgbm_clv_model.pkl"
+                                          # Trained LightGBM CLV regressor (absolute 12-month
+                                          # net revenue, ZMW). Empty string / missing file =
+                                          # fall back to the PoC PERCENT_RANK of total_amount_90d.
     churn_threshold: float = 0.5         # default classification cutoff
 
     # ---- Health Score weights — read from shared config (single source of truth) ----

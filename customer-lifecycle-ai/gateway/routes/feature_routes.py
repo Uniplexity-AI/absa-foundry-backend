@@ -30,7 +30,7 @@ if str(_FEATURE_SVC_ROOT) not in sys.path:
     sys.path.insert(0, str(_FEATURE_SVC_ROOT))
 
 from app.services.service import FeatureService  # noqa: E402
-from app.schemas.schemas import FeatureSnapshot, ComputeBatchResponse  # noqa: E402
+from app.schemas.schemas import FeatureSnapshot, ComputeBatchResponse, GapActivityResponse  # noqa: E402
 
 router = APIRouter(prefix="/features", tags=["Feature Engineering"])
 _service = FeatureService()
@@ -84,6 +84,29 @@ def get_features(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No features for customer '{customer_id}' as of {as_of_date}",
         )
+    return result
+
+
+
+@router.get("/{customer_id}/nearest", response_model=FeatureSnapshot)
+def get_nearest(
+    customer_id: str,
+    as_of_date: date = Query(..., description="Date to find snapshot before or on"),
+    user: UserContext = Depends(require_auth),
+) -> FeatureSnapshot:
+    result = _service.get_nearest(customer_id, as_of_date)
+    if result is None:
+        raise HTTPException(status_code=404, detail="No snapshot found before date")
+    return result
+
+@router.get("/{customer_id}/gap-activity", response_model=GapActivityResponse)
+def get_gap_activity(
+    customer_id: str,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    user: UserContext = Depends(require_auth),
+) -> GapActivityResponse:
+    result = _service.get_gap_activity(customer_id, start_date, end_date)
     return result
 
 

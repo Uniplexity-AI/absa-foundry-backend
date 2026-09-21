@@ -186,6 +186,14 @@ class StateService:
         """List all customer state snapshots for a given date (paginated)."""
         return self._state_repo.list_all(as_of_date, limit, offset)
 
+    def count_states(self, as_of_date: date_type) -> int:
+        """Total state snapshots for the date — the real pagination denominator."""
+        return self._state_repo.count_states(as_of_date)
+
+    def list_snapshot_dates(self) -> list[str]:
+        """Distinct snapshot dates that have computed states (newest first)."""
+        return self._state_repo.list_snapshot_dates()
+
     # ------------------------------------------------------------------
     # Markov Chain
     # ------------------------------------------------------------------

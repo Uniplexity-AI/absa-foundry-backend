@@ -19,7 +19,7 @@ class ComponentScores(BaseModel):
 class ModelVersions(BaseModel):
     """Which model versions produced this prediction."""
     churn: str = Field(default="churn_v1")
-    clv: str = Field(default="percentile_v1")
+    clv: str = Field(default="not_loaded")
 
 
 # ── Single Customer ───────────────────────────────────────────────

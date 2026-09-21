@@ -26,6 +26,7 @@ import psycopg2
 from psycopg2 import extras
 
 from shared.config.settings import settings
+from shared.database.soft_delete import live_customer_filter
 
 logger = logging.getLogger("state.portfolio_views")
 
@@ -38,6 +39,9 @@ _AT_RISK_CUTOFF = float(os.getenv("INTEL_AT_RISK_CUTOFF", "0.50"))
 _ADAPTIVE_AT_RISK = os.getenv("INTEL_ADAPTIVE_AT_RISK", "true").lower() in ("1", "true", "yes")
 
 _CACHE_TTL = 120.0
+#: Aggregate cache TTL for unchanged data. Bounded by ``_deletion_generation``:
+#: a change to the soft-delete flag misses the cache on the next request, so
+#: this only governs how long identical data may be reused.
 _STAGE_META = {
     "NEW":      ("Onboarding", "text-gray-600",   "bg-gray-100",  "bg-gray-500"),
     "GROWING":  ("Growing",    "text-absa-passion", "bg-red-50",  "bg-absa-passion"),
@@ -54,6 +58,133 @@ def _fmt_k(v: float) -> str:
     if v >= 1_000:
         return f"K {v / 1_000:.0f}K"
     return f"K {v:.0f}"
+
+
+# ---------------------------------------------------------------------------
+# Value bands
+# ---------------------------------------------------------------------------
+#: Display order and identity of the four bands, highest first. The names are
+#: fixed — the frontend keys its badge colours on them — only the boundaries are
+#: configurable.
+_BAND_ORDER = ("Platinum", "Gold", "Silver", "Bronze")
+
+#: Default banding: percentile buckets of the predicted CLV. Used whenever the
+#: caller supplies no ``band_ranges``, so callers that predate configurable bands
+#: are unaffected.
+_CENTILE_RANGES = {
+    "Platinum": (0.90, None),
+    "Gold":     (0.75, 0.90),
+    "Silver":   (0.50, 0.75),
+    "Bronze":   (None, 0.50),
+}
+_CENTILE_LABELS = {
+    "Platinum": "Top 10% by CLV percentile",
+    "Gold":     "75th–90th CLV percentile",
+    "Silver":   "50th–75th CLV percentile",
+    "Bronze":   "Below 50th CLV percentile",
+}
+
+
+def _range_label(lo: float | None, hi: float | None) -> str:
+    """Operator-facing boundary text for an absolute ZMW band."""
+    if lo is None:
+        return f"Below {_fmt_k(hi)}"
+    if hi is None:
+        return f"{_fmt_k(lo)} and above"
+    return f"{_fmt_k(lo)} – {_fmt_k(hi)}"
+
+
+def _ranges_key(ranges: dict[str, tuple[float | None, float | None]]) -> str:
+    """Canonical cache-key fragment: identical boundaries give an identical key,
+    whatever order or whitespace the caller used."""
+    parts = []
+    for name in _BAND_ORDER:
+        lo, hi = ranges[name]
+        parts.append(
+            f"{name}:{'' if lo is None else format(lo, 'g')}"
+            f"-{'' if hi is None else format(hi, 'g')}"
+        )
+    return ";".join(parts)
+
+
+def parse_band_ranges(spec: str) -> dict[str, tuple[float | None, float | None]]:
+    """Parse an absolute-CLV band spec in ZMW into ``{band: (lo, hi)}``.
+
+    Format: ``Name:lo-hi`` segments separated by ``;``, one per band, with a
+    blank side meaning "open at that end"::
+
+        Platinum:50000-;Gold:20000-50000;Silver:5000-20000;Bronze:-5000
+
+    All four band names must appear exactly once, no two ranges may overlap, and
+    together they must cover every value: the lowest band open at the bottom, the
+    highest open at the top, and each neighbouring pair meeting exactly.
+
+    Raises:
+        ValueError: with a message aimed at the operator. A silently
+            mis-bucketed portfolio would corrupt the KPIs as well as the cards,
+            so every ambiguity is a refusal rather than a guess.
+    """
+    ranges: dict[str, tuple[float | None, float | None]] = {}
+    for chunk in spec.split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        name, sep, bounds = chunk.partition(":")
+        name = name.strip()
+        if not sep:
+            raise ValueError(f"{chunk!r} is not '<band>:<lo>-<hi>'")
+        if name not in _BAND_ORDER:
+            raise ValueError(
+                f"unknown band {name!r} — expected one of {', '.join(_BAND_ORDER)}"
+            )
+        if name in ranges:
+            raise ValueError(f"band {name!r} is given more than once")
+
+        lo_text, dash, hi_text = bounds.strip().partition("-")
+        if not dash:
+            raise ValueError(
+                f"band {name!r} needs a range like '20000-50000', '50000-' or '-5000'"
+            )
+        try:
+            lo = float(lo_text) if lo_text.strip() else None
+            hi = float(hi_text) if hi_text.strip() else None
+        except ValueError as exc:
+            raise ValueError(f"band {name!r} has a non-numeric bound") from exc
+        if (lo is not None and lo < 0) or (hi is not None and hi < 0):
+            raise ValueError(f"band {name!r}: bounds must not be negative")
+        if lo is None and hi is None:
+            raise ValueError(f"band {name!r} cannot be open at both ends")
+        if lo is not None and hi is not None and lo >= hi:
+            raise ValueError(
+                f"band {name!r}: lower bound ({lo:g}) must be below the upper bound ({hi:g})"
+            )
+        ranges[name] = (lo, hi)
+
+    missing = [name for name in _BAND_ORDER if name not in ranges]
+    if missing:
+        raise ValueError(f"missing band(s): {', '.join(missing)}")
+
+    # Order by the lower bound, with the open-bottomed band first: `is not None`
+    # sorts False (the None case) before True, whereas `is None` would put the
+    # unbounded band last and reject every valid spec.
+    ordered = sorted(
+        ranges.items(), key=lambda kv: (kv[1][0] is not None, kv[1][0] or 0.0)
+    )
+    if ordered[0][1][0] is not None:
+        raise ValueError(f"the lowest band ({ordered[0][0]}) must be open at the bottom")
+    if ordered[-1][1][1] is not None:
+        raise ValueError(f"the highest band ({ordered[-1][0]}) must be open at the top")
+    for (lower_name, (_lo, hi)), (upper_name, (nlo, _nhi)) in zip(ordered, ordered[1:]):
+        if hi is None:
+            raise ValueError(
+                f"only the highest band may be open at the top, but {lower_name} is"
+            )
+        if hi != nlo:
+            raise ValueError(
+                f"{lower_name} ends at {hi:g} but {upper_name} starts at {nlo:g} — "
+                "the bands must be contiguous and must not overlap"
+            )
+    return dict(ordered)
 
 
 class PortfolioViews:
@@ -94,24 +225,63 @@ class PortfolioViews:
             logger.warning("portfolio-scores unavailable: %s", e)
             return []
 
+    def _deletion_generation(self) -> int:
+        """Change-detector for the soft-delete flag, used to bust the cache.
+
+        Deleting a customer happens in the gateway, so it cannot invalidate this
+        in-process cache. Without a guard the aggregates keep answering from a
+        cached build for the rest of the TTL, and an operator who just deleted a
+        customer still sees the old totals — the "deletion did not happen"
+        report. Reading the deleted count is a single count on ~5k rows, so it
+        is cheaper than rebuilding CLV (which calls the prediction service).
+
+        Never raises: if the probe fails the cache simply falls back to
+        TTL-only behaviour.
+        """
+        try:
+            rows = self._q(
+                "SELECT count(*) AS n FROM public.customers_clean WHERE is_deleted",
+                {}, "deletion_generation",
+            )
+            return int(rows[0]["n"])
+        except Exception as exc:  # noqa: BLE001 - a probe failure must not break the endpoint
+            logger.warning("deletion-generation probe failed, using TTL only: %s", exc)
+            return -1
+
     def _cached(self, key: str, build) -> dict:
+        # The deletion count is part of the key, so a soft delete (or a restore)
+        # is a cache miss on the very next request.
+        tagged = (key, self._deletion_generation())
         with self._lock:
-            hit = self._cache.get(key)
+            hit = self._cache.get(tagged)
             if hit and (time.monotonic() - hit[0]) < _CACHE_TTL:
                 return hit[1]
         val = build()
         with self._lock:
-            self._cache[key] = (time.monotonic(), val)
+            self._cache[tagged] = (time.monotonic(), val)
         return val
 
     # ------------------------------------------------------------------
     # /states/clv-summary
     # ------------------------------------------------------------------
 
-    def clv_summary(self, as_of: date) -> dict:
-        return self._cached(f"clv:{as_of}", lambda: self._build_clv(as_of))
+    def clv_summary(self, as_of: date, band_ranges: str | None = None) -> dict:
+        """CLV summary for one snapshot date.
 
-    def _build_clv(self, as_of: date) -> dict:
+        ``band_ranges`` switches the value bands from percentile buckets to
+        caller-supplied absolute ZMW boundaries (see :func:`parse_band_ranges`);
+        the boundaries are part of the cache key, so two configurations can never
+        share a cached payload.
+        """
+        ranges = parse_band_ranges(band_ranges) if band_ranges else None
+        key = f"clv:{as_of}:{_ranges_key(ranges) if ranges else 'percentile'}"
+        return self._cached(key, lambda: self._build_clv(as_of, ranges))
+
+    def _build_clv(
+        self,
+        as_of: date,
+        custom_ranges: dict[str, tuple[float | None, float | None]] | None = None,
+    ) -> dict:
         rows = self._q(
             f"""
             SELECT customer_id,
@@ -119,6 +289,7 @@ class PortfolioViews:
                    COALESCE(days_since_last_txn, 999) AS days_since_contact,
                    customer_segment
             FROM customer_features WHERE as_of_date = %(d)s
+            {live_customer_filter("customer_features.customer_id")}
             """, {"d": as_of}, "clv_profiles")
         scores = {s["customer_id"]: s for s in self._scores(as_of)}
         total_protected = self._q(
@@ -135,36 +306,86 @@ class PortfolioViews:
             merged.append({
                 "customer_id": r["customer_id"],
                 "aum": float(r["aum"]),
+                "clv": s.get("clv"),
                 "days_since_contact": int(r["days_since_contact"]),
                 "segment": r["customer_segment"] or "Unclassified",
                 "churn": s.get("churn_probability") or 0.0,
                 "pct": s.get("clv_percentile") or 0.0,
             })
 
+        if not any(m.get("clv") is not None for m in merged):
+            logger.error(
+                "CLV model produced no values for %s — returning CLV_UNAVAILABLE", as_of
+            )
+            return {
+                "summary": {
+                    "total_clv": 0.0,
+                    "avg_clv": 0.0,
+                    "high_value_count": 0,
+                    "clv_at_risk": 0.0,
+                    "value_protected_mtd": round(float(total_protected), 2),
+                    "churn_adjusted_clv": 0.0,
+                    "at_risk_churn_threshold": _AT_RISK_CUTOFF,
+                },
+                "bands": [],
+                "top_customers": [],
+                "status": "CLV_MODEL_UNAVAILABLE",
+                "data_sources": ["prediction-service:8004", "etl_clean.customer_features"],
+            }
+
         churns = sorted(m["churn"] for m in merged)
         cutoff = _AT_RISK_CUTOFF
         if _ADAPTIVE_AT_RISK and churns and sum(1 for c in churns if c > cutoff) < len(churns) * 0.01:
             cutoff = churns[int(len(churns) * 0.90)]
 
-        total_clv = sum(m["aum"] for m in merged)
-        clv_at_risk = sum(m["aum"] * m["churn"] for m in merged if m["churn"] > cutoff)
-        churn_adjusted = sum(m["aum"] * (1 - m["churn"]) for m in merged)
+        def _clv_of(member: dict) -> float:
+            """Model-predicted CLV (12-month net revenue) only — no AUM proxy.
 
-        band_defs = [
-            ("Platinum", 0.90, "Top 10% by CLV percentile"),
-            ("Gold",     0.75, "75th–90th CLV percentile"),
-            ("Silver",   0.50, "50th–75th CLV percentile"),
-            ("Bronze",   0.00, "Below 50th CLV percentile"),
-        ]
+            A proxy would be indistinguishable from a model prediction and would
+            silently populate the CLV bands when the model is unavailable.
+            """
+            value = member.get("clv")
+            return float(value) if value is not None else 0.0
+
+        total_clv = sum(_clv_of(m) for m in merged)
+        clv_at_risk = sum(_clv_of(m) * m["churn"] for m in merged if m["churn"] > cutoff)
+        churn_adjusted = sum(_clv_of(m) * (1 - m["churn"]) for m in merged)
+
+        # Bands are DISJOINT half-open ranges, so every customer lands in exactly
+        # one and the counts sum to the portfolio size. Two sources of boundaries:
+        # percentile (default) and caller-supplied absolute ZMW ranges, which
+        # `parse_band_ranges` has already checked for overlap and full coverage.
+        if custom_ranges is None:
+            value_of = lambda m: m["pct"]          # noqa: E731
+            value_ranges = _CENTILE_RANGES
+            descriptions = _CENTILE_LABELS
+        else:
+            value_of = _clv_of                     # absolute 12-month CLV (ZMW)
+            value_ranges = custom_ranges
+            descriptions = {
+                name: _range_label(lo, hi) for name, (lo, hi) in custom_ranges.items()
+            }
+
+        def _band_of(value: float) -> str:
+            """The single band a value falls in (highest first; ranges disjoint).
+
+            One resolver for both the card counts and each customer's tag, so the
+            two cannot disagree.
+            """
+            for name in _BAND_ORDER:
+                lo, hi = value_ranges[name]
+                if (lo is None or value >= lo) and (hi is None or value < hi):
+                    return name
+            return _BAND_ORDER[-1]   # unreachable when the ranges cover every value
+
         bands = []
-        for label, lo, thr in band_defs:
-            members = [m for m in merged if m["pct"] >= lo] if lo > 0 else \
-                      [m for m in merged if m["pct"] < 0.50]
+        for name in _BAND_ORDER:
+            members = [m for m in merged if _band_of(value_of(m)) == name]
             n = len(members)
             bands.append({
-                "band": label, "label": label, "threshold": thr,
+                "band": name, "label": name, "threshold": descriptions[name],
                 "count": n,
-                "avg_clv": round(sum(m["aum"] for m in members) / n, 2) if n else 0.0,
+                "avg_clv": round(sum(_clv_of(m) for m in members) / n, 2) if n else 0.0,
                 "avg_churn_prob": round(sum(m["churn"] for m in members) / n, 4) if n else 0.0,
                 "total_aum": round(sum(m["aum"] for m in members), 2),
                 "pct": round(n / len(merged) * 100, 1) if merged else 0.0,
@@ -173,14 +394,14 @@ class PortfolioViews:
         top = sorted(merged, key=lambda m: (-m["churn"], -m["aum"]))[:8]
         top_customers = []
         for m in top:
-            band = next((b["band"] for b, lo in zip(bands, (0.90, 0.75, 0.50, 0.0))
-                         if m["pct"] >= lo), "Bronze")
+            band = _band_of(value_of(m))
             top_customers.append({
                 "customer_id": m["customer_id"],
                 "name": m["customer_id"],   # no name column in pilot DB
                 "segment": m["segment"],
                 "band": band,
-                "clv": round(m["aum"], 2),  # AUM proxy until absolute-CLV model
+                "clv": round(_clv_of(m), 2),
+                "clv_percentile": round(m["pct"], 6),
                 "churn_prob": m["churn"],
                 "aum": _fmt_k(m["aum"]),
                 "rm": None,
@@ -200,6 +421,7 @@ class PortfolioViews:
                 "churn_adjusted_clv": round(churn_adjusted, 2),
                 "at_risk_churn_threshold": round(cutoff, 4),
             },
+            "band_mode": "percentile" if custom_ranges is None else "custom",
             "bands": bands,
             "top_customers": top_customers,
             "data_sources": ["prediction-service:8004", "etl_clean.customer_features", "decision_outcomes"],
@@ -214,15 +436,21 @@ class PortfolioViews:
 
     def _build_lifecycle(self, as_of: date) -> dict:
         counts_rows = self._q(
-            "SELECT state, COUNT(*) AS n FROM customer_states WHERE as_of_date = %(d)s GROUP BY state",
+            f"""
+            SELECT state, COUNT(*) AS n FROM customer_states
+            WHERE as_of_date = %(d)s
+            {live_customer_filter("customer_states.customer_id")}
+            GROUP BY state
+            """,
             {"d": as_of}, "state_counts")
         counts = {r["state"]: int(r["n"]) for r in counts_rows}
         total = sum(counts.values()) or 1
 
         prev_rows = self._q(
-            """
+            f"""
             SELECT state, COUNT(*) AS n FROM customer_states
             WHERE as_of_date = (SELECT MAX(as_of_date) FROM customer_states WHERE as_of_date < %(d)s)
+            {live_customer_filter("customer_states.customer_id")}
             GROUP BY state
             """, {"d": as_of}, "prev_counts")
         prev = {r["state"]: int(r["n"]) for r in prev_rows}
@@ -239,10 +467,11 @@ class PortfolioViews:
             })
 
         trows = self._q(
-            """
+            f"""
             SELECT from_state, to_state, COUNT(*) AS n
             FROM state_transitions
             WHERE transition_date >= %(d)s - 30 AND transition_date <= %(d)s
+            {live_customer_filter("state_transitions.customer_id")}
             GROUP BY from_state, to_state
             """, {"d": as_of}, "transitions")
         states = ["NEW", "GROWING", "ACTIVE", "AT_RISK", "DORMANT", "CHURNED"]
@@ -263,6 +492,7 @@ class PortfolioViews:
               COUNT(*) FILTER (WHERE eng_login_count_30d > 0) AS digital_enrolled,
               COUNT(*) AS total_cust
             FROM customer_features WHERE as_of_date = %(d)s
+            {live_customer_filter("customer_features.customer_id")}
             """, {"d": as_of}, "onboarding")[0]
         onboarding = {
             "total_new": int(onboard["total_new"]),
@@ -304,6 +534,7 @@ class PortfolioViews:
                 WHERE f.customer_id = cs.customer_id AND f.as_of_date = cs.as_of_date LIMIT 1
             ) f ON TRUE
             WHERE cs.state = 'CHURNED' AND cs.as_of_date = %(d)s
+            {live_customer_filter("cs.customer_id")}
             ORDER BY 3 DESC NULLS LAST
             LIMIT %(lim)s
             """, {"d": as_of, "lim": limit}, "winback")
@@ -343,7 +574,7 @@ class PortfolioViews:
         Returns a track field: 'rm' for RM-managed segments, 'branch' for
         campaign-managed segments.
         """
-        sql = """
+        sql = f"""
             SELECT
                 cs.customer_id,
                 cs.state,
@@ -359,6 +590,7 @@ class PortfolioViews:
                                            AND cf.as_of_date  = cs.as_of_date
             WHERE cs.as_of_date = %(as_of)s
               AND cs.state IN ('AT_RISK', 'DORMANT', 'CHURNED')
+            {live_customer_filter("cs.customer_id")}
             ORDER BY cs.erosion_probability DESC NULLS LAST
             LIMIT %(limit)s
         """
@@ -395,7 +627,7 @@ class PortfolioViews:
         Uses LEFT JOIN with pilot_action_log — customers with no matching
         action are the unenrolled population.
         """
-        sql = """
+        sql = f"""
             SELECT
                 cs.customer_id,
                 cs.erosion_probability,
@@ -410,6 +642,7 @@ class PortfolioViews:
               AND cs.state       = 'AT_RISK'
               AND cs.erosion_probability > 0.35
               AND pal.customer_id IS NULL
+            {live_customer_filter("cs.customer_id")}
             ORDER BY cs.erosion_probability DESC NULLS LAST
             LIMIT %(limit)s
         """
@@ -435,7 +668,7 @@ class PortfolioViews:
 
     def priority_actions(self, as_of: date) -> list[dict]:
         """Compute AI priority action summary from real aggregate data."""
-        sql = """
+        sql = f"""
             SELECT
                 cs.state,
                 COALESCE(CAST(NULLIF(cf.market_segment, '') AS INT), 0) AS segment_code,
@@ -448,6 +681,7 @@ class PortfolioViews:
             LEFT JOIN pilot_action_log  pal ON pal.customer_id = cs.customer_id
             WHERE cs.as_of_date = %(as_of)s
               AND cs.state IN ('AT_RISK', 'DORMANT')
+            {live_customer_filter("cs.customer_id")}
             GROUP BY cs.state, segment_code
         """
         rows = self._q(sql, {"as_of": as_of}, "priority_actions")

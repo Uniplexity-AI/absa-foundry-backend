@@ -57,6 +57,8 @@ class PredictionService:
 
         self._churn = ChurnPredictor()
         self._clv = CLVPredictor()
+        from app.models.lifecycle_predictor import LifecyclePredictor
+        self._lifecycle = LifecyclePredictor()
         self._health = HealthScorer(PredictionConfig())
         self._config = PredictionConfig()
 
@@ -140,13 +142,6 @@ class PredictionService:
     # ── Portfolio (bulk, no persist) ────────────────────────────────
 
     def portfolio_scores(self, as_of_date: date | None = None) -> dict:
-        """Score every customer for a date WITHOUT persisting.  §Portfolio API
-
-        Used by the Decision Intelligence Service (8005) to aggregate
-        portfolio-level metrics (CLV bands, AUM forecast, lifecycle).
-        Reuses the same batch churn model + CLV percent-rank machinery
-        as compute_batch, but returns scores instead of backfilling.
-        """
         t0 = time.perf_counter()
 
         if as_of_date is None:
@@ -161,29 +156,53 @@ class PredictionService:
                     "duration_seconds": round(time.perf_counter() - t0, 2),
                     "status": "NO_DATA"}
 
-        churn_probs = self._churn.predict_batch(features_list)
-        scores = [
-            {
-                "customer_id": row["customer_id"],
-                "churn_probability": round(prob, 4),
-                "clv_percentile": round(
-                    self._clv.get_percentile(row["customer_id"], clv_percentiles), 4
-                ),
+        def _churn_by_id(horizon: int) -> dict[str, float | None]:
+            if not self._lifecycle.is_loaded(horizon):
+                return {}
+            results = self._lifecycle.predict_batch(features_list, horizon)
+            return {
+                r["customer_id"]: r["probabilities"].get("CHURNED")
+                for r in results
             }
-            for row, prob in zip(features_list, churn_probs)
-        ]
+        
+        c90_dict = _churn_by_id(90)
+        c30_dict = _churn_by_id(30)
+        c14_dict = _churn_by_id(14)
+        
+        from app.models.balance_growth_predictor import BalanceGrowthPredictor
+        bg_pred = BalanceGrowthPredictor()
+        clv_preds = self._clv.predict_batch(features_list)
+        bg_preds = bg_pred.predict_batch(features_list)
+
+        scores = []
+        for i, row in enumerate(features_list):
+            cid = row["customer_id"]
+            c90 = c90_dict.get(cid)
+            c30 = c30_dict.get(cid)
+            c14 = c14_dict.get(cid)
+            churn_val = c90 if c90 is not None else (c30 if c30 is not None else (c14 if c14 is not None else 0.0))
+            
+            scores.append({
+                "customer_id": cid,
+                "churn_probability": round(churn_val, 4) if churn_val is not None else None,
+                "churn_probability_14d": round(c14, 4) if c14 is not None else None,
+                "churn_probability_30d": round(c30, 4) if c30 is not None else None,
+                "churn_probability_90d": round(c90, 4) if c90 is not None else None,
+                "clv_percentile": round(self._clv.get_percentile(cid, clv_percentiles), 4),
+                "clv": round(clv_preds[i], 2) if clv_preds else None,
+                "balance_growth_pct": round(bg_preds[i], 4) if bg_preds else 0.0,
+            })
 
         duration = round(time.perf_counter() - t0, 2)
-        logger.info("portfolio_scores: date=%s n=%d duration=%.1fs",
-                    as_of_date, len(scores), duration)
         return {
             "as_of_date": as_of_date.isoformat(),
             "count": len(scores),
             "scores": scores,
-            "churn_model": self._churn.model_version,
+            "churn_model": "lifecycle_90d",
             "duration_seconds": duration,
             "status": "COMPLETED",
         }
+
 
     # ── Value Predictions Batch ─────────────────────────────────────
 
@@ -266,6 +285,115 @@ class PredictionService:
 
     # ── Single Customer ────────────────────────────────────────────
 
+
+    def clv_batch(self, as_of_date: date | None = None) -> dict:
+        import time
+        t0 = time.perf_counter()
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+        if as_of_date is None:
+            return {"as_of_date": None, "customers_scored": 0, "status": "NO_DATA"}
+        
+        features_list = self._repo.load_features(as_of_date)
+        if not features_list:
+            return {"as_of_date": as_of_date.isoformat(), "customers_scored": 0, "status": "NO_DATA"}
+            
+        if not self._clv.is_model_loaded:
+            return {"as_of_date": as_of_date.isoformat(), "customers_scored": 0, "status": "CLV_MODEL_NOT_LOADED"}
+            
+        preds = self._clv.predict_batch(features_list)
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "customers_scored": len(preds),
+            "status": "COMPLETED",
+            "duration_seconds": round(time.perf_counter() - t0, 2),
+        }
+
+    def balance_growth_batch(self, as_of_date: date | None = None) -> dict:
+        import time
+        t0 = time.perf_counter()
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+        if as_of_date is None:
+            return {"as_of_date": None, "customers_scored": 0, "status": "NO_DATA"}
+            
+        features_list = self._repo.load_features(as_of_date)
+        if not features_list:
+            return {"as_of_date": as_of_date.isoformat(), "customers_scored": 0, "status": "NO_DATA"}
+            
+        from app.models.balance_growth_predictor import BalanceGrowthPredictor
+        bg_pred = BalanceGrowthPredictor()
+        if not bg_pred.is_model_loaded:
+            return {"as_of_date": as_of_date.isoformat(), "customers_scored": 0, "status": "MODEL_NOT_LOADED"}
+            
+        preds = bg_pred.predict_batch(features_list)
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "customers_scored": len(preds),
+            "status": "COMPLETED",
+            "mean_growth": sum(preds)/len(preds) if preds else 0,
+            "min_growth": min(preds) if preds else 0,
+            "max_growth": max(preds) if preds else 0,
+            "duration_seconds": round(time.perf_counter() - t0, 2)
+        }
+
+
+    def lifecycle_forecast(self, as_of_date: date | None = None) -> dict:
+        import time
+        t0 = time.perf_counter()
+        
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+            if as_of_date is None:
+                return {"as_of_date": None, "count": 0, "status": "NO_DATA", "forecast": [], "horizons": {}, "duration_seconds": 0.0}
+
+        features_list = self._repo.load_features(as_of_date)
+        if not features_list:
+            return {"as_of_date": as_of_date.isoformat(), "count": 0, "status": "NO_DATA", "forecast": [], "horizons": {}, "duration_seconds": 0.0}
+
+        def _predict(h: int):
+            if not self._lifecycle.is_loaded(h):
+                return [], "MODEL_UNAVAILABLE"
+            return self._lifecycle.predict_batch(features_list, h), "OK"
+        
+        preds_14, status_14 = _predict(14)
+        preds_30, status_30 = _predict(30)
+        preds_90, status_90 = _predict(90)
+        
+        horizons_status = {
+            "14": status_14,
+            "30": status_30,
+            "90": status_90
+        }
+        
+        forecast_dict = {}
+        for row in features_list:
+            cid = row["customer_id"]
+            forecast_dict[cid] = {}
+            
+        for r in preds_14:
+            forecast_dict[r["customer_id"]]["14"] = {"stage": r["stage"], "confidence": r["confidence"], "probabilities": r["probabilities"]}
+        for r in preds_30:
+            forecast_dict[r["customer_id"]]["30"] = {"stage": r["stage"], "confidence": r["confidence"], "probabilities": r["probabilities"]}
+        for r in preds_90:
+            forecast_dict[r["customer_id"]]["90"] = {"stage": r["stage"], "confidence": r["confidence"], "probabilities": r["probabilities"]}
+            
+        forecast_list = []
+        for cid, horiz in forecast_dict.items():
+            forecast_list.append({
+                "customer_id": cid,
+                "horizons": horiz
+            })
+            
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "count": len(forecast_list),
+            "status": "COMPLETED",
+            "forecast": forecast_list,
+            "horizons": horizons_status,
+            "duration_seconds": round(time.perf_counter() - t0, 2)
+        }
+
     def _get_feature_snapshot(
         self, as_of_date: date
     ) -> tuple[list[dict], dict[str, float]]:
@@ -344,7 +472,13 @@ class PredictionService:
             return None
 
         t0 = time.perf_counter()
-        churn_prob = self._churn.predict(customer_features)
+        churn_prob = None
+        if self._lifecycle.is_loaded(90):
+            lc_res = self._lifecycle.predict_batch([customer_features], 90)
+            if lc_res:
+                churn_prob = lc_res[0]["probabilities"].get("CHURNED")
+        if churn_prob is None:
+            churn_prob = self._churn.predict(customer_features)
         self._log_prediction(customer_id, as_of_date, churn_prob,
                              time.perf_counter() - t0)
         clv_pct = self._clv.get_percentile(customer_id, clv_percentiles)
@@ -382,7 +516,13 @@ class PredictionService:
             return None
 
         t0 = time.perf_counter()
-        churn_prob = self._churn.predict(customer_features)
+        churn_prob = None
+        if self._lifecycle.is_loaded(90):
+            lc_res = self._lifecycle.predict_batch([customer_features], 90)
+            if lc_res:
+                churn_prob = lc_res[0]["probabilities"].get("CHURNED")
+        if churn_prob is None:
+            churn_prob = self._churn.predict(customer_features)
         self._log_prediction(customer_id, as_of_date, churn_prob,
                              time.perf_counter() - t0)
         return CustomerChurn(
@@ -489,3 +629,195 @@ class PredictionService:
         ))
 
         return ModelsResponse(models=models)
+
+    # ── Lifecycle Forecast ─────────────────────────────────────────
+
+    def lifecycle_forecast(self, as_of_date: date | None = None) -> dict:
+        """Forward lifecycle-stage forecast across 14d/30d/90d horizons for cohort."""
+        t0 = time.perf_counter()
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+            if as_of_date is None:
+                as_of_date = date.today()
+
+        features_list = self._repo.load_features(as_of_date)
+        if not features_list:
+            return {
+                "as_of_date": as_of_date.isoformat(),
+                "count": 0,
+                "status": "NO_DATA",
+                "forecast": [],
+                "horizons": self._lifecycle.status(),
+                "duration_seconds": round(time.perf_counter() - t0, 2),
+            }
+
+        preds_14 = self._lifecycle.predict_batch(features_list, 14) if self._lifecycle.is_loaded(14) else []
+        preds_30 = self._lifecycle.predict_batch(features_list, 30) if self._lifecycle.is_loaded(30) else []
+        preds_90 = self._lifecycle.predict_batch(features_list, 90) if self._lifecycle.is_loaded(90) else []
+
+        forecast_map: dict[str, dict] = {}
+        for row in features_list:
+            cid = row.get("customer_id")
+            if cid:
+                forecast_map[cid] = {}
+
+        for r in preds_14:
+            cid = r.get("customer_id")
+            if cid in forecast_map:
+                forecast_map[cid]["14"] = {
+                    "stage": r.get("stage"),
+                    "confidence": r.get("confidence"),
+                    "probabilities": r.get("probabilities", {}),
+                }
+
+        for r in preds_30:
+            cid = r.get("customer_id")
+            if cid in forecast_map:
+                forecast_map[cid]["30"] = {
+                    "stage": r.get("stage"),
+                    "confidence": r.get("confidence"),
+                    "probabilities": r.get("probabilities", {}),
+                }
+
+        for r in preds_90:
+            cid = r.get("customer_id")
+            if cid in forecast_map:
+                forecast_map[cid]["90"] = {
+                    "stage": r.get("stage"),
+                    "confidence": r.get("confidence"),
+                    "probabilities": r.get("probabilities", {}),
+                }
+
+        forecast_list = [
+            {"customer_id": cid, "horizons": horiz}
+            for cid, horiz in forecast_map.items()
+        ]
+
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "count": len(forecast_list),
+            "status": "COMPLETED",
+            "forecast": forecast_list,
+            "horizons": self._lifecycle.status(),
+            "duration_seconds": round(time.perf_counter() - t0, 2),
+        }
+
+    # ── CLV Batch ──────────────────────────────────────────────────
+
+    def clv_batch(self, as_of_date: date | None = None) -> dict:
+        """Run CLV LightGBM model for cohort and return distribution summary."""
+        t0 = time.perf_counter()
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+        if as_of_date is None:
+            return {
+                "as_of_date": None,
+                "customers_scored": 0,
+                "status": "NO_DATA",
+                "clv_model": self._clv.model_version,
+                "mean_clv": 0.0,
+                "min_clv": 0.0,
+                "max_clv": 0.0,
+                "duration_seconds": 0.0,
+            }
+
+        features_list = self._repo.load_features(as_of_date)
+        if not features_list:
+            return {
+                "as_of_date": as_of_date.isoformat(),
+                "customers_scored": 0,
+                "status": "NO_DATA",
+                "clv_model": self._clv.model_version,
+                "mean_clv": 0.0,
+                "min_clv": 0.0,
+                "max_clv": 0.0,
+                "duration_seconds": round(time.perf_counter() - t0, 2),
+            }
+
+        if not self._clv.is_model_loaded:
+            return {
+                "as_of_date": as_of_date.isoformat(),
+                "customers_scored": 0,
+                "status": "CLV_MODEL_NOT_LOADED",
+                "clv_model": self._clv.model_version,
+                "mean_clv": 0.0,
+                "min_clv": 0.0,
+                "max_clv": 0.0,
+                "duration_seconds": round(time.perf_counter() - t0, 2),
+            }
+
+        preds = self._clv.predict_batch(features_list)
+        mean_val = round(float(sum(preds) / len(preds)), 2) if preds else 0.0
+        min_val = round(float(min(preds)), 2) if preds else 0.0
+        max_val = round(float(max(preds)), 2) if preds else 0.0
+
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "customers_scored": len(preds),
+            "status": "COMPLETED",
+            "clv_model": self._clv.model_version or "lightgbm_clv_model",
+            "mean_clv": mean_val,
+            "min_clv": min_val,
+            "max_clv": max_val,
+            "duration_seconds": round(time.perf_counter() - t0, 2),
+        }
+
+    # ── Balance Growth Batch ───────────────────────────────────────
+
+    def balance_growth_batch(self, as_of_date: date | None = None) -> dict:
+        """Run Balance Growth LightGBM model for cohort and return growth summary."""
+        t0 = time.perf_counter()
+        if as_of_date is None:
+            as_of_date = self._repo.latest_feature_date()
+        if as_of_date is None:
+            return {
+                "as_of_date": None,
+                "customers_scored": 0,
+                "status": "NO_DATA",
+                "mean_growth": 0.0,
+                "min_growth": 0.0,
+                "max_growth": 0.0,
+                "duration_seconds": 0.0,
+            }
+
+        features_list = self._repo.load_features(as_of_date)
+        if not features_list:
+            return {
+                "as_of_date": as_of_date.isoformat(),
+                "customers_scored": 0,
+                "status": "NO_DATA",
+                "mean_growth": 0.0,
+                "min_growth": 0.0,
+                "max_growth": 0.0,
+                "duration_seconds": round(time.perf_counter() - t0, 2),
+            }
+
+        from app.models.balance_growth_predictor import BalanceGrowthPredictor
+        bg_pred = BalanceGrowthPredictor()
+        if not bg_pred.is_model_loaded:
+            return {
+                "as_of_date": as_of_date.isoformat(),
+                "customers_scored": 0,
+                "status": "MODEL_NOT_LOADED",
+                "mean_growth": 0.0,
+                "min_growth": 0.0,
+                "max_growth": 0.0,
+                "duration_seconds": round(time.perf_counter() - t0, 2),
+            }
+
+        preds = bg_pred.predict_batch(features_list)
+        mean_g = round(float(sum(preds) / len(preds)), 4) if preds else 0.0
+        min_g = round(float(min(preds)), 4) if preds else 0.0
+        max_g = round(float(max(preds)), 4) if preds else 0.0
+
+        return {
+            "as_of_date": as_of_date.isoformat(),
+            "customers_scored": len(preds),
+            "status": "COMPLETED",
+            "mean_growth": mean_g,
+            "min_growth": min_g,
+            "max_growth": max_g,
+            "duration_seconds": round(time.perf_counter() - t0, 2),
+        }
+
+

@@ -1,0 +1,516 @@
+"""Gateway routes — customer data ingest (CSV upload + core-banking pull).
+
+FR-INGEST-01: load customer data from a CSV with an explicit column → field
+              mapping that documents the expected format of every target field.
+FR-INGEST-02: ETL Engine job that pulls customer data from the core Absa system
+              and lands it in Postgres for downstream analysis.
+
+Mounted at ``/api/v1/ingest`` (see shared/auth/permissions.py) so the RM
+workspace can load data without OPERATIONS-only ``/api/etl`` access.
+
+Write path: both endpoints funnel through ``etl.ingest.loader.load_batch``,
+which validates against the selected dataset's contract
+(``etl.ingest.customer_schema``), upserts on that dataset's natural key and
+writes a compliance row to ``etl.etl_audit``.
+
+Loadable datasets (``dataset`` parameter):
+
+* ``customers``         → ``public.customers_clean``   key ``customer_id``
+* ``customer_features`` → ``public.customer_features`` key ``(customer_id, as_of_date)``
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+
+from etl.ingest import customer_csv
+from etl.ingest.core_banking import (
+    CORE_DATASETS,
+    CoreExtractionError,
+    describe_datasets,
+    run_core_banking_load,
+)
+from etl.ingest.customer_schema import (
+    DEFAULT_DATASET,
+    DATASETS,
+    coerce_row,
+    describe_schema,
+    get_dataset,
+)
+from etl.ingest.loader import (
+    customer_exists,
+    fetch_master_row,
+    load_batch,
+    missing_columns,
+    recent_ingest_runs,
+    row_count,
+)
+
+logger = logging.getLogger("gateway.routes.ingest")
+
+router = APIRouter(prefix="/api/v1/ingest", tags=["Customer Ingest"])
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Schemas
+# ═══════════════════════════════════════════════════════════════════
+
+class CsvLoadRequest(BaseModel):
+    """Commit a staged CSV upload using the operator-confirmed mapping."""
+
+    upload_id: str = Field(..., description="Upload id returned by /csv/preview")
+    mapping: dict[str, str | None] = Field(
+        ...,
+        description="source CSV column -> target field of the selected dataset (null to skip)",
+    )
+    dataset: str = Field(
+        default=DEFAULT_DATASET,
+        description=f"Target dataset. One of: {', '.join(DATASETS)}",
+    )
+    filename: str | None = Field(default=None, description="Original filename, for the audit trail")
+    dry_run: bool = Field(default=False, description="Validate and report without writing any rows")
+
+
+class CoreBankingRunRequest(BaseModel):
+    """Trigger the ETL Engine pull from the core Absa system."""
+
+    dataset: str = Field(
+        default="customers_core",
+        description=f"One of: {', '.join(CORE_DATASETS)}",
+    )
+    limit: int | None = Field(
+        default=None, ge=1, le=100_000,
+        description="Cap the number of core rows pulled (useful for a trial run)",
+    )
+    dry_run: bool = Field(default=False, description="Extract + validate without writing to Postgres")
+    as_of_date: str | None = Field(default=None, description="Recorded on the run for lineage")
+
+
+class CustomerAddRequest(BaseModel):
+    """One customer submitted from the Add Customer form (no CSV involved)."""
+
+    row: dict[str, Any] = Field(
+        ...,
+        description=(
+            "Target field name -> value for the chosen dataset. "
+            "See GET /api/v1/ingest/schema for the field catalogue and formats."
+        ),
+    )
+    dataset: str = Field(
+        default=DEFAULT_DATASET,
+        description=(
+            f"Target dataset. One of: {', '.join(DATASETS)}. 'customers' is the "
+            "master record (identity), 'customer_features' is one snapshot row per "
+            "(customer_id, as_of_date)."
+        ),
+    )
+    dry_run: bool = Field(default=False, description="Validate and report without writing any row")
+    allow_update: bool = Field(
+        default=False,
+        description=(
+            "Permit overwriting an existing customer id in the MASTER dataset. Off by "
+            "default: the upsert writes every column, so a partially filled form would "
+            "null the fields it did not carry, and a soft-deleted customer would stay "
+            "hidden. Feature snapshots are always upserted on (customer_id, as_of_date)."
+        ),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════
+
+def _actor(request: Request) -> str:
+    """Best-effort caller identity for the audit trail."""
+    user = getattr(request.state, "user", None)
+    username = getattr(user, "username", None)
+    if username:
+        return str(username)
+    service = getattr(request.state, "service", None)
+    if service is not None:
+        return f"service:{getattr(service, 'name', 'unknown')}"
+    return "api"
+
+
+def _dataset_row_counts() -> dict[str, int | None]:
+    """Best-effort row count per loadable dataset, for the modal's target summary."""
+    counts: dict[str, int | None] = {}
+    for key in DATASETS:
+        try:
+            counts[key] = row_count(key)
+        except Exception as exc:  # noqa: BLE001 - a probe failure must not break the schema
+            logger.warning("Could not count %s: %s", key, exc)
+            counts[key] = None
+    return counts
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Schema / status
+# ═══════════════════════════════════════════════════════════════════
+
+@router.get("/schema")
+async def get_ingest_schema():
+    """The ingest contract: loadable datasets, field formats and core feeds.
+
+    Powers the mapping table on the My Customers page — each CSV column is
+    matched to one field of the selected dataset, and the field's
+    ``format``/``allowed_values`` is what the operator sees as "this is how the
+    data must be formatted".
+    """
+    try:
+        counts = await run_in_threadpool(_dataset_row_counts)
+    except Exception as exc:  # noqa: BLE001 - schema is still useful without a DB probe
+        logger.warning("Could not count ingest target rows: %s", exc)
+        counts = {}
+
+    return {
+        **describe_schema(),
+        "target_row_count": counts.get(DEFAULT_DATASET),
+        "target_row_counts": counts,
+        "core_datasets": describe_datasets(),
+    }
+
+
+@router.get("/runs")
+async def list_ingest_runs(limit: int = Query(default=20, ge=1, le=200)):
+    """Recent ingest runs (CSV and core-banking) from the shared audit trail."""
+    try:
+        return await run_in_threadpool(recent_ingest_runs, limit)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Failed to read ingest runs")
+        raise HTTPException(status_code=500, detail=f"Failed to read ingest runs: {exc}") from exc
+
+
+# ═══════════════════════════════════════════════════════════════════
+# CSV upload
+# ═══════════════════════════════════════════════════════════════════
+
+@router.post("/csv/preview")
+async def preview_csv(
+    request: Request,
+    file: UploadFile | None = File(default=None),
+    upload_id: str | None = Form(default=None),
+    dataset: str = Form(default=DEFAULT_DATASET),
+):
+    """Stage an uploaded CSV (or re-preview a staged one) against a dataset.
+
+    Pass ``file`` to stage a new upload; pass ``upload_id`` instead to re-map an
+    already-staged file — that is how the UI re-previewes when the operator
+    switches target dataset, with no second upload.
+    """
+    try:
+        if file is not None and file.filename:
+            content = await file.read()
+            stored = await run_in_threadpool(customer_csv.save_upload, file.filename, content)
+        elif upload_id:
+            stored = customer_csv.StoredUpload(
+                upload_id=upload_id,
+                filename=upload_id,
+                path=customer_csv.resolve_upload(upload_id),
+                size_bytes=customer_csv.resolve_upload(upload_id).stat().st_size,
+            )
+        else:
+            raise HTTPException(
+                status_code=400, detail="Provide either a file or an upload_id to preview."
+            )
+
+        preview = await run_in_threadpool(
+            customer_csv.build_preview,
+            stored.path,
+            filename=stored.filename,
+            dataset=dataset,
+        )
+    except customer_csv.UploadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:  # unknown dataset key
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    logger.info(
+        "CSV preview %s (%s) -> %s: %d rows, %d columns, %d mapping issue(s) [by %s]",
+        stored.upload_id, stored.filename, preview["dataset"], preview["row_count"],
+        len(preview["columns"]), len(preview["mapping_errors"]), _actor(request),
+    )
+    return preview
+
+
+@router.post("/csv/load")
+async def load_csv(request: Request, body: CsvLoadRequest):
+    """Validate every row against the mapping and load the valid ones."""
+    try:
+        path = customer_csv.resolve_upload(body.upload_id)
+        result = await run_in_threadpool(
+            customer_csv.load_upload,
+            path,
+            body.mapping,
+            filename=body.filename or path.name,
+            triggered_by=_actor(request),
+            dataset=body.dataset,
+            dry_run=body.dry_run,
+        )
+    except customer_csv.UploadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except KeyError as exc:  # unknown dataset key
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("CSV load failed for upload %s", body.upload_id)
+        raise HTTPException(status_code=500, detail=f"CSV load failed: {exc}") from exc
+
+    logger.info(
+        "CSV load %s -> %s: valid=%d rejected=%d inserted=%d updated=%d dry_run=%s",
+        result["batch_id"], result["target_table"], result["rows_valid"],
+        result["rows_rejected"], result["rows_inserted"], result["rows_updated"],
+        result["dry_run"],
+    )
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Single customer (Add / Edit Customer form)
+# ═══════════════════════════════════════════════════════════════════
+
+@router.get("/customer/{customer_id}")
+async def get_customer(customer_id: str, include_deleted: bool = False):
+    """The master row for one customer — the Edit Customer form's pre-fill.
+
+    Returns the fields keyed exactly as ``PATCH /customer`` expects them, so a
+    form can load, diff and submit against one contract. ``columns_missing``
+    lists any dataset field the target table does not have: the form must not
+    accept edits to those, because :func:`loader.upsert` cannot write them (and
+    the previous, silent version of this is how mobile-number edits were lost).
+    """
+    spec = get_dataset(DEFAULT_DATASET)
+    try:
+        row = await run_in_threadpool(
+            fetch_master_row, customer_id, include_deleted=include_deleted
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Could not read customer %s", customer_id)
+        raise HTTPException(status_code=500, detail=f"Could not read customer: {exc}") from exc
+
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found.")
+
+    try:
+        missing = await run_in_threadpool(missing_columns, None, spec)
+    except Exception:  # noqa: BLE001 - informational only
+        missing = []
+
+    return {
+        "customer_id": customer_id,
+        "row": row,
+        "columns_missing": missing,
+        "target_table": spec.table,
+    }
+
+
+@router.post("/customer")
+async def add_customer(request: Request, body: CustomerAddRequest):
+    """Add one customer from the Add Customer form — no CSV required.
+
+    Handles both loadable datasets, so the same form can write the identity
+    master record (``customers`` → ``public.customers_clean``) and/or a feature
+    snapshot (``customer_features`` → ``public.customer_features``).
+
+    Values are coerced and validated against the selected dataset's spec and
+    land through ``loader.load_batch``, so the form is bound by exactly the
+    contract the CSV upload and the loader enforce (same target table, same
+    rejects, same ``etl.etl_audit`` row).
+
+    Create-only for the master dataset — see ``CustomerAddRequest.allow_update``
+    for why an existing id is reported as a conflict rather than silently
+    overwritten. Feature snapshots are keyed on ``(customer_id, as_of_date)`` so
+    re-submitting the same snapshot is a normal upsert.
+    """
+    try:
+        spec = get_dataset(body.dataset)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    unknown = sorted(key for key in body.row if key not in spec.fields_by_name)
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown field(s) for dataset '{spec.key}': {', '.join(unknown)}. "
+                f"Valid fields: {', '.join(spec.fields_by_name)}"
+            ),
+        )
+    if not body.row:
+        raise HTTPException(status_code=400, detail="No customer fields were supplied.")
+
+    # Identity mapping: the form already submits target field names.
+    mapping = {name: name for name in spec.fields_by_name}
+    try:
+        record, errors = coerce_row(body.row, mapping, spec.key)
+    except KeyError as exc:  # unknown dataset key
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if errors:
+        # Field-level problems come back as a list so the form can show them
+        # per field; nothing is written and no rejection row is created.
+        raise HTTPException(status_code=400, detail=errors)
+
+    customer_id = record.get("customer_id")
+    if spec.key == DEFAULT_DATASET and customer_id and not body.allow_update:
+        existing = await run_in_threadpool(customer_exists, str(customer_id))
+        if existing == "deleted":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Customer {customer_id} was deleted. Restore it from My Customers "
+                    "instead of re-adding it."
+                ),
+            )
+        if existing == "live":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Customer {customer_id} already exists.",
+            )
+
+    try:
+        result = await run_in_threadpool(
+            load_batch,
+            [record],
+            [],
+            source_type="manual_entry",
+            source_name="Add customer form",
+            triggered_by=_actor(request),
+            dataset=spec.key,
+            dry_run=body.dry_run,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Add customer failed for %s (%s)", customer_id, spec.key)
+        raise HTTPException(status_code=500, detail=f"Add customer failed: {exc}") from exc
+
+    logger.info(
+        "Add customer %s -> %s: inserted=%d updated=%d dry_run=%s [by %s]",
+        customer_id, result["target_table"], result["rows_inserted"],
+        result["rows_updated"], result["dry_run"], _actor(request),
+    )
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Core banking pull (ETL Engine)
+# ═══════════════════════════════════════════════════════════════════
+
+@router.post("/core-banking/run")
+async def run_core_banking(request: Request, body: CoreBankingRunRequest):
+    """Pull one core-system dataset and load it into Postgres."""
+    try:
+        return await run_core_banking_load(
+            body.dataset,
+            limit=body.limit,
+            dry_run=body.dry_run,
+            triggered_by=_actor(request),
+            as_of_date=body.as_of_date,
+        )
+    except CoreExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Core banking pull failed for dataset %s", body.dataset)
+        raise HTTPException(status_code=500, detail=f"Core banking pull failed: {exc}") from exc
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Partial customer update (Edit Customer form)
+# ═══════════════════════════════════════════════════════════════════
+
+class CustomerPatchRequest(BaseModel):
+    """Partial update for an existing customer — only supplied fields are written.
+
+    Unlike ``/customer`` (which upserts every column), this endpoint does a
+    targeted SQL UPDATE so omitted fields keep their current database values.
+    """
+
+    customer_id: str = Field(..., description="The customer to update")
+    fields: dict[str, Any] = Field(
+        ...,
+        description="Field name → value pairs to update. Only these columns are touched.",
+    )
+
+
+@router.patch("/customer")
+async def patch_customer(request: Request, body: CustomerPatchRequest):
+    """Partially update one customer — only the supplied fields are written.
+
+    This is the safe edit path: unset form fields are not sent, so they
+    are never nulled out in the database.
+    """
+    from sqlalchemy import text as sa_text
+    from shared.database.postgres import get_sync_target_engine
+
+    spec = get_dataset(DEFAULT_DATASET)
+    valid_field_names = set(spec.fields_by_name.keys()) - {"customer_id"}
+
+    # Fields the target table has no column for cannot be written. Report them
+    # rather than letting the UPDATE raise UndefinedColumn as an opaque 500 —
+    # and never drop them silently, which is how mobile-number edits were lost.
+    try:
+        unwritable = await run_in_threadpool(missing_columns, None, spec)
+    except Exception:  # noqa: BLE001 - informational only
+        unwritable = []
+
+    # Strip unknown or empty fields
+    updates = {
+        k: v for k, v in body.fields.items()
+        if k in valid_field_names and v not in (None, "")
+    }
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update.")
+
+    blocked = sorted(set(updates) & set(unwritable))
+    if blocked:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{', '.join(blocked)} cannot be stored: no such column on "
+                f"{spec.table}. Apply the outstanding migration "
+                "(scripts/pilot_migrate.py) and retry."
+            ),
+        )
+
+    # Coerce each value through the schema
+    mapping = {name: name for name in spec.fields_by_name}
+    row_input = {"customer_id": body.customer_id, **updates}
+    record, errors = coerce_row(row_input, mapping, spec.key)
+    if errors:
+        raise HTTPException(status_code=400, detail=errors)
+
+    # Remove the key from the SET clause
+    updates_coerced = {k: v for k, v in record.items() if k != "customer_id"}
+    if not updates_coerced:
+        raise HTTPException(status_code=400, detail="No valid fields to update after coercion.")
+
+    def _do_patch() -> int:
+        engine = get_sync_target_engine()
+        set_clause = ", ".join(f"{col} = :{col}" for col in updates_coerced)
+        sql = sa_text(
+            f"UPDATE public.customers_clean SET {set_clause} "  # noqa: S608
+            "WHERE customer_id = :customer_id AND NOT is_deleted"
+        )
+        params = {**updates_coerced, "customer_id": body.customer_id}
+        with engine.begin() as conn:
+            result = conn.execute(sql, params)
+            return result.rowcount
+
+    try:
+        rows_updated = await run_in_threadpool(_do_patch)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Patch customer failed for %s", body.customer_id)
+        raise HTTPException(status_code=500, detail=f"Patch failed: {exc}") from exc
+
+    if rows_updated == 0:
+        raise HTTPException(status_code=404, detail=f"Customer {body.customer_id} not found.")
+
+    logger.info("Patch customer %s: updated %d row(s) [by %s]", body.customer_id, rows_updated, _actor(request))
+    return {
+        "customer_id": body.customer_id,
+        "rows_updated": rows_updated,
+        "columns_missing": unwritable,
+    }
