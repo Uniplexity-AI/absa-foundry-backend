@@ -43,7 +43,7 @@ datasets/external/*.csv
 datasets/synthetic/*.csv
 
 # Models (keep registry, ignore artifacts)
-models/**/*.pkl
+# models/**/*.pkl
 models/**/*.joblib
 models/**/*.bin
 models/**/*.h5
