@@ -63,10 +63,7 @@ async def proxy_health(request: Request, customer_id: str):
     return await _forward(request, _PREDICTION_SERVICE_URL, f"/predict/{customer_id}/health")
 
 
-@router.get("/{customer_id}")
-async def proxy_customer_prediction(request: Request, customer_id: str):
-    """Forward full customer prediction."""
-    return await _forward(request, _PREDICTION_SERVICE_URL, f"/predict/{customer_id}")
+
 
 @router.post("/simulate")
 async def proxy_simulate(request: Request):
@@ -115,6 +112,12 @@ async def proxy_balance_growth_run(request: Request):
         request, _PREDICTION_SERVICE_URL, "/predict/balance-growth-batch",
         timeout=_VALUE_BATCH_TIMEOUT,
     )
+
+
+@router.get("/{customer_id}")
+async def proxy_customer_prediction(request: Request, customer_id: str):
+    """Forward full customer prediction."""
+    return await _forward(request, _PREDICTION_SERVICE_URL, f"/predict/{customer_id}")
 
 
 async def _forward(
