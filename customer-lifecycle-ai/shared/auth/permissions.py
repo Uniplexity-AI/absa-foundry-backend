@@ -1,4 +1,4 @@
-﻿"""
+"""
 Shared Auth Permissions — RBAC matrix and role-checking utilities.
 
 Defines which roles can access which routes. Used by the RBAC middleware
@@ -70,7 +70,8 @@ PERMISSIONS: list[RoutePermission] = [
     RoutePermission("*", "/api/etl/**",           ["OPERATIONS"]),
 
     # ---- Admin management — ADMIN only (explicit for clarity) ----
-    RoutePermission("*", "/admin/**", ["ADMIN"]),
+    RoutePermission("*", "/admin/**",       ["ADMIN"]),
+    RoutePermission("*", "/auth/admin/**",  ["ADMIN"]),  # admin user-management API
 ]
 
 

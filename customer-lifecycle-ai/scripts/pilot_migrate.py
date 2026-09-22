@@ -38,7 +38,10 @@ MIGRATIONS = [
     ("database/migrations/001_etl_schema.sql", "target"),
     ("database/migrations/002_clean_data_tables.sql", "target"),
     ("database/feature_store/001_customer_features.sql", "target"),
+    ("database/feature_store/002_add_product_engagement_features.sql", "target"),
     ("database/state_engine/001_customer_states.sql", "target"),
+    ("database/migrations/007_decision_outcomes.sql", "target"),
+    ("database/migrations/008_prediction_log.sql", "target"),
     ("database/migrations/009_pilot_actions.sql", "target"),
     ("database/migrations/010_market_segment.sql", "target"),
     ("database/migrations/012_model_management.sql", "target"),
@@ -46,6 +49,18 @@ MIGRATIONS = [
     ("database/migrations/014_customer_identity.sql", "target"),
     ("database/migrations/015_customer_features_ingest.sql", "target"),
     ("database/migrations/016_customer_soft_delete.sql", "target"),
+    ("database/migrations/017_customer_features_full_schema.sql", "target"),
+    # 018-020 were previously missing from this list, so a database built from
+    # the runner silently lacked the CRM tables, the next-of-kin columns and
+    # customers_clean.mobile_number. The last of those breaks
+    # GET /api/v1/customers/{id}/profile outright (the profile SQL selects a
+    # column that does not exist), so the profile page falls back to snapshot
+    # data and no saved edit is ever visible. All four files are idempotent
+    # (CREATE TABLE/INDEX IF NOT EXISTS, ADD COLUMN IF NOT EXISTS), so
+    # registering them is safe on an already-migrated database.
+    ("database/migrations/018_crm_models.sql", "target"),
+    ("database/migrations/019_customer_next_of_kin.sql", "target"),
+    ("database/migrations/020_customer_mobile_number.sql", "target"),
 ]
 
 

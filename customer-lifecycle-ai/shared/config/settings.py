@@ -105,13 +105,13 @@ class Settings(BaseSettings):
     jwt_access_token_expire_minutes: int = 120
     jwt_refresh_token_expire_days: int = 7
 
-    # ---- LLM narration (Ollama) — ADR-005: narration only, never a decision ----
+    # ---- LLM narration (Ollama) - ADR-005: narration only, never a decision ----
     ollama_url: str = "http://localhost:11434"
     llm_model: str = "qwen2.5-coder:7b"
-    llm_max_tokens: int = 300
-    llm_timeout_seconds: float = 180.0
+    llm_max_tokens: int = 1024
+    llm_timeout_seconds: float = 300.0
     # gateway -> decision-service proxy timeout for the slow narration call
-    llm_gateway_timeout_seconds: float = 180.0
+    llm_gateway_timeout_seconds: float = 300.0
 
     # ---- LDAP / Active Directory ----
     ldap_enabled: bool = False

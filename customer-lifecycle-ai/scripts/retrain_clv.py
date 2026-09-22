@@ -1,4 +1,4 @@
-﻿"""
+"""
 Retrain lightgbm_clv_model.pkl using only currently-available database features.
 
 Root cause: The model was trained when profile/relationship features (rel_*, eng_*, prof_*,
@@ -36,17 +36,23 @@ null_fracs = df.isnull().mean()
 usable = [c for c in cols if c not in META_COLS and c not in LEAKAGE_COLS and null_fracs[c] < 0.20]
 logger.info("Features with <20 pct nulls: %d / %d", len(usable), len(cols))
 
-object_cols = [c for c in usable if df[c].dtype == object]
+# Convert common numeric types that might come back as object (e.g. postgres numeric)
+for c in usable:
+    if "amount" in c or "count" in c or "days" in c or "balance" in c:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+
+numeric_usable = [c for c in usable if pd.api.types.is_numeric_dtype(df[c]) and df[c].dtype != bool]
+for c in numeric_usable:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
+meds = df[numeric_usable].median()
+df[numeric_usable] = df[numeric_usable].fillna(meds)
+
 cat_features = []
+object_cols = [c for c in usable if c not in numeric_usable]
 for c in object_cols:
-    df[c] = pd.Categorical(df[c])
+    df[c] = pd.Categorical(df[c].astype(str))
     cat_features.append(c)
 
-numeric_usable = [c for c in usable if c not in object_cols]
-df[numeric_usable] = df[numeric_usable].fillna(df[numeric_usable].median())
-for c in usable:
-    if df[c].dtype == bool:
-        df[c] = df[c].astype(int)
 
 TARGET_COL = "total_amount_90d"
 usable_no_target = [c for c in usable if c != TARGET_COL]

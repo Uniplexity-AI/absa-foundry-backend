@@ -52,6 +52,11 @@ app.include_router(insight_router)
 app.include_router(outcomes_router)
 app.include_router(intelligence_router)
 app.include_router(pilot_action_router)
+try:
+    from app.api.catalog_routes import router as catalog_router
+    app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
+except ImportError as e:
+    pass
 
 
 @app.get("/health", response_model=PlatformHealth)

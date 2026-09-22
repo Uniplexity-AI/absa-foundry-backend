@@ -407,3 +407,154 @@ def _user_response(user_id, fallback: UserContext | None = None) -> UserResponse
             created_at=datetime.now(timezone.utc),
         )
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+
+# ===========================================================================
+# Admin User Management — ADMIN role required
+# ===========================================================================
+
+def _require_admin(request: Request) -> None:
+    """Raise 403 if the caller is not ADMIN."""
+    user: UserContext | None = getattr(request.state, "user", None)
+    if user is None or "ADMIN" not in user.roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin role required",
+        )
+
+
+@router.get("/admin/users", summary="List all users (ADMIN only)")
+async def list_users(request: Request) -> list[dict]:
+    """Return all users with their assigned roles."""
+    _require_admin(request)
+    try:
+        users = _user_repo.list_users()
+        # Serialize UUIDs and datetimes for JSON
+        for u in users:
+            u["user_id"]      = str(u["user_id"])
+            u["last_login_at"] = u["last_login_at"].isoformat() if u.get("last_login_at") else None
+            u["created_at"]    = u["created_at"].isoformat() if u.get("created_at") else None
+            u["roles"]         = list(u.get("roles") or [])
+        return users
+    except Exception as exc:
+        logger.exception("list_users failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+class CreateUserBody(dict):
+    pass
+
+from pydantic import BaseModel as _BM
+
+class CreateUserRequest(_BM):
+    username: str
+    email: str
+    display_name: str
+    password: str
+    branch_code: str | None = None
+    department: str | None = None
+    roles: list[str] = []
+
+class UpdateUserRequest(_BM):
+    roles: list[str] | None = None
+    is_active: bool | None = None
+    branch_code: str | None = None
+
+
+@router.post("/admin/users", summary="Create a local user (ADMIN only)", status_code=201)
+async def create_user(request: Request, body: CreateUserRequest) -> dict:
+    """Create a new local (non-LDAP) user and optionally assign roles."""
+    _require_admin(request)
+    from shared.auth.password import hash_password
+    try:
+        pw_hash = hash_password(body.password)
+        user_id = _user_repo.create_local_user(
+            username=body.username,
+            email=body.email,
+            display_name=body.display_name,
+            password_hash=pw_hash,
+            branch_code=body.branch_code,
+            department=body.department,
+        )
+        if body.roles:
+            _user_repo.update_user_roles(user_id, body.roles)
+        logger.info("Admin created user %s [by %s]", body.username, getattr(request.state, "user", {}).username if hasattr(request.state, "user") else "admin")
+        return {"user_id": user_id, "username": body.username, "roles": body.roles}
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("create_user failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.patch("/admin/users/{user_id}", summary="Update a user's roles / status (ADMIN only)")
+async def update_user(request: Request, user_id: str, body: UpdateUserRequest) -> dict:
+    """Update roles and/or active status for an existing user."""
+    _require_admin(request)
+    try:
+        if body.roles is not None:
+            _user_repo.update_user_roles(user_id, body.roles)
+        if body.is_active is not None:
+            found = _user_repo.set_active(user_id, body.is_active)
+            if not found:
+                raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+        if body.branch_code is not None:
+            # Direct SQL — lightweight update
+            from shared.database.postgres import get_sync_target_engine
+            from sqlalchemy import text as sa_text
+            engine = get_sync_target_engine()
+            with engine.begin() as conn:
+                conn.execute(
+                    sa_text("UPDATE iam.users SET branch_code = :bc WHERE user_id = :uid"),
+                    {"bc": body.branch_code, "uid": user_id},
+                )
+        return {"user_id": user_id, "updated": True}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("update_user failed for %s", user_id)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.delete("/admin/users/{user_id}", summary="Delete a user permanently (ADMIN only)")
+async def delete_user_route(request: Request, user_id: str) -> dict:
+    """Permanently delete a user from the database."""
+    _require_admin(request)
+    try:
+        found = _user_repo.delete_user(user_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"status": "success", "detail": f"User {user_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("delete_user failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/admin/roles", summary="List all roles (ADMIN only)")
+async def list_roles(request: Request) -> list[dict]:
+    """Return all defined ABSA roles."""
+    _require_admin(request)
+    try:
+        return _user_repo.get_roles()
+    except Exception as exc:
+        logger.exception("list_roles failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+class CreateRoleRequest(_BM):
+    role_name: str
+    description: str = ""
+
+@router.post("/admin/roles", summary="Create a new role (ADMIN only)", status_code=201)
+async def create_role(request: Request, body: CreateRoleRequest) -> dict:
+    """Create a new role in the IAM roles table."""
+    _require_admin(request)
+    try:
+        return _user_repo.create_role(body.role_name, body.description)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("create_role failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

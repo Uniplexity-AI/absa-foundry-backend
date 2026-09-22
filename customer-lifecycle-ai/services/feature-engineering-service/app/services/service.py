@@ -36,6 +36,14 @@ class FeatureService:
         row = self._repo.get_features(customer_id, as_of_date)
         return FeatureSnapshot(**row) if row else None
 
+
+    def get_nearest(self, customer_id: str, as_of_date: date) -> FeatureSnapshot | None:
+        row = self._repo.get_nearest(customer_id, as_of_date)
+        return FeatureSnapshot(**row) if row else None
+
+    def get_gap_activity(self, customer_id: str, start_date: date, end_date: date) -> dict:
+        return self._repo.get_gap_activity(customer_id, start_date, end_date)
+
     def get_latest(self, customer_id: str) -> FeatureSnapshot | None:
         """Fetch the most recent feature snapshot."""
         row = self._repo.get_latest(customer_id)

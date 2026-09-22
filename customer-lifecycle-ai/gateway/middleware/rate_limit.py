@@ -1,4 +1,4 @@
-﻿"""
+"""
 Gateway Rate Limiting Middleware — Redis-based sliding window rate limiter.
 
 Configurable per-route limits. Uses Redis sorted sets for accurate
@@ -28,7 +28,7 @@ class RateLimitRule:
 
 # Default rate limit rules
 DEFAULT_RULES: list[RateLimitRule] = [
-    RateLimitRule("POST", "/auth/login",    max_requests=5,  window_seconds=900),   # 5 attempts / 15 min
+    RateLimitRule("POST", "/auth/login",    max_requests=50, window_seconds=900),   # 50 attempts / 15 min
     RateLimitRule("POST", "/auth/refresh",  max_requests=30, window_seconds=60),    # 30 refreshes / minute
     RateLimitRule("*",    "/admin/*",       max_requests=60, window_seconds=60),    # 60 admin calls / minute
 ]

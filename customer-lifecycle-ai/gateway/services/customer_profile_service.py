@@ -25,11 +25,12 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime, timezone
-from typing import Any
+from typing import Any, Sequence
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+from shared.constants.market_segments import resolve_market_segment
 from shared.database.postgres import get_sync_target_engine
 
 logger = logging.getLogger("gateway.services.customer_profile")
@@ -43,12 +44,17 @@ _PROFILE_SQL = text(
         c.branch_code,
         c.kyc_tier,
         c.nationality,
+        c.gender,
         c.date_of_birth,
         c.customer_since_date,
         c.market_segment_code,
         c.market_segment,
         c.account_number          AS stored_account_number,
         c.national_id,
+        c.mobile_number,
+        c.next_of_kin_name,
+        c.next_of_kin_relationship,
+        c.next_of_kin_phone,
         c.loaded_at,
         pa.account_id             AS derived_account_number,
         pa.account_type,
@@ -165,6 +171,16 @@ def get_customer_profile(
         "not_on_file"
     )
 
+    # The ingest master dataset carries the bank CODE only, and migration 010
+    # deliberately resolves labels in Python ("No SQL CASE here by design"), so a
+    # row written through /api/v1/ingest can hold a code with a NULL label. The
+    # profile tile renders the label, so resolve it here rather than showing a
+    # blank tile for a segment that is actually set.
+    segment_code = row["market_segment_code"]
+    segment_label = row["market_segment"] or (
+        resolve_market_segment(segment_code) if segment_code else None
+    )
+
     return {
         "customer_id": row["customer_id"],
         "full_name": row["full_name"],
@@ -190,10 +206,54 @@ def get_customer_profile(
         "branch_code": row["branch_code"],
         "kyc_tier": row["kyc_tier"],
         "nationality": row["nationality"],
+        "gender": row["gender"],
         "date_of_birth": row["date_of_birth"],
         "age_years": _age_years(row["date_of_birth"], snapshot_date),
         "market_segment_code": row["market_segment_code"],
-        "market_segment": row["market_segment"],
+        "market_segment": segment_label,
+        "mobile_number": row["mobile_number"],
+        "next_of_kin_name": row["next_of_kin_name"],
+        "next_of_kin_relationship": row["next_of_kin_relationship"],
+        "next_of_kin_phone": row["next_of_kin_phone"],
         "snapshot_date": snapshot_date,
         "loaded_at": row["loaded_at"],
+    }
+
+
+_NAMES_SQL = text(
+    """
+    SELECT customer_id, full_name
+    FROM public.customers_clean
+    WHERE customer_id = ANY(:ids)
+      AND NOT is_deleted
+    """
+)
+
+
+def get_customer_names(
+    customer_ids: Sequence[str], engine: Engine | None = None
+) -> dict[str, str]:
+    """Customer id → ``full_name`` for a set of ids, in one query.
+
+    The portfolio/list endpoints proxy the Customer State Service, and
+    ``customer_states`` carries no name column, which is why the My Customers
+    table used to render a synthetic ``Customer <id>`` for every row. Identity
+    names only exist on ``customers_clean``, so they are fetched here in a
+    single batched read instead of one request per row.
+
+    Ids that are unknown, nameless or soft-deleted are simply absent from the
+    result — callers keep their placeholder for those.
+    """
+    ids = [str(c) for c in customer_ids if c]
+    if not ids:
+        return {}
+
+    engine = engine or get_sync_target_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(_NAMES_SQL, {"ids": ids}).mappings().all()
+
+    return {
+        row["customer_id"]: row["full_name"]
+        for row in rows
+        if row["full_name"]
     }
