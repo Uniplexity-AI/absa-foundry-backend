@@ -48,6 +48,8 @@ models/**/*.joblib
 models/**/*.bin
 models/**/*.h5
 models/**/*.pb
+models/**/*.gguf
+*.gguf
 
 # Local DB backup dumps (large, machine-local)
 backups/

@@ -38,6 +38,16 @@ class LLMGateway:
         self._available = self._check_ollama()
 
     def _check_ollama(self) -> bool:
+        # First check if llama-cpp-python is available with local GGUF
+        try:
+            from app.engines.llm_nba_engine import HAS_LLAMA_CPP
+            if HAS_LLAMA_CPP:
+                self._model = "qwen2.5:7b-instruct (llama-cpp)"
+                logger.info("llama-cpp-python available for LLM narration: %s", self._model)
+                return True
+        except Exception:
+            pass
+
         try:
             resp = httpx.get(f"{_OLLAMA_URL}/api/tags", timeout=5.0)
             if resp.status_code == 200:
@@ -47,7 +57,7 @@ class LLMGateway:
                     return True
                 logger.warning("Model %s not found in %s", self._model, models)
         except Exception:
-            logger.info("Ollama not running — deterministic fallback only")
+            logger.info("Ollama not running — checking local fallbacks")
         return False
 
     @property
@@ -70,7 +80,7 @@ class LLMGateway:
             "top_action": top_action,
             "reason_codes": ", ".join(reason_codes),
         })
-        return self._generate(prompt)
+        return self._generate(prompt, max_tokens=500)
 
     def executive_summary(
         self, period: str, total: int, at_risk: int, at_risk_pct: float,
@@ -97,6 +107,44 @@ class LLMGateway:
 
     def _generate(self, prompt: str, max_tokens: int | None = None) -> str:
         num_predict = max_tokens or _MAX_TOKENS
+
+        # First try in-process llama-cpp-python
+        try:
+            from app.engines.llm_nba_engine import get_llama_model, HAS_LLAMA_CPP, _LLAMA_LOCK
+            if HAS_LLAMA_CPP:
+                llm = get_llama_model()
+                messages = [
+                    {
+                        "role": "system", 
+                        "content": (
+                            "You are an AI assistant for ABSA Bank Zambia Relationship Managers. "
+                            "Provide a concise, professional briefing directly to the RM (around 120-180 words across 2 short paragraphs). "
+                            "Do not write an email letter with greetings; directly state the customer's risk factors, "
+                            "summarize what the reason codes indicate, and explain the recommended action. "
+                            "Always finish your thoughts and conclude with a clean final sentence."
+                        )
+                    },
+                    {"role": "user", "content": prompt}
+                ]
+                with _LLAMA_LOCK:
+                    res = llm.create_chat_completion(
+                        messages=messages,
+                        max_tokens=num_predict,
+                        temperature=0.2,
+                        stop=["<|im_start|>", "<|im_end|>"]
+                    )
+                if res and "choices" in res and len(res["choices"]) > 0:
+                    text = res["choices"][0]["message"]["content"].strip()
+                    # If truncated mid-sentence, trim gracefully to last completed sentence
+                    if text and text[-1] not in (".", "!", "?", '"'):
+                        last_punct = max(text.rfind("."), text.rfind("!"), text.rfind("?"))
+                        if last_punct > 50:
+                            text = text[:last_punct + 1]
+                    return text
+        except Exception as e:
+            logger.warning("llama-cpp generate failed: %s", e)
+
+        # Fallback to Ollama if running
         try:
             resp = httpx.post(
                 f"{_OLLAMA_URL}/api/generate",
