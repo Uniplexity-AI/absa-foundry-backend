@@ -403,8 +403,8 @@ def get_balance_forecast(as_of_date: date | None = Query(default=None)):
     from app.services.intelligence_service import intelligence_service
 
     fc = intelligence_service.aum_forecast(as_of_date)
-    if fc.get("as_of_date") is None:
-        return {"as_of_date": None, "status": "NO_DATA"}
+    if fc.get("as_of_date") is None or fc.get("customers", 0) == 0:
+        return {"as_of_date": fc.get("as_of_date"), "status": "NO_DATA"}
 
     snap_date = date.fromisoformat(fc["as_of_date"])
     weeks = len(fc["labels"])

@@ -27,7 +27,11 @@ async def _forward(request: Request, target_path: str) -> JSONResponse:
         try:
             params = dict(request.query_params)
             resp = await client.get(f"{_URL}{target_path}", params=params)
-            return JSONResponse(content=resp.json() if resp.content else None, status_code=resp.status_code)
+            try:
+                content = resp.json() if resp.content else None
+            except Exception:
+                content = {"detail": resp.text}
+            return JSONResponse(content=content, status_code=resp.status_code)
         except httpx.ConnectError:
             raise HTTPException(status_code=502, detail="Forecast Engine unavailable")
         except httpx.TimeoutException:

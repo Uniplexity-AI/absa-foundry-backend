@@ -96,7 +96,7 @@ class IntelligenceService:
 
         resolved = as_of_date or self._repo.latest_feature_date()
         if resolved is None:
-            snapshot = {"as_of_date": None, "scores": [], "profiles": []}
+            snapshot = {"as_of_date": None, "scores": [], "profiles": {}}
         else:
             scores_fut = self._executor.submit(self._portfolio_scores, resolved)
             profiles_fut = self._executor.submit(self._repo.customer_value_profiles, resolved)
