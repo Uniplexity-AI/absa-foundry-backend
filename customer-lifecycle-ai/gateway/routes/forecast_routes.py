@@ -24,10 +24,19 @@ async def proxy_revenue(request: Request):
 async def proxy_balance(request: Request):
     return await _forward(request, "/forecasts/balance")
 
+import re
+
+def _clean_date_param(params: dict) -> dict:
+    if "as_of_date" in params and params["as_of_date"]:
+        d = str(params["as_of_date"]).strip()
+        if re.match(r"^\d{4}-\d{2}0\d{2}$", d):
+            params["as_of_date"] = f"{d[:7]}-{d[8:]}"
+    return params
+
 async def _forward(request: Request, target_path: str) -> JSONResponse:
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            params = dict(request.query_params)
+            params = _clean_date_param(dict(request.query_params))
             resp = await client.get(f"{_URL}{target_path}", params=params)
             try:
                 content = resp.json() if resp.content else None

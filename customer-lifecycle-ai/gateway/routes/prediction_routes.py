@@ -136,6 +136,11 @@ async def _forward(
         try:
             body = await request.body() if request.method in ("POST", "PUT") else None
             params = dict(request.query_params)
+            if "as_of_date" in params and params["as_of_date"]:
+                d = str(params["as_of_date"]).strip()
+                import re
+                if re.match(r"^\d{4}-\d{2}0\d{2}$", d):
+                    params["as_of_date"] = f"{d[:7]}-{d[8:]}"
 
             resp = await client.request(
                 method=request.method,
