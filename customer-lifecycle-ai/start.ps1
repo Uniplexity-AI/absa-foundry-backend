@@ -29,16 +29,16 @@ Write-Host "  :8003 Customer State (L1)"
 Start-Process -NoNewWindow $py -ArgumentList "-m","uvicorn","main:app","--host","0.0.0.0","--port","8004","--reload" -WorkingDirectory "$root\services\prediction-service"
 Write-Host "  :8004 Prediction (L2)"
 
-# Decision :8005
-Start-Process -NoNewWindow $py -ArgumentList "-m","uvicorn","main:app","--host","0.0.0.0","--port","8005","--reload" -WorkingDirectory "$root\services\decision-intelligence-service"
-Write-Host "  :8005 Decision Intelligence (L3)"
+# Decision :8015
+Start-Process -NoNewWindow $py -ArgumentList "-m","uvicorn","main:app","--host","0.0.0.0","--port","8015","--reload" -WorkingDirectory "$root\services\decision-intelligence-service"
+Write-Host "  :8015 Decision Intelligence (L3)"
 
 # Model Management :8006
 Start-Process -NoNewWindow $py -ArgumentList "-m","uvicorn","main:app","--host","0.0.0.0","--port","8006","--reload" -WorkingDirectory "$root\services\model-management-service"
 Write-Host "  :8006 Model Management"
 
 Start-Sleep 10
-$running = netstat -ano 2>$null | Select-String "LISTENING" | Select-String "8002|8003|8004|8005|8006|8080"
+$running = netstat -ano 2>$null | Select-String "LISTENING" | Select-String "8002|8003|8004|8015|8006|8080"
 $count = ($running | Measure-Object -Line).Lines
 
 if ($count -eq 6) {

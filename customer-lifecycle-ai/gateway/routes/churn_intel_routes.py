@@ -9,7 +9,9 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/v1/churn-intel", tags=["churn-intel"])
 
-_URL       = "http://127.0.0.1:8005"   # Decision Intelligence
+import os
+
+_URL       = os.getenv("DECISION_SERVICE_URL", "http://127.0.0.1:8015")   # Decision Intelligence
 _STATE_URL = "http://127.0.0.1:8003"   # Customer State Service
 
 @router.get("/drivers")

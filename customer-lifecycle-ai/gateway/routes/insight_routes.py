@@ -13,7 +13,9 @@ from shared.config.settings import settings
 
 router = APIRouter(prefix="/api/v1/insights", tags=["insights"])
 
-_URL = "http://127.0.0.1:8005"
+import os
+
+_URL = os.getenv("DECISION_SERVICE_URL", "http://127.0.0.1:8015")
 
 # CPU narration of ~300 tokens with a 7B model needs well over the default 30s
 _LLM_TIMEOUT = settings.llm_gateway_timeout_seconds

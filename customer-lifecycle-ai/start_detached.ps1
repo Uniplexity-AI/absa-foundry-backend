@@ -15,7 +15,7 @@ $services = @(
     @{ Name = "Feature"; Dir = "$root\services\feature-engineering-service"; Cmd = "`"$py`" -m uvicorn main:app --host 0.0.0.0 --port 8002" },
     @{ Name = "State"; Dir = "$root\services\customer-state-service"; Cmd = "`"$py`" -m uvicorn main:app --host 0.0.0.0 --port 8003" },
     @{ Name = "Prediction"; Dir = "$root\services\prediction-service"; Cmd = "`"$py`" -m uvicorn main:app --host 0.0.0.0 --port 8004" },
-    @{ Name = "Decision"; Dir = "$root\services\decision-intelligence-service"; Cmd = "`"$py`" -m uvicorn main:app --host 0.0.0.0 --port 8005" },
+    @{ Name = "Decision"; Dir = "$root\services\decision-intelligence-service"; Cmd = "`"$py`" -m uvicorn main:app --host 0.0.0.0 --port 8015" },
     @{ Name = "Model"; Dir = "$root\services\model-management-service"; Cmd = "`"$py`" -m uvicorn main:app --host 0.0.0.0 --port 8006" }
 )
 
@@ -30,5 +30,5 @@ foreach ($svc in $services) {
 Write-Host "Waiting 8 seconds for startup..."
 Start-Sleep -Seconds 8
 
-$ports = 8080, 8002, 8003, 8004, 8005, 8006
+$ports = 8080, 8002, 8003, 8004, 8015, 8006
 Get-NetTCPConnection -LocalPort $ports -ErrorAction SilentlyContinue | Select-Object LocalPort, OwningProcess, State

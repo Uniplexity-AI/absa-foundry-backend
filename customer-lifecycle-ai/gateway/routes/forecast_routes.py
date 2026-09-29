@@ -7,7 +7,9 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/v1/forecasts", tags=["forecasts"])
 
-_URL = "http://127.0.0.1:8005"
+import os
+
+_URL = os.getenv("DECISION_SERVICE_URL", "http://127.0.0.1:8015")
 
 @router.get("/churn")
 async def proxy_churn_forecast(request: Request):
