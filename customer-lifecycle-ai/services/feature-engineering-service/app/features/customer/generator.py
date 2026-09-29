@@ -1,17 +1,17 @@
-﻿"""
-Customer Profile Generator — Domain 1 of the Customer Feature Store.
+"""
+Customer Profile Generator  Domain 1 of the Customer Feature Store.
 
 Computes slowly-changing customer attributes from customers_clean.
 All features are point-in-time correct (as_of_date constrained).
 
 ID Mapping: customer_features uses CUST##### IDs while customers_clean uses
-C01###### IDs. We join via RIGHT(id, 5) which maps CUST00001→C01000001.
+C01###### IDs. We join via RIGHT(id, 5) which maps CUST00001?C01000001.
 We also deduplicate customers_clean via DISTINCT ON (multiple batch loads).
 
 Bank market segment (authoritative, single source of truth):
-  * customers_clean.market_segment_code  — raw bank value (preserved)
-  * customer_features.market_segment     — deterministic label resolved here via
-    shared/constants/market_segments.py (NO SQL CASE — single implementation).
+  * customers_clean.market_segment_code   raw bank value (preserved)
+  * customer_features.market_segment      deterministic label resolved here via
+    shared/constants/market_segments.py (NO SQL CASE  single implementation).
   * Existing customer_segment (= customer_type) semantics are left untouched
     for backward compatibility (see docs/ml/market-segment-integration.md).
 """
@@ -50,11 +50,11 @@ class CustomerProfileGenerator:
                 """
                 UPDATE customer_features cf
                 SET
-                    customer_segment       = cc.customer_type,
+                    customer_segment       = cc.market_segment,
                     market_segment_code    = cc.market_segment_code,
-                    customer_tenure_days   = (%(d)s::date - cc.activation_date::date),
+                    customer_tenure_days   = (%(d)s::date - cc.customer_since_date::date),
                     age_years              = EXTRACT(YEAR FROM AGE(%(d)s::date, cc.date_of_birth::date)),
-                    onboarding_channel     = cc.onboarding_channel,
+                    onboarding_channel     = NULL,
                     prof_primary_branch    = cc.branch_code
                 FROM (
                     SELECT DISTINCT ON (customer_id) *
@@ -70,7 +70,7 @@ class CustomerProfileGenerator:
 
             # Stage 1b: Resolve the deterministic market_segment label.
             # Done in Python from the single authoritative mapping module
-            # (shared/constants/market_segments.py). Unknown/NULL codes → 'Other'
+            # (shared/constants/market_segments.py). Unknown/NULL codes ? 'Other'
             # but the original code is preserved in market_segment_code above.
             cur.execute(
                 """

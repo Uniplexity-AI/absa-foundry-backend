@@ -49,7 +49,7 @@ PERMISSIONS: list[RoutePermission] = [
     # wildcard would still authorise them. Only routes outside
     # /api/v1/customers/** can be restricted. To also allow RMs, add
     # "RELATIONSHIP_MANAGER" to the list below.
-    RoutePermission("*", "/api/v1/customer-admin/**", ["OPERATIONS"]),
+    RoutePermission("*", "/api/v1/customer-admin/**", ["OPERATIONS", "RELATIONSHIP_MANAGER"]),
     # ---- Data ingest (CSV onboarding + core-banking pull) — RM workspace & Ops ----
     RoutePermission("*", "/api/v1/ingest/**", ["RELATIONSHIP_MANAGER", "OPERATIONS"]),
     RoutePermission("*", "/api/v1/predictions/**",     ["RELATIONSHIP_MANAGER"]),

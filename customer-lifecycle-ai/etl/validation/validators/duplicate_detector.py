@@ -52,6 +52,14 @@ class DuplicateDetector(BaseValidator):
     ) -> list[RecordValidationResult]:
         """Detect duplicates across all records in the DataFrame."""
         self.reset()
+        if not self.config.duplicate_detection_enabled:
+            if existing_results is not None:
+                return existing_results
+            return [
+                RecordValidationResult(record_index=idx, is_valid=True)
+                for idx in range(len(df))
+            ]
+
         results: list[RecordValidationResult] = []
 
         for idx, (_, row) in enumerate(df.iterrows()):
@@ -229,9 +237,15 @@ class DuplicateDetector(BaseValidator):
         Returns:
             Fuzzy hash string.
         """
-        # Use a subset of keys for fuzzy matching — must include transaction_date
-        # to avoid flagging legitimate repeat transactions on different dates
-        fuzzy_fields = ["customer_id", "account_id", "branch_code", "transaction_date", "transaction_type", "channel", "currency"]
+        default_keys = [
+            "customer_id", "account_id", "branch_code",
+            "transaction_date", "amount",
+            "transaction_type", "channel", "currency",
+        ]
+        if self.config.duplicate_keys != default_keys:
+            fuzzy_fields = self.config.duplicate_keys
+        else:
+            fuzzy_fields = ["customer_id", "account_id", "branch_code", "transaction_date", "transaction_type", "channel", "currency"]
         fuzzy_values: dict[str, object] = {}
         for field in fuzzy_fields:
             if field in row.index:

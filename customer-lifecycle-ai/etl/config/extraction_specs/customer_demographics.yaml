@@ -1,9 +1,9 @@
-# Customer Demographics — Table 7 → demographics_clean
+# Customer Demographics — a_africa_zam_base_customer_employment_daily_zm → demographics_clean
 # =============================================================================
-# Maps the bank's demographic table (anonymised "Table 7") into demographics_clean.
+# Maps ABSA demographic data into demographics_clean.
 #
-# SOURCE TABLE NAME IS A PLACEHOLDER — replace before running:
-#   public.customer_demographics → your real Table 7 name
+# ABSA source table (confirmed):
+#   a_africa_zam_base_customer_employment_daily_zm  → demographics, employment, address
 #
 # Field mapping (source → backend):
 #   customer_number  → customer_id
@@ -40,10 +40,10 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "${source_tables.customer_demographics}"   # see pilot_data_config.yaml
+  table: "a_africa_zam_base_customer_employment_daily_zm"
   alias: "demo"
   select_fields:
-    - field: "customer_number"            # TODO: confirm the key column name
+    - field: "customer_number"
       alias: "customer_id"
       validation: { type: "str", required: true }
     - field: "marital_status"

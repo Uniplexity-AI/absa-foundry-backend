@@ -27,7 +27,7 @@ def _get_pool() -> pool.ThreadedConnectionPool:
     global _audit_pool
     if _audit_pool is None:
         _audit_pool = pool.ThreadedConnectionPool(
-            minconn=1, maxconn=5, dsn=settings.database_url_sync,
+            minconn=1, maxconn=5, dsn=settings.database_target_url_sync,
         )
     return _audit_pool
 

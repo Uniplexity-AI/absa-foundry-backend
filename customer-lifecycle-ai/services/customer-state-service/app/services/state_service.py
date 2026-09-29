@@ -66,12 +66,15 @@ class StateService:
             cur = conn.cursor()
             cur.execute(
                 f"""
-                SELECT {self._cust_col}, {self._as_of_col},
-                       days_since_last_txn, engagement_score,
-                       rel_customer_status, risk_dormant_indicator,
-                       txn_count_90d
-                FROM {self._features_table}
-                WHERE {self._as_of_col} = %(d)s::date
+                SELECT c.customer_id, %(d)s::date as {self._as_of_col},
+                       f.days_since_last_txn, f.engagement_score,
+                       f.rel_customer_status, f.risk_dormant_indicator,
+                       f.txn_count_90d
+                FROM public.customers_clean c
+                LEFT JOIN {self._features_table} f
+                  ON c.customer_id = f.customer_id
+                 AND f.{self._as_of_col} = %(d)s::date
+                WHERE c.is_deleted = false
                 """,
                 {"d": effective_date},
             )

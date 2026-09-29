@@ -2,7 +2,7 @@
 # Run: .\start.ps1
 
 $root = $PSScriptRoot
-$py = "$root\.venv\Scripts\python.exe"
+$py = if (Test-Path "$root\.venv\Scripts\python.exe") { "$root\.venv\Scripts\python.exe" } else { (Get-Command python).Source }
 $tailscaleIP = (tailscale ip -4 2>$null) -replace '\s',''
 
 Write-Host "`nStarting 5 services..." -ForegroundColor Cyan

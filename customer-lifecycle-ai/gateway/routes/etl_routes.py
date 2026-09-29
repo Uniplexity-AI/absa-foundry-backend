@@ -20,6 +20,7 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
 from shared.database.session import get_target_session
 from etl.repositories.etl_repository import ETLRepository
@@ -63,6 +64,7 @@ class ConfigSaveRequest(BaseModel):
 class TriggerRequest(BaseModel):
     config_name: str
     dry_run: bool = False
+    sync: bool = False
 
 
 class TriggerResponse(BaseModel):
@@ -215,7 +217,10 @@ async def trigger_pipeline(body: TriggerRequest):
             cmd = [sys.executable, str(_RUN_ETL), "--extraction-spec", str(config_path)]
             if body.dry_run:
                 cmd.append("--dry-run")
-            subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent))
+            if body.sync:
+                subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), check=True)
+            else:
+                subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent))
         return TriggerResponse(
             status="triggered", config_name=body.config_name,
             message=f"Pipeline started — logs: logs/{log_name}",
@@ -337,3 +342,38 @@ async def get_run_detail(
         )
 
     return ETLRunDetailResponse(run=run_detail, validation=validation_detail)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Metadata Endpoint for Visual Builder
+# ═══════════════════════════════════════════════════════════════════
+@router.get("/metadata/tables")
+async def get_db_metadata(
+    db: AsyncSession = Depends(get_target_session)
+):
+    """Fetch all tables and their columns from the database.
+    Used by the ETL Visual Builder to populate dropdowns.
+    """
+    query = text("""
+        SELECT table_name, column_name, data_type
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+        ORDER BY table_name, ordinal_position;
+    """)
+    result = await db.execute(query)
+    
+    metadata = {}
+    for row in result:
+        t_name = row.table_name
+        c_name = row.column_name
+        d_type = row.data_type
+        if t_name not in metadata:
+            metadata[t_name] = []
+        metadata[t_name].append({
+            "name": c_name,
+            "type": d_type
+        })
+        
+    return metadata
+
+

@@ -1,9 +1,9 @@
-# Employment / Income — Table 9 → demographics_clean
+# Employment / Income — a_africa_zam_base_customer_employment_daily_zm → demographics_clean
 # =============================================================================
-# Maps the bank's employment table (anonymised "Table 9") into demographics_clean.
+# Maps ABSA employment and income data into demographics_clean.
 #
-# SOURCE TABLE NAME IS A PLACEHOLDER — replace before running:
-#   public.employment_income → your real Table 9 name
+# ABSA source table (confirmed):
+#   a_africa_zam_base_customer_employment_daily_zm  → employment status, income, employer
 #
 # Field mapping (source → backend):
 #   customer_number   → customer_id            (KEY — TODO: confirm the join key;
@@ -40,10 +40,10 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "${source_tables.employment_income}"        # see pilot_data_config.yaml
+  table: "a_africa_zam_base_customer_employment_daily_zm"
   alias: "emp"
   select_fields:
-    - field: "customer_number"             # TODO: confirm the join key column name
+    - field: "customer_number"
       alias: "customer_id"
       validation: { type: "str", required: true }
     - field: "employment_status"

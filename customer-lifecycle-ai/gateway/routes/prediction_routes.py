@@ -71,6 +71,15 @@ async def proxy_simulate(request: Request):
     return await _forward(request, _PREDICTION_SERVICE_URL, "/predict/simulate")
 
 
+@router.post("/batch")
+async def proxy_batch(request: Request):
+    """Forward full batch scoring to Prediction Service."""
+    return await _forward(
+        request, _PREDICTION_SERVICE_URL, "/predict/batch",
+        timeout=_VALUE_BATCH_TIMEOUT,
+    )
+
+
 @router.post("/value-batch")
 async def proxy_value_batch(request: Request):
     """Forward Value Erosion + Future Value batch scoring to the Prediction Service.

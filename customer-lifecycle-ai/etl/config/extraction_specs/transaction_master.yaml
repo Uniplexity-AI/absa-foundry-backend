@@ -1,122 +1,120 @@
-# Transaction Master — Unified Transaction View
-# UNIONs 3 source tables: customer_transactions + core_batch1 + core_batch2.
-# Each CTE normalizes column names, then UNION ALL merges them.
+# Transaction Master Extraction Spec — ABSA Core Transactions
+# Extracts unified transaction stream directly from ABSA DW:
+#   - a_brains_trans_zam_base_entries_zm
 #
 # Usage:
-#   python run_etl.py --extraction-spec etl/config/extraction_specs/transaction_master.yaml
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/transaction_master.yaml --force
 
 version: "1.0"
 dataset_name: "transaction_master"
 trusted_config: true
-description: "Unified transaction stream from customer_transactions + core_batch1 + core_batch2 with normalized column names."
+description: "Unified transaction stream from ABSA DW table a_brains_trans_zam_base_entries_zm into customer_transactions_clean."
 
-# ---- Pre-aggregation CTEs: normalize each source, then UNION ----
-pre_aggregations:
-  - name: "all_txns"
-    from_table: "public.customer_transactions"
-    alias: "src"
-    aggregations:
-      - function: COUNT
-        field: "id"
-        alias: txn_count
-      - function: SUM
-        field: "amount"
-        alias: total_amount
-      - function: AVG
-        field: "amount"
-        alias: avg_amount
-      - function: MAX
-        field: "transaction_date"
-        alias: last_transaction_date
-    group_by:
-      - "src.customer_id"
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
 
-# For core_batch1 + core_batch2, we need UNION in raw SQL.
-# Since the Dynamic Extractor doesn't yet support UNION natively,
-# we use a CTE that selects from the first table; batch 2 data
-# would be processed separately or via a SQL-level UNION view.
-#
-# Short-term: process each table independently and INSERT into
-# the same customer_transactions_clean target table.
-
-# ---- Driving table: main transaction table ----
 primary_entity:
-  table: "public.customer_transactions"
+  table: "a_brains_trans_zam_base_entries_zm"
   alias: "txn"
   select_fields:
     - field: "id"
-      alias: "source_id"
-      validation: { type: "int", required: true }
-    - field: "customer_id"
-      alias: "customer_id"
-      validation: { type: "str", required: true }
-    - field: "account_id"
-      alias: "account_id"
-      validation: { type: "str", required: false }
-    - field: "branch_code"
-      alias: "branch_code"
-      validation: { type: "str", required: false }
-    - field: "transaction_date"
-      alias: "transaction_date"
-      validation: { type: "datetime", required: true }
-    - field: "transaction_type"
-      alias: "transaction_type"
-      validation: { type: "str", required: true }
-    - field: "channel"
-      alias: "channel"
-      validation: { type: "str", required: false, default: "UNKNOWN" }
-    - field: "currency"
-      alias: "currency"
-      validation: { type: "str", required: false, default: "ZMW" }
-    - field: "amount"
-      alias: "amount"
-      validation: { type: "float", required: true }
-    - field: "data_issue"
-      alias: "data_issue"
-      validation: { type: "str", required: false }
+      alias: "transaction_id"
+      validation:
+        type: "int"
+        required: true
 
-# ---- Transform: type casts & value standardization ----
+    - field: "customer_number"
+      alias: "customer_id"
+      validation:
+        type: "str"
+        required: true
+
+    - field: "bus_date"
+      alias: "transaction_date"
+      validation:
+        type: "datetime"
+        required: true
+
+    - field: "local_amount"
+      alias: "raw_amount"
+      validation:
+        type: "float"
+        required: true
+
+    - field: "narrative"
+      alias: "merchant_category"
+      validation:
+        type: "str"
+        required: false
+
+calculated_fields:
+  - name: amount
+    expression: "ABS(txn.local_amount)"
+    output_type: float
+  - name: transaction_type
+    expression: "CASE WHEN txn.local_amount < 0 THEN 'DEBIT' ELSE 'CREDIT' END"
+    output_type: str
+  - name: channel
+    expression: "CASE WHEN UPPER(COALESCE(txn.narrative, '')) LIKE '%ATM%' THEN 'ATM' WHEN UPPER(COALESCE(txn.narrative, '')) LIKE '%POS%' THEN 'POS' WHEN UPPER(COALESCE(txn.narrative, '')) LIKE '%ONLINE%' OR UPPER(COALESCE(txn.narrative, '')) LIKE '%WEB%' THEN 'ONLINE' WHEN UPPER(COALESCE(txn.narrative, '')) LIKE '%MOBILE%' OR UPPER(COALESCE(txn.narrative, '')) LIKE '%USSD%' THEN 'MOBILE' WHEN UPPER(COALESCE(txn.narrative, '')) LIKE '%BRANCH%' THEN 'BRANCH' ELSE 'BRANCH' END"
+    output_type: str
+  - name: currency
+    expression: "'ZMW'"
+    output_type: str
+
+validation:
+  enabled: true
+  mandatory_fields:
+    - transaction_id
+    - customer_id
+    - transaction_date
+    - amount
+  accepted_transaction_types:
+    - CREDIT
+    - DEBIT
+    - TRANSFER
+    - PAYMENT
+  accepted_channels:
+    - BRANCH
+    - ATM
+    - POS
+    - ONLINE
+    - MOBILE
+    - USSD
+    - AGENT
+  accepted_currencies:
+    - ZMW
+    - USD
+    - ZAR
+
 transform:
   type_casts:
-    transaction_date: datetime
+    transaction_id: str
     amount: float
-  standardization:
-    - field_name: transaction_type
-      mappings:
-        DR: DEBIT
-        CR: CREDIT
-        dr: DEBIT
-        cr: CREDIT
-        Debit: DEBIT
-        Credit: CREDIT
-      default_value: UNKNOWN
-    - field_name: channel
-      mappings:
-        ATM: ATM
-        POS: POS
-        Mobile: MOBILE
-        mobile: MOBILE
-        Branch: BRANCH
-        branch: BRANCH
-        Online: ONLINE
-        online: ONLINE
-      default_value: UNKNOWN
-    - field_name: currency
-      mappings:
-        ZMW: ZMW
-        zmw: ZMW
-        USD: USD
-        usd: USD
 
-# Target: all transaction specs write to the same clean table
 target:
-  clean_table: customer_transactions_clean
+  clean_table: "customer_transactions_clean"
+  rejected_table: "customer_transactions_rejected"
   data_columns:
+    - transaction_id
     - customer_id
-    - account_id
-    - branch_code
     - transaction_date
+    - amount
     - transaction_type
     - channel
+    - merchant_category
     - currency
-    - amount
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+streaming:
+  enabled: true
+  batch_size: 5000
+  fetch_strategy: cursor

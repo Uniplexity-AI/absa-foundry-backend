@@ -1,68 +1,71 @@
-# Loan Summary — Per-customer loan presence
-# Pre-aggregates loans_los per customer. Unlocks: rel_has_loan
+# Loan Summary — ABSA DW ebox_loan_details
+# Extracts loan details per customer into loans_clean
 #
 # Usage:
-#   python run_etl.py --extraction-spec etl/config/extraction_specs/loan_summary.yaml
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/loan_summary.yaml --force
 
 version: "1.0"
 dataset_name: "loan_summary"
 trusted_config: true
-description: "Per-customer loan data: types, status."
+description: "Per-customer loan data from ABSA DW ebox_loan_details into loans_clean."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
 
 primary_entity:
-  table: "public.loans_los"
+  table: "ebox_loan_details"
   alias: "loan"
   select_fields:
-    - field: "loan_id"
+    - field: "id"
       alias: "loan_id"
-      validation: { type: "str", required: true }
-    - field: "customer_id"
+      validation: { type: "int", required: true }
+    - field: "customer_number"
       alias: "customer_id"
       validation: { type: "str", required: true }
-    - field: "loan_type"
-      alias: "loan_type"
-      validation: { type: "str", required: false }
-    - field: "status"
-      alias: "status"
-      validation: { type: "str", required: false }
-    - field: "origination_date"
+    - field: "event_start_date"
       alias: "origination_date"
       validation: { type: "datetime", required: false }
 
-# Transform: dates are text → datetime; standardize status & loan_type
+calculated_fields:
+  - name: loan_type
+    expression: "CASE WHEN loan.outstanding_mortgage > 0 THEN 'MORTGAGE' ELSE 'PERSONAL' END"
+    output_type: str
+  - name: status
+    expression: "'ACTIVE'"
+    output_type: str
+
+validation:
+  enabled: true
+  mandatory_fields:
+    - loan_id
+    - customer_id
+  duplicate_keys:
+    - loan_id
+
 transform:
   type_casts:
-    origination_date: datetime
-  standardization:
-    - field_name: status
-      mappings:
-        Active: ACTIVE
-        active: ACTIVE
-        Paid Off: PAID_OFF
-        paid off: PAID_OFF
-        Default: DEFAULTED
-        default: DEFAULTED
-        Written Off: WRITTEN_OFF
-        written off: WRITTEN_OFF
-      default_value: UNKNOWN
-    - field_name: loan_type
-      mappings:
-        Personal: PERSONAL
-        personal: PERSONAL
-        Mortgage: MORTGAGE
-        mortgage: MORTGAGE
-        Auto: AUTO
-        auto: AUTO
-        Business: BUSINESS
-        business: BUSINESS
-      default_value: UNKNOWN
+    loan_id: str
 
-# Target: loan data → loans_clean
 target:
-  clean_table: loans_clean
+  clean_table: "loans_clean"
   data_columns:
     - loan_id
     - customer_id
     - loan_type
     - status
     - origination_date
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+streaming:
+  enabled: true
+  batch_size: 5000
+  fetch_strategy: cursor

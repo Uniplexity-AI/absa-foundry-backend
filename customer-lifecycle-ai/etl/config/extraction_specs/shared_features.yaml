@@ -1,0 +1,317 @@
+# Shared Feature Foundation — ABSA Banking ML
+# Grain: one row per customer × snapshot_month
+# Source tables: a_africa_zam_base_customer (primary),
+#                a_africa_zam_base_customers_new,
+#                a_africa_zam_base_customer_employment_daily_zm,
+#                a_brains_trans_zam_base_entries_zm,
+#                ebox_loan_details
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/shared_features.yaml \
+#                     --mode training --snapshot 2024-06-01
+
+version: "1.0"
+dataset_name: "shared_features"
+trusted_config: true
+description: >
+  Shared feature foundation for all ABSA ML models.
+  Joins customer master, employment, product counts, RFM aggregates,
+  cash-flow aggregates and loan attributes into one row per customer per snapshot.
+
+# ---- Parameters injected at runtime ----
+# snapshot_month: YYYY-MM-DD  (first of month)
+# history_start:  YYYY-MM-DD  (snapshot_month minus FEATURE_HISTORY_MONTHS)
+
+# ---- Driving table ----
+primary_entity:
+  table: "a_africa_zam_base_customer"
+  alias: "c"
+  select_fields:
+    - field: "customer_number"
+      alias: "customer_id"
+      validation: {type: "str", required: true}
+    - field: "length_years"
+      validation: {type: "int"}
+    - field: "length_months"
+      validation: {type: "int"}
+
+# ---- Pre-aggregations (run on DB before join — prevents row multiplication) ----
+pre_aggregations:
+
+  - name: "rfm"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "rfm"
+    filter: "COALESCE(rfm.bus_date, rfm.posting_date) BETWEEN :history_start AND :snapshot_end"
+    group_by: ["rfm.customer_number"]
+    aggregations:
+      - function: MAX
+        field: "COALESCE(bus_date, posting_date)"
+        alias: last_txn_date
+      - function: COUNT_FILTER
+        field: "*"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '30 days'"
+        alias: frequency_30d
+      - function: COUNT_FILTER
+        field: "*"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
+        alias: frequency_90d
+      - function: COUNT_FILTER
+        field: "*"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '12 months'"
+        alias: frequency_12m
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '30 days'"
+        alias: monetary_30d
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
+        alias: monetary_90d
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '12 months'"
+        alias: monetary_12m
+      - function: MAX_FILTER
+        field: "ABS(local_amount)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '12 months'"
+        alias: max_transaction_value_12m
+      - function: COUNT_DISTINCT_FILTER
+        field: "COALESCE(bus_date, posting_date)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '30 days'"
+        alias: active_days_30d
+      - function: COUNT_DISTINCT_FILTER
+        field: "COALESCE(bus_date, posting_date)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
+        alias: active_days_90d
+
+  - name: "cashflow"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "cf"
+    filter: "COALESCE(cf.bus_date, cf.posting_date) BETWEEN :history_start AND :snapshot_end"
+    group_by: ["cf.customer_number"]
+    aggregations:
+      - function: SUM_FILTER
+        field: "local_amount"
+        filter: "local_amount > 0 AND COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '30 days'"
+        alias: credits_30d
+      - function: SUM_FILTER
+        field: "local_amount"
+        filter: "local_amount > 0 AND COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
+        alias: credits_90d
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "local_amount < 0 AND COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '30 days'"
+        alias: debits_30d
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "local_amount < 0 AND COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
+        alias: debits_90d
+
+  - name: "loan_feats"
+    from_table: "ebox_loan_details"
+    alias: "lf"
+    group_by: ["lf.customer_number"]
+    aggregations:
+      - function: MAX
+        field: "net_monthly_sal"
+        alias: net_monthly_sal
+      - function: MAX
+        field: "interest_rate"
+        alias: interest_rate
+      - function: MAX
+        field: "outstanding_mortgage"
+        alias: outstanding_mortgage
+      - function: MAX
+        field: "other_bank_name"
+        alias: other_bank_name
+      - function: MAX
+        field: "other_bank_cde"
+        alias: other_bank_cde
+      - function: MAX
+        field: "campaign_cde"
+        alias: acquisition_campaign
+      - function: MAX
+        field: "barclaycard_grade"
+        alias: barclaycard_grade
+
+# ---- Joins ----
+joins:
+  - table: "a_africa_zam_base_customers_new"
+    alias: "cn"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "cn.customer_number"
+    select_fields:
+      - field: "sex"
+      - field: "market_segment"
+      - field: "risk_level"
+      - field: "risk_score"
+      - field: "credit_rating"
+      - field: "solicitation_channel"
+      - field: "current_count"
+      - field: "savings_count"
+      - field: "investment_count"
+      - field: "secured_count"
+      - field: "unsecured_count"
+      - field: "trade_or_insurance_count"
+
+  - table: "a_africa_zam_base_customer_employment_daily_zm"
+    alias: "ce"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "ce.customer_number"
+    select_fields:
+      - field: "district_or_region"
+        alias: "geo_region"
+      - field: "town_or_city"
+      - field: "country"
+      - field: "gross_income"
+      - field: "other_income"
+      - field: "job_title"
+      - field: "employment_type"
+      - field: "employment_status"
+
+  - table: "rfm"
+    alias: "rfm"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "rfm.customer_number"
+    select_fields:
+      - {field: last_txn_date}
+      - {field: frequency_30d}
+      - {field: frequency_90d}
+      - {field: frequency_12m}
+      - {field: monetary_30d}
+      - {field: monetary_90d}
+      - {field: monetary_12m}
+      - {field: max_transaction_value_12m}
+      - {field: active_days_30d}
+      - {field: active_days_90d}
+
+  - table: "cashflow"
+    alias: "cf"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "cf.customer_number"
+    select_fields:
+      - {field: credits_30d}
+      - {field: credits_90d}
+      - {field: debits_30d}
+      - {field: debits_90d}
+
+  - table: "loan_feats"
+    alias: "lf"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "lf.customer_number"
+    select_fields:
+      - {field: net_monthly_sal}
+      - {field: interest_rate}
+      - {field: outstanding_mortgage}
+      - {field: other_bank_name}
+      - {field: other_bank_cde}
+      - {field: acquisition_campaign}
+      - {field: barclaycard_grade}
+
+# ---- Calculated fields (SQL expressions, evaluated in Python post-join) ----
+calculated_fields:
+  - name: tenure_months
+    expression: "COALESCE(length_years, 0) * 12 + COALESCE(length_months, 0)"
+    output_type: int
+  - name: num_active_products
+    expression: "COALESCE(current_count,0) + COALESCE(savings_count,0) + COALESCE(investment_count,0) + COALESCE(secured_count,0) + COALESCE(unsecured_count,0) + COALESCE(trade_or_insurance_count,0)"
+    output_type: int
+  - name: has_investment
+    expression: "1 if investment_count and investment_count > 0 else 0"
+    output_type: int
+  - name: has_mortgage
+    expression: "1 if outstanding_mortgage and outstanding_mortgage > 0 else 0"
+    output_type: int
+  - name: income_proxy
+    expression: "net_monthly_sal if net_monthly_sal else gross_income"
+    output_type: float
+  - name: avg_transaction_value_12m
+    expression: "monetary_12m / frequency_12m if frequency_12m and frequency_12m > 0 else None"
+    output_type: float
+  - name: net_cashflow_30d
+    expression: "COALESCE(credits_30d, 0) - COALESCE(debits_30d, 0)"
+    output_type: float
+  - name: net_cashflow_90d
+    expression: "COALESCE(credits_90d, 0) - COALESCE(debits_90d, 0)"
+    output_type: float
+  - name: inbound_vs_outbound_ratio_90d
+    expression: "credits_90d / debits_90d if debits_90d and debits_90d > 0 else None"
+    output_type: float
+  - name: recency_days
+    expression: "(:snapshot_end - last_txn_date).days if last_txn_date else None"
+    output_type: int
+
+# ---- Target ----
+target:
+  clean_table: "feature_store_shared"
+  rejected_table: "feature_store_shared_rejected"
+  data_columns:
+    - customer_id
+    - snapshot_month
+    - snapshot_date
+    - tenure_months
+    - sex
+    - geo_region
+    - town_or_city
+    - country
+    - gross_income
+    - other_income
+    - income_proxy
+    - job_title
+    - employment_type
+    - employment_status
+    - market_segment
+    - risk_level
+    - risk_score
+    - credit_rating
+    - barclaycard_grade
+    - solicitation_channel
+    - acquisition_campaign
+    - num_active_products
+    - has_investment
+    - current_count
+    - savings_count
+    - investment_count
+    - secured_count
+    - unsecured_count
+    - has_mortgage
+    - recency_days
+    - frequency_30d
+    - frequency_90d
+    - frequency_12m
+    - monetary_30d
+    - monetary_90d
+    - monetary_12m
+    - max_transaction_value_12m
+    - active_days_30d
+    - active_days_90d
+    - avg_transaction_value_12m
+    - credits_30d
+    - credits_90d
+    - debits_30d
+    - debits_90d
+    - net_cashflow_30d
+    - net_cashflow_90d
+    - inbound_vs_outbound_ratio_90d
+    - interest_rate
+    - other_bank_name
+    - other_bank_cde
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+# ---- Streaming ----
+streaming:
+  enabled: true
+  batch_size: 5000
+  fetch_strategy: cursor

@@ -1,6 +1,6 @@
 # Detached service runner for ABSA Backend
 $root = $PSScriptRoot
-$py = "$root\.venv\Scripts\python.exe"
+$py = if (Test-Path "$root\.venv\Scripts\python.exe") { "$root\.venv\Scripts\python.exe" } else { (Get-Command python).Source }
 $env:PYTHONPATH = $root
 
 # Terminate existing services first

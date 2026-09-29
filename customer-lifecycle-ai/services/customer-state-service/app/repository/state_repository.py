@@ -1,4 +1,4 @@
-﻿"""State Repository — Data access for customer_states table.
+"""State Repository — Data access for customer_states table.
 
 Mirrors FeatureRepository exactly:
 - psycopg2 (sync) with connection timeouts + TCP keepalives
@@ -64,13 +64,15 @@ LIMIT %(limit)s
 
 PORTFOLIO_SQL = f"""
 SELECT
-    state,
+    COALESCE(s.state, 'NEW') AS state,
     COUNT(*) AS count,
     ROUND(COUNT(*)::numeric / NULLIF(SUM(COUNT(*)) OVER(), 0) * 100, 1) AS pct
-FROM customer_states
-WHERE as_of_date = %(as_of_date)s
-{_LIVE_CUSTOMER_FILTER}
-GROUP BY state
+FROM customers_clean c
+LEFT JOIN customer_states s 
+  ON c.customer_id = s.customer_id 
+ AND s.as_of_date = %(as_of_date)s
+WHERE c.is_deleted = false
+GROUP BY COALESCE(s.state, 'NEW')
 ORDER BY COUNT(*) DESC
 """
 
@@ -83,12 +85,18 @@ ORDER BY customer_id, as_of_date DESC
 """
 
 LIST_ALL_SQL = f"""
-SELECT customer_id, as_of_date, state, classification_rules,
-       health_score, component_scores, computed_at
-FROM customer_states
-WHERE as_of_date = %(as_of_date)s
-{_LIVE_CUSTOMER_FILTER}
-ORDER BY customer_id
+SELECT c.customer_id, %(as_of_date)s as as_of_date, 
+       COALESCE(s.state, 'NEW') as state, 
+       COALESCE(s.classification_rules, '{{}}'::jsonb) as classification_rules,
+       s.health_score, 
+       COALESCE(s.component_scores, '{{}}'::jsonb) as component_scores, 
+       COALESCE(s.computed_at, CURRENT_TIMESTAMP) as computed_at
+FROM customers_clean c
+LEFT JOIN customer_states s 
+  ON c.customer_id = s.customer_id 
+ AND s.as_of_date = %(as_of_date)s
+WHERE c.is_deleted = false
+ORDER BY c.customer_id
 LIMIT %(limit)s OFFSET %(offset)s
 """
 
@@ -96,8 +104,7 @@ LIMIT %(limit)s OFFSET %(offset)s
 #: array, so callers have no way to tell "500 of 500" from "500 of 5,000";
 #: this is the authoritative denominator for pagination and portfolio totals.
 COUNT_STATES_SQL = f"""
-SELECT COUNT(*) FROM customer_states WHERE as_of_date = %(as_of_date)s
-{_LIVE_CUSTOMER_FILTER}
+SELECT COUNT(*) FROM customers_clean WHERE is_deleted = false
 """
 
 #: Distinct snapshot dates that already have computed states (newest first).

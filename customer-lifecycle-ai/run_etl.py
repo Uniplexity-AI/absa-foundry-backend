@@ -44,6 +44,8 @@ import uuid
 from datetime import datetime, timezone
 
 import yaml
+import pandas as pd
+import numpy as np
 
 # --- Path setup (safe for both import and direct execution) ---
 
@@ -131,6 +133,12 @@ def _derive_expected_columns_from_spec(spec_data: dict) -> list[str]:
         if join_table in cte_aliases_by_name:
             for sf in join.get("select_fields", []):
                 cols.append(sf.get("alias", sf.get("field", "unknown")))
+
+    # Calculated fields
+    for cf in spec_data.get("calculated_fields", []):
+        name = cf.get("name")
+        if name and name not in cols:
+            cols.append(name)
 
     return cols
 
@@ -717,6 +725,7 @@ async def run_etl_pipeline(
     dry_run: bool = False,
     force: bool = False,
     triggered_by: str = "cli",
+    mode: str = "training",
 ) -> dict:
     """Execute the complete ETL pipeline: Extract -> Validate -> Transform -> Load.
 
@@ -858,6 +867,21 @@ async def run_etl_pipeline(
                 config.validation.mandatory_fields = list(spec_validation["mandatory_fields"])
                 logger.info("  Overrode mandatory_fields from extraction spec (%d fields)",
                             len(config.validation.mandatory_fields))
+            if spec_validation.get("accepted_transaction_types") is not None:
+                config.validation.accepted_transaction_types = list(spec_validation["accepted_transaction_types"])
+                logger.info("  Overrode accepted_transaction_types from extraction spec")
+            if spec_validation.get("accepted_channels") is not None:
+                config.validation.accepted_channels = list(spec_validation["accepted_channels"])
+                logger.info("  Overrode accepted_channels from extraction spec")
+            if spec_validation.get("accepted_currencies") is not None:
+                config.validation.accepted_currencies = list(spec_validation["accepted_currencies"])
+                logger.info("  Overrode accepted_currencies from extraction spec")
+            if spec_validation.get("duplicate_keys") is not None:
+                config.validation.duplicate_keys = list(spec_validation["duplicate_keys"])
+                logger.info("  Overrode duplicate_keys from extraction spec: %s", config.validation.duplicate_keys)
+            if spec_validation.get("duplicate_detection_enabled") is not None:
+                config.validation.duplicate_detection_enabled = bool(spec_validation["duplicate_detection_enabled"])
+                logger.info("  Overrode duplicate_detection_enabled from extraction spec: %s", config.validation.duplicate_detection_enabled)
 
         # Merge target table configuration from spec
         spec_target = spec_data.get("target")
@@ -956,6 +980,27 @@ async def run_etl_pipeline(
     # PHASE 3: TRANSFORM
     # ------------------------------------------------------------------
     logger.info("--- Phase 3/4: TRANSFORM ---")
+    
+    if mode == "scoring":
+        logger.info("  SCORING MODE: Dropping forward-looking label columns")
+        # Columns with target_ prefix (CLV / Balance labels)
+        label_cols: set[str] = {c for c in valid_df.columns if c.startswith("target_")}
+        # Columns declared in the extraction spec's `labels:` list (e.g. churn_30d, churn_90d)
+        if use_extraction_spec:
+            try:
+                _spec_label_path = os.path.join(_PROJECT_ROOT, extraction_spec)
+                with open(_spec_label_path) as _f:
+                    _spec_labels_data = yaml.safe_load(_f)
+                for _lbl in _spec_labels_data.get("labels", []):
+                    if _lbl in valid_df.columns:
+                        label_cols.add(_lbl)
+            except Exception as _e:
+                logger.warning("Could not read labels from extraction spec: %s", _e)
+        if label_cols:
+            valid_df = valid_df.drop(columns=list(label_cols), errors="ignore")
+            config.target_data_columns = [c for c in config.target_data_columns if c not in label_cols]
+            logger.info("  Dropped %d label columns: %s", len(label_cols), sorted(label_cols))
+
     transformation_service = TransformationService(config=config.transformation)
 
     if not valid_df.empty:
@@ -1074,6 +1119,191 @@ async def run_etl_pipeline(
 
 
 # ===========================================================================
+# Banking ML Models Pipeline
+# ===========================================================================
+
+
+def run_models_pipeline(
+    models_arg: str,
+    snapshot: str | None = None,
+    as_of: str | None = None,
+    mode: str = "training",
+    dry_run: bool = False,
+    force: bool = False,
+) -> dict:
+    """Run banking ML feature extraction and populate feature_store_* tables in etl_clean."""
+    start_time = time.monotonic()
+    run_id = str(uuid.uuid4())
+    logger.info("=" * 60)
+    logger.info("BANKING ML FEATURE EXTRACTION PIPELINE")
+    logger.info("Run ID: %s | Mode: %s | Models: %s", run_id, mode, models_arg)
+    logger.info("=" * 60)
+
+    # Ensure banking_ml_python is importable
+    ml_path = os.path.join(_PROJECT_ROOT, "banking_ml_python")
+    if ml_path not in sys.path:
+        sys.path.insert(0, ml_path)
+
+    try:
+        from extractors.shared import extract_shared
+        from extractors.clv import build_clv
+        from extractors.lifecycle import build_lifecycle
+        from extractors.churn import build_churn
+        from extractors.balance import build_balance
+    except ImportError as e:
+        logger.error("Failed to import banking_ml_python extractors: %s", e)
+        return {"status": "FAILED", "error": str(e)}
+
+    # Parse dates
+    snap_date = None
+    if snapshot:
+        snap_date = datetime.strptime(snapshot, "%Y-%m-%d").date().replace(day=1)
+    else:
+        snap_date = datetime.now(timezone.utc).date().replace(day=1)
+
+    as_of_date = None
+    if as_of:
+        as_of_date = datetime.strptime(as_of, "%Y-%m-%d").date()
+    elif snapshot:
+        as_of_date = datetime.strptime(snapshot, "%Y-%m-%d").date()
+    else:
+        as_of_date = datetime.now(timezone.utc).date()
+
+    # Parse models
+    if models_arg.strip().lower() == "all":
+        models = ["shared", "clv", "lifecycle", "churn", "balance"]
+    else:
+        models = [m.strip().lower() for m in models_arg.split(",") if m.strip()]
+
+    table_map = {
+        "shared": ("feature_store_shared", ["customer_id", "snapshot_month"]),
+        "clv": ("feature_store_clv", ["customer_id", "snapshot_month"]),
+        "lifecycle": ("feature_store_lifecycle", ["customer_id", "snapshot_month"]),
+        "churn": ("feature_store_churn", ["customer_id", "snapshot_month"]),
+        "balance": ("feature_store_balance", ["customer_id", "as_of_date"]),
+    }
+
+    results = {}
+    total_loaded = 0
+
+    for model in models:
+        if model not in table_map:
+            logger.warning("Unknown model '%s', skipping", model)
+            continue
+
+        target_table, conflict_keys = table_map[model]
+        batch_id = f"feat_{model}_{int(time.time())}_{uuid.uuid4().hex[:6]}"
+        logger.info("\n--- Extracting features for [%s] -> %s (batch: %s) ---", model.upper(), target_table, batch_id)
+
+        try:
+            m_t0 = time.monotonic()
+            if model == "shared":
+                df = extract_shared(snap_date)
+            elif model == "clv":
+                df = build_clv(snap_date, mode=mode)
+            elif model == "lifecycle":
+                df = build_lifecycle(snap_date, mode=mode)
+            elif model == "churn":
+                df = build_churn(snap_date, mode=mode)
+            elif model == "balance":
+                df = build_balance(as_of_date, mode=mode)
+            else:
+                continue
+
+            extract_dur = time.monotonic() - m_t0
+            logger.info("Extraction completed in %.2fs: %d rows x %d cols", extract_dur, len(df), len(df.columns))
+
+            if dry_run:
+                logger.info("[DRY-RUN] Skipping database insert for %s", target_table)
+                results[model] = {"status": "DRY_RUN", "rows": len(df)}
+                continue
+
+            # Query target DB schema for target_table
+            conn = get_target_conn()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s
+                  AND column_name NOT IN ('loaded_at', 'batch_id')
+                ORDER BY ordinal_position
+                """,
+                (target_table,),
+            )
+            db_cols = [r[0] for r in cur.fetchall()]
+
+            if not db_cols:
+                raise RuntimeError(f"Target table {target_table} has no columns or does not exist in etl_clean")
+
+            # Align DF columns to DB columns
+            now = datetime.now(timezone.utc)
+            for c in db_cols:
+                if c not in df.columns:
+                    df[c] = None
+
+            # Prepare records
+            clean_df = df[db_cols].copy()
+            clean_df = clean_df.replace({np.nan: None})
+
+            # Build list of values
+            all_cols = db_cols + ["loaded_at", "batch_id"]
+            values = []
+            for row in clean_df.itertuples(index=False):
+                values.append(tuple(row) + (now, batch_id))
+
+            # Build upsert SQL
+            update_cols = [c for c in db_cols if c not in conflict_keys]
+            update_clause = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols] + ["loaded_at = EXCLUDED.loaded_at", "batch_id = EXCLUDED.batch_id"])
+            conflict_clause = ", ".join(conflict_keys)
+            col_names_str = ", ".join(all_cols)
+            placeholders_str = ",".join(["%s"] * len(all_cols))
+            upsert_sql = f"""
+                INSERT INTO {target_table} ({col_names_str})
+                VALUES %s
+                ON CONFLICT ({conflict_clause})
+                DO UPDATE SET {update_clause}
+            """
+
+            # Batch execute upsert
+            extras.execute_values(
+                cur,
+                upsert_sql,
+                values,
+                template=f"({placeholders_str})",
+                page_size=BATCH_SIZE,
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            logger.info("Upserted %d rows into %s in %.2fs", len(values), target_table, time.monotonic() - m_t0)
+            results[model] = {"status": "SUCCESS", "rows": len(values)}
+            total_loaded += len(values)
+
+        except Exception as err:
+            logger.error("Error processing model %s: %s", model, err, exc_info=True)
+            results[model] = {"status": "FAILED", "error": str(err)}
+
+    total_dur = time.monotonic() - start_time
+    logger.info("=" * 60)
+    logger.info("BANKING ML FEATURE EXTRACTION COMPLETE in %.1fs  total_loaded=%d", total_dur, total_loaded)
+    for m, res in results.items():
+        logger.info("  %-12s -> %s", m, res)
+    logger.info("=" * 60)
+
+    has_failures = any(r.get("status") == "FAILED" for r in results.values())
+    status = "FAILED" if has_failures else ("COMPLETED_DRY_RUN" if dry_run else "COMPLETED")
+    return {
+        "run_id": run_id,
+        "status": status,
+        "results": results,
+        "total_loaded": total_loaded,
+        "duration_seconds": total_dur,
+    }
+
+
+# ===========================================================================
 # Graceful Shutdown
 # ===========================================================================
 
@@ -1121,15 +1351,39 @@ def main() -> None:
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force", action="store_true", help="Re-process even if source was already loaded")
+    parser.add_argument("--mode", choices=["training", "scoring"], default="training", help="Execution mode (training keeps labels, scoring drops them)")
+    parser.add_argument(
+        "--snapshot",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Snapshot month (first of month) for CLV / Lifecycle / Churn feature extraction",
+    )
+    parser.add_argument(
+        "--as-of",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="As-of date for Balance model (daily grain). Defaults to --snapshot if not set.",
+    )
+    parser.add_argument(
+        "--models",
+        default=None,
+        help="Comma-separated list of models to run: clv,lifecycle,churn,balance,shared (or 'all')",
+    )
     args = parser.parse_args()
 
+
     # Determine extraction mode
+    use_models = bool(args.models)
     use_extraction_spec = bool(args.extraction_spec)
     use_db = bool(args.source_table or args.source_query)
     use_csv = bool(args.csv)
 
-    if not use_extraction_spec and not use_db and not use_csv:
-        logger.error("No source specified. Use --extraction-spec, --source-table, --source-query, or --csv.")
+    if not use_models and not use_extraction_spec and not use_db and not use_csv:
+        logger.error("No source specified. Use --models, --extraction-spec, --source-table, --source-query, or --csv.")
+        sys.exit(1)
+
+    if use_models and (use_extraction_spec or use_db or use_csv):
+        logger.error("Cannot combine --models with --extraction-spec/--source-table/--source-query/--csv.")
         sys.exit(1)
 
     if use_extraction_spec and (use_db or use_csv):
@@ -1144,6 +1398,19 @@ def main() -> None:
         logger.error("CSV file not found: %s", args.csv)
         sys.exit(1)
 
+    if use_models:
+        result = run_models_pipeline(
+            models_arg=args.models,
+            snapshot=args.snapshot,
+            as_of=args.as_of,
+            mode=args.mode,
+            dry_run=args.dry_run,
+            force=args.force,
+        )
+        if result["status"] not in ("COMPLETED", "COMPLETED_DRY_RUN"):
+            sys.exit(1)
+        sys.exit(0)
+
     import asyncio
     result = asyncio.run(run_etl_pipeline(
         csv_path=args.csv,
@@ -1152,6 +1419,7 @@ def main() -> None:
         extraction_spec=args.extraction_spec,
         dry_run=args.dry_run,
         force=args.force,
+        mode=args.mode,
     ))
 
     if result["status"] == "SKIPPED_DUPLICATE":

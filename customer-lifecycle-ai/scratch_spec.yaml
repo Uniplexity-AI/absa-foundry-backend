@@ -1,0 +1,161 @@
+version: "1.0"
+dataset_name: "test_c360"
+trusted_config: true
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
+primary_entity:
+  table: "a_africa_zam_base_customer"
+  alias: "c"
+  select_fields:
+    - field: "customer_number"
+      alias: "customer_id"
+      validation:
+        type: "str"
+        required: true
+    - field: "length_years"
+      alias: "length_years"
+      validation:
+        type: "int"
+        required: false
+    - field: "length_months"
+      alias: "length_months"
+      validation:
+        type: "int"
+        required: false
+
+pre_aggregations:
+  - name: "trans_summary"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "ts"
+    group_by: ["ts.customer_number"]
+    aggregations:
+      - function: MIN
+        field: "ts.account_number"
+        alias: account_number
+      - function: MIN
+        field: "ts.branch_number"
+        alias: branch_number
+
+joins:
+  - table: "a_africa_zam_base_customers_new"
+    alias: "cn"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "cn.customer_number"
+    select_fields:
+      - field: "sex"
+        alias: "gender"
+        validation:
+          type: "str"
+          required: false
+      - field: "market_segment"
+        alias: "market_segment"
+        validation:
+          type: "str"
+          required: false
+      - field: "credit_rating"
+        alias: "kyc_tier"
+        validation:
+          type: "str"
+          required: false
+
+  - table: "a_africa_zam_base_customer_employment_daily_zm"
+    alias: "ce"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "ce.customer_number"
+    select_fields:
+      - field: "country"
+        alias: "nationality"
+        validation:
+          type: "str"
+          required: false
+      - field: "district_or_region"
+        alias: "district_or_region"
+        validation:
+          type: "str"
+          required: false
+      - field: "employment_status"
+        alias: "status"
+        validation:
+          type: "str"
+          required: false
+
+  - table: "trans_summary"
+    alias: "ts"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "ts.customer_number"
+    select_fields:
+      - field: "account_number"
+        alias: "account_number"
+        validation:
+          type: "str"
+          required: false
+      - field: "branch_number"
+        alias: "branch_code"
+        validation:
+          type: "str"
+          required: false
+
+calculated_fields:
+  - name: full_name
+    expression: "'Customer ' || c.customer_number"
+    output_type: str
+  - name: market_segment_code
+    expression: "cn.market_segment"
+    output_type: str
+  - name: customer_since_date
+    expression: "(CURRENT_DATE - (COALESCE(c.length_years, 0) * interval '1 year' + COALESCE(c.length_months, 0) * interval '1 month'))::date"
+    output_type: datetime
+  - name: date_of_birth
+    expression: "((CURRENT_DATE - (COALESCE(c.length_years, 0) * interval '1 year' + COALESCE(c.length_months, 0) * interval '1 month')) - interval '25 years')::date"
+    output_type: datetime
+  - name: mobile_number
+    expression: "('+26097' || LPAD(RIGHT(c.customer_number, 4), 7, '0'))"
+    output_type: str
+  - name: national_id
+    expression: "(LPAD(RIGHT(c.customer_number, 4), 6, '2849') || '/11/1')"
+    output_type: str
+
+validation:
+  enabled: true
+  mandatory_fields:
+    - customer_id
+
+target:
+  clean_table: "customers_clean"
+  rejected_table: "customers_rejected"
+  data_columns:
+    - customer_id
+    - full_name
+    - gender
+    - branch_code
+    - nationality
+    - status
+    - kyc_tier
+    - market_segment
+    - market_segment_code
+    - account_number
+    - customer_since_date
+    - date_of_birth
+    - mobile_number
+    - national_id
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+streaming:
+  enabled: true
+  batch_size: 5000
+  fetch_strategy: cursor

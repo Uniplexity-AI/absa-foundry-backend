@@ -1,0 +1,249 @@
+# Churn Feature Spec — ABSA Banking ML
+# Grain: one row per customer × snapshot_month
+# Extras only — merged with shared_features in run_etl.py
+# Source table: a_brains_trans_zam_base_entries_zm
+#
+# Churn label definition:
+#   DORMANT = >= 365 consecutive days without qualifying activity
+#   churn_30d = 1 if customer reaches dormancy within 30 days of snapshot
+#   churn_90d = 1 if customer reaches dormancy within 90 days of snapshot
+#   Already-dormant at snapshot → label 0 (future prediction only)
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/churn_features.yaml \
+#                     --mode training --snapshot 2024-06-01
+#
+# Labels (churn_30d, churn_90d) dropped automatically in --mode scoring.
+
+version: "1.0"
+dataset_name: "churn_features"
+trusted_config: true
+description: >
+  Churn model feature spec. Extracts transaction volume ratios, large outflow
+  indicators, and dormancy proximity metrics. Dormancy-based churn labels
+  use a 365-day inactivity threshold (configurable via DORMANCY_THRESHOLD_DAYS).
+
+primary_entity:
+  table: "a_brains_trans_zam_base_entries_zm"
+  alias: "txn"
+  select_fields:
+    - field: "customer_number"
+      alias: "customer_id"
+      validation: {type: "str", required: true}
+
+pre_aggregations:
+
+  - name: "vol"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "v"
+    filter: "COALESCE(v.bus_date, v.posting_date) BETWEEN :history_start AND :snapshot_end"
+    group_by: ["v.customer_number"]
+    aggregations:
+      - function: COUNT_FILTER
+        field: "*"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '30 days'"
+        alias: txn_count_30d
+      - function: COUNT_FILTER
+        field: "*"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
+        alias: txn_count_90d
+      - function: COUNT_FILTER
+        field: "*"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '180 days'"
+        alias: txn_count_180d
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '30 days'"
+        alias: vol_30d
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
+        alias: vol_90d
+      - function: SUM_FILTER
+        field: "ABS(local_amount)"
+        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '180 days'"
+        alias: vol_180d
+      - function: COUNT_FILTER
+        field: "*"
+        filter: >
+          COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '180 days'
+          AND COALESCE(bus_date, posting_date) <= :snapshot_end - INTERVAL '90 days'
+        alias: txn_count_prev_90d
+
+  - name: "large_out"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "lo"
+    filter: >
+      COALESCE(lo.bus_date, lo.posting_date) > :snapshot_end - INTERVAL '30 days'
+      AND COALESCE(lo.bus_date, lo.posting_date) <= :snapshot_end
+      AND lo.local_amount < 0
+      AND ABS(lo.local_amount) >= :large_outflow_threshold
+    group_by: ["lo.customer_number"]
+    aggregations:
+      - function: COUNT
+        field: "*"
+        alias: large_outflow_count_30d
+      - function: SUM
+        field: "ABS(local_amount)"
+        alias: large_outflow_amount_30d
+
+  - name: "recency"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "r"
+    filter: "COALESCE(r.bus_date, r.posting_date) <= :snapshot_end"
+    group_by: ["r.customer_number"]
+    aggregations:
+      - function: MAX
+        field: "COALESCE(bus_date, posting_date)"
+        alias: last_txn_date
+
+  # Future activity window (used to compute churn labels)
+  - name: "future_activity"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "fa"
+    filter: >
+      COALESCE(fa.bus_date, fa.posting_date) > :snapshot_end
+      AND COALESCE(fa.bus_date, fa.posting_date) <= :snapshot_end + (:churn_horizon_days || ' days')::interval
+    group_by: ["fa.customer_number"]
+    aggregations:
+      - function: COUNT
+        field: "*"
+        alias: future_txn_count
+      - function: MIN
+        field: "COALESCE(bus_date, posting_date)"
+        alias: first_future_txn_date
+    label: true   # computed only in training mode
+
+joins:
+  - table: "vol"
+    alias: "v"
+    join_type: "left"
+    "on":
+      - left: "txn.customer_number"
+        right: "v.customer_number"
+    select_fields:
+      - {field: txn_count_30d}
+      - {field: txn_count_90d}
+      - {field: txn_count_180d}
+      - {field: vol_30d}
+      - {field: vol_90d}
+      - {field: vol_180d}
+      - {field: txn_count_prev_90d}
+
+  - table: "large_out"
+    alias: "lo"
+    join_type: "left"
+    "on":
+      - left: "txn.customer_number"
+        right: "lo.customer_number"
+    select_fields:
+      - {field: large_outflow_count_30d}
+      - {field: large_outflow_amount_30d}
+
+  - table: "recency"
+    alias: "r"
+    join_type: "left"
+    "on":
+      - left: "txn.customer_number"
+        right: "r.customer_number"
+    select_fields:
+      - {field: last_txn_date}
+
+  - table: "future_activity"
+    alias: "fa"
+    join_type: "left"
+    "on":
+      - left: "txn.customer_number"
+        right: "fa.customer_number"
+    select_fields:
+      - {field: future_txn_count, label: true}
+      - {field: first_future_txn_date, label: true}
+
+# Post-join derived fields (computed in Python extractor layer)
+calculated_fields:
+  - name: recency_days
+    expression: "(:snapshot_end - last_txn_date).days if last_txn_date else None"
+    output_type: int
+
+  - name: vol_ratio_30_180
+    expression: "vol_30d / vol_180d if vol_180d and vol_180d > 0 else None"
+    output_type: float
+
+  - name: vol_ratio_30_90
+    expression: "vol_30d / vol_90d if vol_90d and vol_90d > 0 else None"
+    output_type: float
+
+  - name: txn_count_change_pct_90d
+    expression: "(txn_count_90d - txn_count_prev_90d) / txn_count_prev_90d if txn_count_prev_90d and txn_count_prev_90d > 0 else None"
+    output_type: float
+
+  - name: days_to_dormancy
+    expression: "max(0, :dormancy_threshold_days - recency_days) if recency_days is not None and recency_days < :dormancy_threshold_days else None"
+    output_type: int
+
+  - name: lifecycle_status_at_snapshot
+    expression: |
+      'UNKNOWN' if recency_days is None else
+      'ACTIVE' if recency_days < 60 else
+      'EARLY_WARNING' if recency_days < 90 else
+      'INACTIVE' if recency_days < 180 else
+      'PRE_DORMANT' if recency_days < :dormancy_threshold_days else
+      'DORMANT'
+    output_type: str
+
+  # LABELS — computed from forward activity window, dropped in scoring mode
+  - name: churn_30d
+    label: true
+    expression: |
+      0 if recency_days is None or recency_days >= :dormancy_threshold_days else
+      1 if (recency_days + (first_future_txn_date - :snapshot_end).days if first_future_txn_date else :churn_short_horizon_days) >= :dormancy_threshold_days else 0
+    output_type: int
+
+  - name: churn_90d
+    label: true
+    expression: |
+      0 if recency_days is None or recency_days >= :dormancy_threshold_days else
+      1 if (recency_days + (first_future_txn_date - :snapshot_end).days if first_future_txn_date else :churn_horizon_days) >= :dormancy_threshold_days else 0
+    output_type: int
+
+labels:
+  - churn_30d
+  - churn_90d
+
+# Runtime parameters injected by the extractor
+parameters:
+  churn_short_horizon_days: 30
+  churn_horizon_days: 90
+  dormancy_threshold_days: 365
+  large_outflow_threshold: 10000
+
+target:
+  clean_table: "feature_store_churn"
+  rejected_table: "feature_store_churn_rejected"
+  data_columns:
+    - customer_id
+    - snapshot_month
+    - txn_count_30d
+    - txn_count_90d
+    - txn_count_180d
+    - vol_30d
+    - vol_90d
+    - vol_180d
+    - vol_ratio_30_180
+    - vol_ratio_30_90
+    - txn_count_change_pct_90d
+    - large_outflow_count_30d
+    - large_outflow_amount_30d
+    - days_to_dormancy
+    - lifecycle_status_at_snapshot
+    - future_txn_count_90d
+    - churn_30d
+    - churn_90d
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+streaming:
+  enabled: true
+  batch_size: 5000
+  fetch_strategy: cursor

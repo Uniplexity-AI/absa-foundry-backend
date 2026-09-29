@@ -1,11 +1,11 @@
-# Customer Master — Table 16 → customers_clean
+# Customer Master — a_africa_zam_base_customers_new → customers_clean
 # =============================================================================
-# Maps the bank's customer master (anonymised "Table 16") into customers_clean,
-# enriched with date_of_birth from Table 7.
+# Maps the ABSA customer master into customers_clean,
+# enriched with employment/address data from a_africa_zam_base_customer_employment_daily_zm.
 #
-# SOURCE TABLE NAMES ARE PLACEHOLDERS — replace before running:
-#   public.customer_master       → your real Table 16 name
-#   public.customer_demographics → your real Table 7 name
+# ABSA source tables (confirmed):
+#   a_africa_zam_base_customers_new              → customer master (status, segment, risk)
+#   a_africa_zam_base_customer_employment_daily_zm → employment, address, income
 #
 # Field mapping (source → backend):
 #   customer_number        → customer_id        (KEY — confirm this column exists)
@@ -43,10 +43,10 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "${source_tables.customer_master}"      # see pilot_data_config.yaml
+  table: "a_africa_zam_base_customers_new"
   alias: "cust"
   select_fields:
-    - field: "customer_number"         # TODO: confirm the key column name
+    - field: "customer_number"
       alias: "customer_id"
       validation: { type: "str", required: true }
     - field: "sex"
@@ -66,7 +66,7 @@ primary_entity:
       validation: { type: "str", required: false }
 
 joins:
-  - table: "${source_tables.customer_demographics}"   # see pilot_data_config.yaml
+  - table: "a_africa_zam_base_customer_employment_daily_zm"
     alias: "demo"
     join_type: "left"
     "on":

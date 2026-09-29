@@ -15,7 +15,7 @@ Checks:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import pandas as pd
 
@@ -146,8 +146,12 @@ class BusinessRuleValidator(BaseValidator):
 
         parsed_dt: datetime | None = None
 
-        if isinstance(value, datetime):
+        if isinstance(value, pd.Timestamp):
+            parsed_dt = value.to_pydatetime()
+        elif isinstance(value, datetime):
             parsed_dt = value
+        elif isinstance(value, date):
+            parsed_dt = datetime.combine(value, time.min)
         elif isinstance(value, str):
             for fmt in self.config.accepted_date_formats:
                 try:
@@ -251,7 +255,8 @@ class BusinessRuleValidator(BaseValidator):
             return errors
 
         currency = str(value).strip().upper()
-        if currency not in self.config.accepted_currencies:
+        accepted_currencies = [c.upper() for c in self.config.accepted_currencies]
+        if currency not in accepted_currencies:
             errors.append(ValidationError(
                 rule_id="BUSINESS-CUR-001",
                 category=ValidationCategory.BUSINESS_RULE,
@@ -277,7 +282,8 @@ class BusinessRuleValidator(BaseValidator):
             return errors
 
         txn_type = str(value).strip().upper()
-        if txn_type not in self.config.accepted_transaction_types:
+        accepted_types = [t.upper() for t in self.config.accepted_transaction_types]
+        if txn_type not in accepted_types:
             errors.append(ValidationError(
                 rule_id="BUSINESS-TXN-001",
                 category=ValidationCategory.BUSINESS_RULE,
@@ -304,7 +310,8 @@ class BusinessRuleValidator(BaseValidator):
             return errors
 
         channel = str(value).strip().upper()
-        if channel not in self.config.accepted_channels:
+        accepted_channels = [c.upper() for c in self.config.accepted_channels]
+        if channel not in accepted_channels:
             errors.append(ValidationError(
                 rule_id="BUSINESS-CHN-001",
                 category=ValidationCategory.BUSINESS_RULE,

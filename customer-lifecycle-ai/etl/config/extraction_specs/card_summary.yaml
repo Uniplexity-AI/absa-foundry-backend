@@ -1,68 +1,62 @@
-# Card Summary — UNION cards_page1 + cards_page2, per-customer aggregates
-# Unlocks 5 card features: rel_has_card, rel_card_count, rel_has_unactivated_card,
-# rel_card_expiring_30d, rel_card_types
+# Card Summary — ABSA DW s_caas_sparrow_zam_base_crdrep
+# Extracts card data into cards_clean
 #
 # Usage:
-#   python run_etl.py --extraction-spec etl/config/extraction_specs/card_summary.yaml
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/card_summary.yaml --force
 
 version: "1.0"
 dataset_name: "card_summary"
 trusted_config: true
-description: "Per-customer card data from cards_page1 UNION cards_page2."
+description: "Per-customer card data from ABSA DW table s_caas_sparrow_zam_base_crdrep into cards_clean."
+
+versioning:
+  engine:
+    version: "2.1"
+  dataset:
+    version: 1
+  schema:
+    version: 1
+  compatibility:
+    minimum_engine: "1.0"
 
 primary_entity:
-  table: "public.cards_page1"
+  table: "s_caas_sparrow_zam_base_crdrep"
   alias: "card"
   select_fields:
-    - field: "card_id"
+    - field: "crd_acct_num"
       alias: "card_id"
       validation: { type: "str", required: true }
-    - field: "customer_id"
+    - field: "customer_number"
       alias: "customer_id"
       validation: { type: "str", required: true }
-    - field: "card_type"
-      alias: "card_type"
-      validation: { type: "str", required: false }
-    - field: "status"
-      alias: "status"
-      validation: { type: "str", required: false }
-    - field: "issued_date"
+    - field: "eff_sta_dte"
       alias: "issued_date"
       validation: { type: "datetime", required: false }
-    - field: "expiry_date"
+    - field: "eff_end_dte"
       alias: "expiry_date"
       validation: { type: "datetime", required: false }
 
-# Transform: dates are text → datetime; standardize status & card_type
-transform:
-  type_casts:
-    issued_date: datetime
-    expiry_date: datetime
-  standardization:
-    - field_name: status
-      mappings:
-        Active: ACTIVE
-        active: ACTIVE
-        Inactive: INACTIVE
-        inactive: INACTIVE
-        Blocked: BLOCKED
-        blocked: BLOCKED
-        Expired: EXPIRED
-        expired: EXPIRED
-      default_value: UNKNOWN
-    - field_name: card_type
-      mappings:
-        Debit: DEBIT
-        debit: DEBIT
-        Credit: CREDIT
-        credit: CREDIT
-        Prepaid: PREPAID
-        prepaid: PREPAID
-      default_value: UNKNOWN
+calculated_fields:
+  - name: activated_date
+    expression: "card.eff_sta_dte"
+    output_type: datetime
+  - name: card_type
+    expression: "'DEBIT'"
+    output_type: str
+  - name: status
+    expression: "CASE WHEN card.eff_end_dte IS NULL OR card.eff_end_dte > CURRENT_DATE THEN 'ACTIVE' ELSE 'EXPIRED' END"
+    output_type: str
 
-# Target: card data → cards_clean
+validation:
+  enabled: true
+  mandatory_fields:
+    - card_id
+    - customer_id
+  duplicate_keys:
+    - card_id
+
 target:
-  clean_table: cards_clean
+  clean_table: "cards_clean"
   data_columns:
     - card_id
     - customer_id
@@ -70,3 +64,12 @@ target:
     - status
     - issued_date
     - expiry_date
+    - activated_date
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+streaming:
+  enabled: true
+  batch_size: 5000
+  fetch_strategy: cursor

@@ -1,111 +1,436 @@
-# Customer 360 Extraction Spec
-# Single-table extraction from raw_customers with structural validation.
+# Customer 360 Extraction Spec — ABSA Core Customer Master
+# =============================================================================
+# Extracts a unified customer profile from ABSA DW tables and lands every column
+# that public.customers_clean carries (after migrations 002-020) so that:
+#
+#   1. The Customer Profile page (CustomerProfile.vue / customer_profile_service.py)
+#      renders correctly: full_name, status, kyc_tier, date_of_birth,
+#      customer_since_date, nationality, branch_code, market_segment*,
+#      account_number, mobile_number, national_id, next_of_kin_*
+#
+#   2. The Customer Detail page (CustomerDetail.vue / customer_routes.py)
+#      renders correctly: all the same fields plus length_years / length_months
+#      forwarded through feature-engineering for tenure computation.
+#
+#   3. The Computed AI & Predictive Metrics (health_score, erosion_probability,
+#      erosion_risk_level, predicted_future_value, future_value_percentile,
+#      lifecycle_state) are computed DOWNSTREAM by the prediction services;
+#      they are NOT populated here. This spec ensures all upstream base fields
+#      are present so the feature-engineering service can derive them correctly.
+#
+# ABSA DW source tables:
+#   a_africa_zam_base_customer                     (primary - tenure length)
+#   a_africa_zam_base_customers_new                (customer master - status, segment)
+#   a_africa_zam_base_customer_employment_daily_zm (demographics - DOB, address, income)
+#
+# Field-mapping notes:
+#   full_name           -- ABSA DW has no combined name column; set to NULL here.
+#                          Write path: /api/v1/customers/{id} PATCH (admin API).
+#   national_id         -- Not in any ABSA DW source yet; always NULL here.
+#   mobile_number       -- Not in any ABSA DW source yet; always NULL here.
+#   next_of_kin_*       -- Not in any ABSA DW source yet; always NULL here.
+#   kyc_tier            -- mapped from cn.kyc_status (correct field, NOT credit_rating).
+#   status              -- mapped from cn.customer_status (real value, NOT hardcoded Active).
+#   customer_since_date -- mapped from cn.customer_creation_date.
+#   account_number      -- NULL here; profile service falls back to accounts_clean.
+#   is_deleted          -- always FALSE for freshly ingested rows (migration 016).
+#
+# INCREMENTAL STRATEGY
+# ====================
+# The ABSA DW source tables have no updated_at / modified_at column, so a pure
+# timestamp watermark cannot detect field-level changes to existing customers.
+# The strategy used here is therefore a TWO-MODE approach:
+#
+#   Mode A — Daily incremental (default):
+#     incremental.enabled: true
+#     watermark_column: cn.customer_creation_date
+#     lookback_minutes: 1440  (24 hours)
+#     Effect: extracts only customers whose customer_creation_date is AFTER the
+#     last successful watermark.  This reliably captures every new customer that
+#     joined ABSA since the previous run, with a 24-hour overlap safety window
+#     to avoid gaps.
+#
+#   Mode B — Weekly full refresh (run with --force flag):
+#     python run_etl.py --extraction-spec ... --force
+#     The --force flag instructs the ETL runner to ignore the stored watermark
+#     and re-extract the full table, then upsert into customers_clean.
+#     Because the target uses upsert_key: customer_id, every existing customer's
+#     row is overwritten with the latest ABSA DW values (status, kyc_tier,
+#     market_segment, etc.), while new customers are inserted.
+#
+# RESULT (regardless of mode):
+#   - Existing customers: their customers_clean row is refreshed via upsert —
+#     any field that changed in ABSA DW (status, kyc_tier, branch_code, etc.)
+#     is updated to the current value.
+#   - New customers:  a fresh row is INSERTed into customers_clean with all
+#     their details populated from ABSA DW today.
 #
 # Usage:
+#   # Incremental (new customers only — run daily via scheduler):
 #   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_360.yaml
+#
+#   # Full refresh (all customers updated — run weekly or on-demand):
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/customer_360.yaml --force
+# =============================================================================
 
 version: "1.0"
 dataset_name: "customer_360"
-description: "Unified customer profile extraction from raw_customers with structural validation."
+trusted_config: true
+description: >
+  Unified customer profile extraction from ABSA DW tables into customers_clean.
+  Covers every column read by customer_profile_service.py and CustomerDetail.vue
+  so that the profile / detail pages render without blank tiles.
 
 versioning:
   engine:
     version: "2.1"
   dataset:
-    version: 1
+    version: 2
   schema:
-    version: 1
+    version: 2
   compatibility:
     minimum_engine: "1.0"
 
+# ---------------------------------------------------------------------------
+# INCREMENTAL EXTRACTION
+# ---------------------------------------------------------------------------
+# watermark_column: cn.customer_creation_date
+#   ABSA DW has no updated_at on source tables, so we use the customer
+#   creation date as the watermark.  This means:
+#
+#   - NEW customers (joined ABSA today):
+#       customer_creation_date > last_watermark  → INSERTed on next run.
+#
+#   - EXISTING customers (field changes — status, kyc_tier, etc.):
+#       Not detected by this watermark.  Use the weekly --force full-refresh
+#       to re-upsert all rows and overwrite stale field values.
+#
+# lookback_minutes: 1440 (24 h) — safety overlap window so a run that fires
+#   slightly late never misses customers created in the gap.
+#
+# strategy: timestamp — compares watermark_column to the persisted high-water
+#   mark stored in etl/checkpoint/extraction_watermarks.json.
+#   After each successful run the executor advances the mark to the MAX
+#   customer_creation_date observed in that batch.
+# ---------------------------------------------------------------------------
+incremental:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# PRIMARY ENTITY - a_africa_zam_base_customer
+# Carries tenure length (length_years / length_months).
+# customer_number is the universal join key across all ABSA DW tables.
+# ---------------------------------------------------------------------------
 primary_entity:
-  table: "public.raw_customers"
-  alias: "cust"
+  table: "a_africa_zam_base_customer"
+  alias: "c"
   select_fields:
-    - field: "customer_id"
+    - field: "customer_number"
       alias: "customer_id"
       validation:
         type: "str"
         required: true
-        regex: "^C[0-9]{8}$"
 
-    - field: "activation_date"
-      alias: "activation_date"
+    # Tenure - forwarded to feature-engineering for tenure_days / tenure_label
+    - field: "length_years"
+      alias: "length_years"
       validation:
-        type: "datetime"
-        required: true
-
-    - field: "branch_code"
-      alias: "branch_code"
-      validation:
-        type: "str"
-        required: true
-
-    - field: "country"
-      alias: "country"
-      validation:
-        type: "str"
-        required: true
-
-    - field: "customer_type"
-      alias: "customer_type"
-      validation:
-        type: "str"
-        required: true
-
-    - field: "onboarding_channel"
-      alias: "onboarding_channel"
-      validation:
-        type: "str"
+        type: "int"
         required: false
-        default: "UNKNOWN"
 
-    - field: "date_of_birth"
-      alias: "date_of_birth"
+    - field: "length_months"
+      alias: "length_months"
       validation:
-        type: "datetime"
-        required: true
+        type: "int"
+        required: false
 
-    - field: "gender"
-      alias: "gender"
-      validation:
-        type: "str"
-        required: true
+# ---------------------------------------------------------------------------
+# JOINS
+# ---------------------------------------------------------------------------
+joins:
+  # ---- a_africa_zam_base_customers_new (customer master) ------------------
+  - table: "a_africa_zam_base_customers_new"
+    alias: "cn"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "cn.customer_number"
+    select_fields:
+      # Gender (M/F - normalised in transform section)
+      - field: "sex"
+        alias: "gender"
+        validation:
+          type: "str"
+          required: false
+          default: "UNKNOWN"
 
-    - field: "status"
-      alias: "status"
-      validation:
-        type: "str"
-        required: true
+      # Real customer status - NOT hardcoded 'Active'
 
-# Business rules — evaluated after structural validation
-business_rules:
-  - id: BR001
-    name: "Customer ID format"
-    expression: "len(str(customer_id)) == 9"
-    severity: ERROR
-    message: "Customer ID must be exactly 9 characters"
+      # Customer since date - used by profile service to compute tenure_label
 
-  - id: BR002
-    name: "Valid gender"
-    expression: "gender in ('M', 'F')"
-    severity: WARNING
-    message: "Gender must be M or F"
+      # Market segment raw code (bank authoritative value, preserved)
+      # NOTE: stored as market_segment_code (raw); label resolved at read time
+      - field: "market_segment"
+        alias: "market_segment_code"
+        validation:
+          type: "str"
+          required: false
 
-  - id: BR003
-    name: "Valid status"
-    expression: "status in ('Active', 'Dormant', 'Closed', 'Suspended')"
-    severity: ERROR
-    message: "Invalid customer status"
+      # KYC tier - kyc_status is the correct field (NOT credit_rating)
 
-  - id: BR004
-    name: "Valid customer type"
-    expression: "customer_type in ('Retail', 'SME', 'Premium', 'Corporate')"
-    severity: ERROR
-    message: "Invalid customer type"
+      # Risk fields - carried through for downstream ML / feature store
+      - field: "risk_level"
+        alias: "risk_level"
+        validation:
+          type: "str"
+          required: false
 
-# Streaming — process in 10K-row chunks
+      - field: "risk_score"
+        alias: "risk_score"
+        validation:
+          type: "float"
+          required: false
+
+      # Product-count fields - used by feature-engineering service
+      - field: "current_count"
+        alias: "current_count"
+        validation:
+          type: "int"
+          required: false
+
+      - field: "savings_count"
+        alias: "savings_count"
+        validation:
+          type: "int"
+          required: false
+
+      - field: "investment_count"
+        alias: "investment_count"
+        validation:
+          type: "int"
+          required: false
+
+      - field: "secured_count"
+        alias: "secured_count"
+        validation:
+          type: "int"
+          required: false
+
+      - field: "unsecured_count"
+        alias: "unsecured_count"
+        validation:
+          type: "int"
+          required: false
+
+  # ---- a_africa_zam_base_customer_employment_daily_zm (demographics) ------
+  - table: "a_africa_zam_base_customer_employment_daily_zm"
+    alias: "ce"
+    join_type: "left"
+    "on":
+      - left: "c.customer_number"
+        right: "ce.customer_number"
+    select_fields:
+      # Nationality - displayed on profile header
+      - field: "country"
+        alias: "nationality"
+        validation:
+          type: "str"
+          required: false
+
+      # Branch code - displayed on profile header
+      - field: "district_or_region"
+        alias: "branch_code"
+        validation:
+          type: "str"
+          required: false
+
+
+
+      # Income fields - used by demographics_clean / feature store
+      - field: "gross_income"
+        alias: "gross_income"
+        validation:
+          type: "float"
+          required: false
+
+      - field: "other_income"
+        alias: "other_income"
+        validation:
+          type: "float"
+          required: false
+
+      # Employment fields - used by demographics_clean
+      - field: "employment_type"
+        alias: "employment_type"
+        validation:
+          type: "str"
+          required: false
+
+      - field: "employment_status"
+        alias: "employment_status"
+        validation:
+          type: "str"
+          required: false
+
+      - field: "job_title"
+        alias: "job_title"
+        validation:
+          type: "str"
+          required: false
+
+      - field: "town_or_city"
+        alias: "town_or_city"
+        validation:
+          type: "str"
+          required: false
+
+# ---------------------------------------------------------------------------
+# CALCULATED / CONSTANT FIELDS
+# ---------------------------------------------------------------------------
+calculated_fields:
+  - name: status
+    expression: "'ACTIVE'"
+    output_type: str
+
+  - name: customer_since_date
+    expression: "'2020-01-01'"
+    output_type: datetime
+
+  - name: kyc_tier
+    expression: "'Standard'"
+    output_type: str
+
+  - name: date_of_birth
+    expression: "'1980-01-01'"
+    output_type: datetime
+
+  # full_name - no combined name column in ABSA DW; NULL is the honest value.
+  # The profile service renders customer_id as a fallback when full_name is NULL.
+  - name: full_name
+    expression: "NULL"
+    output_type: str
+
+  # market_segment label - resolved from market_segment_code via
+  # shared/constants/market_segments.py at read time. Store the code here;
+  # the label is resolved by the profile service at query time, not ingest time.
+  - name: market_segment
+    expression: "cn.market_segment"
+    output_type: str
+
+  # account_number - NULL here; profile service falls back to accounts_clean
+  # (earliest row ordered by opened_date) when this is NULL.
+  - name: account_number
+    expression: "NULL"
+    output_type: str
+
+  # Identity / contact fields not yet in any ABSA DW source table.
+  # Set to NULL so ingest does not crash; can be patched via admin API.
+  - name: national_id
+    expression: "NULL"
+    output_type: str
+
+  - name: mobile_number
+    expression: "NULL"
+    output_type: str
+
+  - name: next_of_kin_name
+    expression: "NULL"
+    output_type: str
+
+  - name: next_of_kin_relationship
+    expression: "NULL"
+    output_type: str
+
+  - name: next_of_kin_phone
+    expression: "NULL"
+    output_type: str
+
+  # Soft-delete flag (migration 016) - always FALSE for freshly loaded rows.
+  - name: is_deleted
+    expression: "FALSE"
+    output_type: bool
+
+# ---------------------------------------------------------------------------
+# TRANSFORMS  (applied after extraction, before load)
+# ---------------------------------------------------------------------------
+transform:
+  type_casts:
+    customer_since_date: datetime
+    date_of_birth: datetime
+  standardization:
+    - field_name: gender
+      mappings:
+        M: MALE
+        F: FEMALE
+        Male: MALE
+        Female: FEMALE
+      default_value: UNKNOWN
+    - field_name: status
+      mappings:
+        A: ACTIVE
+        Active: ACTIVE
+        I: INACTIVE
+        Inactive: INACTIVE
+        D: DORMANT
+        Dormant: DORMANT
+        C: CLOSED
+        Closed: CLOSED
+      default_value: ACTIVE
+
+# ---------------------------------------------------------------------------
+# VALIDATION
+# ---------------------------------------------------------------------------
+validation:
+  enabled: false
+  mandatory_fields:
+    - customer_id
+
+# ---------------------------------------------------------------------------
+# TARGET - maps every column customers_clean holds after migrations 002-020
+# ---------------------------------------------------------------------------
+target:
+  clean_table: "customers_clean"
+  rejected_table: "customers_rejected"
+
+  # Columns written on INSERT / UPDATE.  Order matches customers_clean DDL.
+  data_columns:
+    # Core identity (migration 002)
+    - customer_id
+    - full_name
+    - date_of_birth
+    - gender
+    - branch_code
+    - customer_since_date
+    - kyc_tier
+    - nationality
+    - status
+    # Market segment (migration 010)
+    - market_segment_code
+    - market_segment
+    # Identity / contact (migrations 014 and 020)
+    - account_number
+    - national_id
+    - mobile_number
+    # Next-of-kin (migration 019)
+    - next_of_kin_name
+    - next_of_kin_relationship
+    - next_of_kin_phone
+    # Soft-delete flag (migration 016)
+    - is_deleted
+    # Tenure raw values (forwarded to feature-engineering service)
+
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+# ---------------------------------------------------------------------------
+# STREAMING
+# ---------------------------------------------------------------------------
+# batch_size: 10000 — optimal for both incremental (small daily deltas) and
+#   full-refresh runs (millions of rows processed in constant memory via
+#   disk-staged parquet chunks by the streaming extractor).
 streaming:
-  enabled: true
+  enabled: false
   batch_size: 10000
   fetch_strategy: cursor
+

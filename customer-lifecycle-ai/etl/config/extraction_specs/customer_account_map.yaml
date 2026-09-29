@@ -1,13 +1,12 @@
-# Customer ↔ Account Bridge — Tables 2 & 3 → customer_account_map
+# Customer ↔ Account Bridge — a_africa_zam_base_customers_new → customer_account_map
 # =============================================================================
 # Resolves account_number → customer_number. LOAD THIS FIRST — every account /
-# transaction / product spec depends on it because Table 1 is keyed by
-# account_number and has no customer_number.
+# transaction / product spec depends on it.
 #
-# SOURCE TABLE NAME IS A PLACEHOLDER — replace before running:
-#   public.customer_account_xref → your real Table 2 name
-#   (Table 3 is the alternate source with the same fields — run this spec
-#    against it by changing `table:`, or UNION the two later.)
+# ABSA source table (confirmed):
+#   a_africa_zam_base_customers_new  → product/account ownership bridge
+#
+# Field mapping (source → backend):
 #
 # Field mapping (source → backend):
 #   customer_number            → customer_id
@@ -47,10 +46,10 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "${source_tables.customer_account_xref}"    # see pilot_data_config.yaml
+  table: "a_africa_zam_base_customers_new"
   alias: "xref"
   select_fields:
-    - field: "customer_number"             # TODO: confirm the key column name
+    - field: "customer_number"
       alias: "customer_id"
       validation: { type: "str", required: true }
     - field: "account_number"

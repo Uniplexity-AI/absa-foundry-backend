@@ -1,5 +1,1 @@
-e_threshold: Defaults to 1024. Ignored if `external_initializers_file_path`
-            is None or empty. Initializers larger than this threshold are stored in the external initializers file.
-        :param flags: Additional boolean options to enable. Set this parameter to a bitwise OR of
-            flags in onnxruntime.OrtCompileApiFlags.
-        :param graph_optimization_level: The graph optimi
+invalid type: string "Cash-back and Card Rewards: Platinum Credit Card: Ongoing 1% cashback on local and international purchases (in-store or online). Past limited debit-card cashback campaigns (e.g. 0.1% for monthly spends of K1,000+ between November 2022 and January 2023). Occasional short-term promotional boosts (e.g. 5% cashback on Black Friday spends of K2,000+ in November 2025).", expected a

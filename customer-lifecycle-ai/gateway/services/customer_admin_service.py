@@ -112,6 +112,39 @@ def _audit(
 
 def _json(payload: dict[str, Any]) -> str:
     return json.dumps(payload, default=str)
+CUSTOMER_RELATED_TABLES = [
+    # Clean child tables (foreign keys are configured ON DELETE CASCADE)
+    "customer_transactions_clean",
+    "accounts_clean",
+    "loans_clean",
+    "cards_clean",
+    "digital_engagement_clean",
+    "demographics_clean",
+    # States, features, metrics, logs
+    "customer_states",
+    "customer_features",
+    "pilot_customer_state",
+    "state_transitions",
+    "decision_outcomes",
+    "prediction_log",
+    # Feature stores
+    "feature_store_balance",
+    "feature_store_churn",
+    "feature_store_clv",
+    "feature_store_lifecycle",
+    "feature_store_shared",
+    # Rejected tables
+    "customer_transactions_rejected",
+    "customer_ingest_rejected",
+    "cards_clean_rejected",
+    "loans_clean_rejected",
+    "customers_rejected",
+    "feature_store_balance_rejected",
+    "feature_store_churn_rejected",
+    "feature_store_clv_rejected",
+    "feature_store_lifecycle_rejected",
+    "feature_store_shared_rejected",
+]
 
 
 def delete_customers(
@@ -121,33 +154,32 @@ def delete_customers(
     reason: str | None = None,
     engine: Engine | None = None,
 ) -> dict[str, Any]:
-    """Soft-delete customers. Returns a summary including which ids were affected."""
+    """Permanently delete customers and all associated data records."""
     engine = engine or get_sync_target_engine()
     ids = _normalise_ids(customer_ids)
     reason_text = (reason or DEFAULT_REASON).strip()[:255]
 
     with engine.begin() as conn:
-        # Only flag rows that exist and are currently live, so re-deleting an
-        # already-deleted id is a no-op rather than a false success.
+        # 1. Purge all related records across state, feature store and child tables
+        for table in CUSTOMER_RELATED_TABLES:
+            try:
+                conn.execute(
+                    text(f"DELETE FROM public.{table} WHERE customer_id = ANY(:ids)"),
+                    {"ids": ids},
+                )
+            except Exception as e:
+                logger.warning("Could not purge rows from %s for customers: %s", table, e)
+
+        # 2. Permanently delete from primary customers_clean table
         rows = conn.execute(
             text(
                 """
-                UPDATE public.customers_clean
-                   SET is_deleted = true,
-                       deleted_at = :deleted_at,
-                       deleted_by = :deleted_by,
-                       deleted_reason = :reason
+                DELETE FROM public.customers_clean
                  WHERE customer_id = ANY(:ids)
-                   AND NOT is_deleted
                 RETURNING customer_id
                 """
             ),
-            {
-                "ids": ids,
-                "deleted_at": datetime.now(timezone.utc),
-                "deleted_by": actor,
-                "reason": reason_text,
-            },
+            {"ids": ids},
         ).scalars().all()
 
         deleted = list(rows)
@@ -157,16 +189,14 @@ def delete_customers(
             action=ACTION_DELETED,
             actor=actor,
             reason=reason_text,
-            detail=f"Soft-deleted {len(deleted)} customer(s)",
+            detail=f"Permanently deleted {len(deleted)} customer(s)",
         )
 
-    missing = [customer_id for customer_id in ids if customer_id not in set(deleted)]
-    already = _already_deleted(engine, missing)
-    not_found = [customer_id for customer_id in missing if customer_id not in set(already)]
+    not_found = [customer_id for customer_id in ids if customer_id not in set(deleted)]
 
     logger.info(
-        "Soft-deleted %d customer(s) [%s]; %d already deleted, %d not found",
-        len(deleted), actor, len(already), len(not_found),
+        "Permanently deleted %d customer(s) [%s]; %d not found",
+        len(deleted), actor, len(not_found),
     )
 
     return {
@@ -174,11 +204,11 @@ def delete_customers(
         "requested": len(ids),
         "deleted": len(deleted),
         "deleted_ids": deleted,
-        "already_deleted": already,
+        "already_deleted": [],
         "not_found": not_found,
         "reason": reason_text,
         "actor": actor,
-        "soft_delete": True,
+        "permanent_delete": True,
     }
 
 

@@ -24,11 +24,11 @@ class UserRepository:
     """Syncs users from LDAP to iam.users and resolves roles."""
 
     def __init__(self) -> None:
-        """Initialize with a connection pool to the source database."""
+        """Initialize with a connection pool to the target (platform) database."""
         self._pool = pool.ThreadedConnectionPool(
             minconn=2,
             maxconn=10,
-            dsn=settings.database_url_sync,
+            dsn=settings.database_target_url_sync,
         )
 
     # ------------------------------------------------------------------

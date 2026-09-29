@@ -51,12 +51,12 @@ class JoinValidator:
             else:
                 self._check_table(join.table, f"join '{join.alias}'", report)
 
+            aliases[join.alias] = join.table
             for condition in join.on:
                 self._check_condition(condition.left, condition.right, aliases, ctes, report)
 
             if join.table not in cte_names:
                 self._check_join_indexes(join, report)
-            aliases[join.alias] = join.table
 
         report.is_valid = not report.errors
         if report.warnings:

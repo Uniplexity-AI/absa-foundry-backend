@@ -12,7 +12,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 
 # ===========================================================================
@@ -89,6 +89,7 @@ class SelectFieldSpec(BaseModel):
         default_factory=FieldValidationSpec,
         description="Structural validation rules for this field",
     )
+    label: bool = Field(default=False, description="Whether this field is an ML target label")
 
     @property
     def output_name(self) -> str:
@@ -230,16 +231,35 @@ class AggregationFunction(str, Enum):
     MAX = "MAX"
     STDDEV = "STDDEV"
     VARIANCE = "VARIANCE"
+    COUNT_FILTER = "COUNT_FILTER"
+    COUNT_DISTINCT_FILTER = "COUNT_DISTINCT_FILTER"
+    SUM_FILTER = "SUM_FILTER"
+    AVG_FILTER = "AVG_FILTER"
+    MIN_FILTER = "MIN_FILTER"
+    MAX_FILTER = "MAX_FILTER"
+
+    @classmethod
+    def _missing_(cls, value: object) -> AggregationFunction | None:
+        if isinstance(value, str):
+            upper_val = value.strip().upper()
+            for member in cls:
+                if member.value == upper_val:
+                    return member
+        return None
 
 
 class AggregationSpec(BaseModel):
     """An aggregation applied to a field during extraction."""
     model_config = {"extra": "forbid"}
 
-    function: AggregationFunction = Field(description="Aggregation function")
+    function: AggregationFunction = Field(
+        description="Aggregation function",
+        validation_alias=AliasChoices("function", "type"),
+    )
     field: str = Field(description="Column to aggregate, e.g. 'txn.amount'")
     alias: str = Field(description="Output column name for the aggregated value")
     distinct: bool = Field(default=False, description="Apply DISTINCT (only for COUNT)")
+    filter: str | None = Field(default=None, description="Optional FILTER clause expression")
 
 
 # ===========================================================================
@@ -269,10 +289,16 @@ class PreAggregationSpec(BaseModel):
     model_config = {"extra": "forbid"}
 
     name: str = Field(description="CTE name (referenced in joins.table)")
-    from_table: str = Field(description="Source table, e.g. 'public.raw_transactions'")
-    alias: str = Field(description="SQL alias for columns, e.g. 'txn'")
+    from_table: str = Field(
+        default="",
+        description="Source table, e.g. 'public.raw_transactions'",
+        validation_alias=AliasChoices("from_table", "table"),
+    )
+    alias: str = Field(default="", description="SQL alias for columns, e.g. 'txn'")
     aggregations: list[AggregationSpec] = Field(
+        default_factory=list,
         description="Aggregations to compute in this CTE",
+        validation_alias=AliasChoices("aggregations", "metrics"),
     )
     group_by: list[str] = Field(
         description="GROUP BY columns, e.g. ['txn.customer_id']",
@@ -281,9 +307,13 @@ class PreAggregationSpec(BaseModel):
         default_factory=list,
         description="Optional filters applied within the CTE",
     )
+    filter: str | None = Field(default=None, description="Optional raw SQL filter for CTE")
+    label: bool = Field(default=False, description="Whether this pre-aggregation is for ML target labels")
 
     @model_validator(mode="after")
     def _check_has_aggregations_and_group_by(self) -> "PreAggregationSpec":
+        if not self.alias:
+            self.alias = self.name
         if not self.aggregations:
             raise ValueError(f"Pre-aggregation '{self.name}' has no aggregations")
         if not self.group_by:
@@ -303,6 +333,7 @@ class CalculatedFieldSpec(BaseModel):
     expression: str = Field(description="Raw SQL expression, e.g. 'EXTRACT(YEAR FROM AGE(...))'")
     output_type: FieldType = Field(default=FieldType.INT, description="Result data type")
     description: str | None = Field(default=None, description="Human-readable description")
+    label: bool = Field(default=False, description="Whether this field is an ML target label")
 
 
 # ===========================================================================
@@ -455,6 +486,26 @@ class ValidationOverrideSpec(BaseModel):
         default=None,
         description="Override validation.mandatory_fields (None = inherit global)",
     )
+    accepted_currencies: list[str] | None = Field(
+        default=None,
+        description="Override accepted currency codes",
+    )
+    accepted_transaction_types: list[str] | None = Field(
+        default=None,
+        description="Override accepted transaction types",
+    )
+    accepted_channels: list[str] | None = Field(
+        default=None,
+        description="Override accepted channels",
+    )
+    duplicate_keys: list[str] | None = Field(
+        default=None,
+        description="Override duplicate detection composite key columns",
+    )
+    duplicate_detection_enabled: bool | None = Field(
+        default=None,
+        description="Override duplicate detection enabled flag",
+    )
 
 
 # ===========================================================================
@@ -571,6 +622,16 @@ class ExtractionConfigSpec(BaseModel):
     validation: ValidationOverrideSpec | None = Field(
         default=None,
         description="Override validation.mandatory_fields / enabled for this dataset",
+    )
+
+    # ML Labels and runtime parameters
+    labels: list[str] = Field(
+        default_factory=list,
+        description="ML target label column names",
+    )
+    parameters: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Runtime parameters for the extraction spec",
     )
 
     @model_validator(mode="after")

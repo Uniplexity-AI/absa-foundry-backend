@@ -1,24 +1,14 @@
 # ETL Configuration - Customer Lifecycle Prediction System
-# All values can be overridden by environment variables (ETL_ prefix).
-#
-# Pipeline selection: the top-level `schema`, `validation`, `transformation`,
-# and `target` sections control the currently active pipeline.
-#   Active:  customers (raw_customers → customers_clean)
-#   Standby: transactions (customer_transactions → customer_transactions_clean)
+# Overhauled for ABSA Integration
 
-# Schema drift detection — fail loudly on unexpected columns for regulated banking
 schema:
   mode: strict
   expected_columns:
-    - customer_id
-    - activation_date
-    - branch_code
-    - country
-    - customer_type
-    - onboarding_channel
-    - date_of_birth
-    - gender
-    - status
+    - customer_number
+    - bus_date
+    - transaction_code
+    - local_amount
+    - narrative
 
 landing:
   base_path: /data/landing
@@ -32,17 +22,16 @@ staging:
 validation:
   enabled: true
   mandatory_fields:
-    - customer_id
-    - activation_date
-    - branch_code
-    - country
-    - customer_type
-    - date_of_birth
-    - gender
-    - status
+    - customer_number
   accepted_currencies:
     - ZMW
+    - USD
+    - ZAR
   accepted_transaction_types:
+    - CREDIT
+    - DEBIT
+    - TRANSFER
+    - PAYMENT
     - Retail
     - SME
     - Premium
@@ -54,15 +43,24 @@ validation:
     - Web
     - USSD
     - Agent
+    - POS
+    - Online
+    - Mobile
 
 transformation:
   date_fields:
-    - activation_date
-    - date_of_birth
+    - bus_date
   date_output_format: "%Y-%m-%d"
   null_fill_values:
-    onboarding_channel: UNKNOWN
     country: ZM
+
+business_rules:
+  salary_identification:
+    keywords: ["salary", "payroll", "sal", "wages"]
+    field: narrative
+  dormancy:
+    inactivity_days: 365
+    field: bus_date
 
 monitoring:
   enabled: true
@@ -87,109 +85,11 @@ checkpoint:
   save_interval_seconds: 30
   max_retries_per_checkpoint: 3
 
-# ---------------------------------------------------------------------------
-# Target tables & columns — drives bulk_insert in run_etl.py
-#   Switch for transactions: clean_table: customer_transactions_clean, etc.
-# ---------------------------------------------------------------------------
 target:
-  clean_table: customers_clean
-  rejected_table: customers_rejected
+  clean_table: feature_store_shared
+  rejected_table: features_rejected
   data_columns:
-    - customer_id
-    - activation_date
-    - branch_code
-    - country
-    - customer_type
-    - onboarding_channel
-    - date_of_birth
-    - gender
-    - status
+    - customer_number
   meta_columns:
     - loaded_at
     - batch_id
-
-# ===========================================================================
-# STANDBY PIPELINE: transactions
-#   To activate: uncomment sections below and comment out the active ones above.
-#   Then run: python run_etl.py --source-table customer_transactions
-# ===========================================================================
-# schema:
-#   mode: strict
-#   expected_columns:
-#     - id
-#     - customer_id
-#     - account_id
-#     - branch_code
-#     - transaction_date
-#     - transaction_type
-#     - channel
-#     - currency
-#     - amount
-#     - data_issue
-#
-# validation:
-#   enabled: true
-#   mandatory_fields:
-#     - customer_id
-#     - account_id
-#     - branch_code
-#     - transaction_date
-#     - transaction_type
-#     - channel
-#     - amount
-#     - currency
-#   accepted_currencies:
-#     - ZMW
-#     - ZAR
-#     - USD
-#     - EUR
-#     - GBP
-#   accepted_transaction_types:
-#     - CREDIT
-#     - DEBIT
-#     - TRANSFER
-#     - PAYMENT
-#   accepted_channels:
-#     - BRANCH
-#     - ATM
-#     - POS
-#     - ONLINE
-#     - MOBILE
-#     - INTERNET
-#   duplicate_detection_enabled: true
-#   duplicate_keys:
-#     - customer_id
-#     - account_id
-#     - branch_code
-#     - transaction_date
-#     - amount
-#     - transaction_type
-#     - channel
-#     - currency
-#   exact_duplicate_strategy: reject
-#   near_duplicate_strategy: flag
-#
-# transformation:
-#   date_fields:
-#     - transaction_date
-#   date_output_format: "%Y-%m-%d"
-#   null_fill_values:
-#     branch_name: UNKNOWN
-#     currency: ZAR
-#
-# target:
-#   clean_table: customer_transactions_clean
-#   rejected_table: customer_transactions_rejected
-#   data_columns:
-#     - customer_id
-#     - account_id
-#     - branch_code
-#     - transaction_date
-#     - transaction_type
-#     - channel
-#     - currency
-#     - amount
-#   meta_columns:
-#     - loaded_at
-#     - source_row_id
-#     - batch_id

@@ -1,0 +1,184 @@
+# CLV Feature Spec — ABSA Banking ML
+# Grain: one row per customer × snapshot_month
+# Extras only — merged with shared_features in run_etl.py
+# Source tables: ebox_loan_details, a_brains_trans_zam_base_entries_zm,
+#                s_caas_sparrow_zam_base_crdrep
+#
+# Usage:
+#   python run_etl.py --extraction-spec etl/config/extraction_specs/clv_features.yaml \
+#                     --mode training --snapshot 2024-06-01
+#
+# Labels (target_fee_income_12m, target_clv_12m, target_margin_12m)
+# are automatically dropped in --mode scoring.
+
+version: "1.0"
+dataset_name: "clv_features"
+trusted_config: true
+description: >
+  CLV model feature spec. Aggregates historical fee income, card spend, and
+  product velocity. In training mode includes 12-month forward revenue labels.
+
+primary_entity:
+  table: "ebox_loan_details"
+  alias: "lf"
+  select_fields:
+    - field: "customer_number"
+      alias: "customer_id"
+      validation: {type: "str", required: true}
+
+pre_aggregations:
+
+  - name: "fee_agg"
+    from_table: "ebox_loan_details"
+    alias: "fa"
+    filter: "COALESCE(fa.event_start_date, fa.load_date) BETWEEN :history_start AND :snapshot_end"
+    group_by: ["fa.customer_number"]
+    aggregations:
+      - function: SUM_FILTER
+        field: "COALESCE(fee_amt, 0) + COALESCE(insurance_amt, 0)"
+        filter: "DATE_TRUNC('month', COALESCE(event_start_date, load_date)) > :snapshot_end - INTERVAL '1 month'"
+        alias: fee_income_m1
+      - function: SUM_FILTER
+        field: "COALESCE(fee_amt, 0) + COALESCE(insurance_amt, 0)"
+        filter: "DATE_TRUNC('month', COALESCE(event_start_date, load_date)) > :snapshot_end - INTERVAL '12 months'"
+        alias: fee_income_12m
+      - function: AVG_FILTER
+        field: "COALESCE(fee_amt, 0) + COALESCE(insurance_amt, 0)"
+        filter: "DATE_TRUNC('month', COALESCE(event_start_date, load_date)) > :snapshot_end - INTERVAL '12 months'"
+        alias: avg_monthly_fee_12m
+
+  # Forward labels — only meaningful in training mode
+  - name: "future_fees"
+    from_table: "ebox_loan_details"
+    alias: "ff"
+    filter: >
+      COALESCE(ff.event_start_date, ff.load_date) > :snapshot_end
+      AND COALESCE(ff.event_start_date, ff.load_date) <= :snapshot_end + (:clv_forward_months || ' months')::interval
+    group_by: ["ff.customer_number"]
+    aggregations:
+      - function: SUM
+        field: "COALESCE(fee_amt, 0) + COALESCE(insurance_amt, 0)"
+        alias: future_fee_income
+    label: true   # dropped in scoring mode
+
+  - name: "card_spend"
+    from_table: "a_brains_trans_zam_base_entries_zm"
+    alias: "cs"
+    # Note: join to s_caas_sparrow_zam_base_crdrep via account_number is done in the extractor SQL
+    filter: >
+      COALESCE(cs.bus_date, cs.posting_date) > :snapshot_end - INTERVAL '12 months'
+      AND COALESCE(cs.bus_date, cs.posting_date) <= :snapshot_end
+      AND cs.account_number IN (SELECT crd_acct_num FROM s_caas_sparrow_zam_base_crdrep WHERE crd_acct_num IS NOT NULL)
+    group_by: ["cs.customer_number"]
+    aggregations:
+      - function: SUM
+        field: "ABS(local_amount)"
+        alias: card_spend_12m
+
+  - name: "product_events"
+    from_table: "s_caas_sparrow_zam_base_crdrep"
+    alias: "pe"
+    group_by: ["pe.customer_number"]
+    aggregations:
+      - function: COUNT_FILTER
+        field: "*"
+        filter: >
+          eff_sta_dte > :snapshot_end - INTERVAL '12 months'
+          AND eff_sta_dte <= :snapshot_end
+        alias: num_products_opened_12m
+      - function: COUNT_FILTER
+        field: "*"
+        filter: >
+          eff_end_dte > :snapshot_end - INTERVAL '12 months'
+          AND eff_end_dte <= :snapshot_end
+        alias: num_products_closed_12m
+
+joins:
+  - table: "fee_agg"
+    alias: "fa"
+    join_type: "left"
+    "on":
+      - left: "lf.customer_number"
+        right: "fa.customer_number"
+    select_fields:
+      - {field: fee_income_m1}
+      - {field: fee_income_12m}
+      - {field: avg_monthly_fee_12m}
+
+  - table: "card_spend"
+    alias: "cs"
+    join_type: "left"
+    "on":
+      - left: "lf.customer_number"
+        right: "cs.customer_number"
+    select_fields:
+      - {field: card_spend_12m}
+
+  - table: "product_events"
+    alias: "pe"
+    join_type: "left"
+    "on":
+      - left: "lf.customer_number"
+        right: "pe.customer_number"
+    select_fields:
+      - {field: num_products_opened_12m}
+      - {field: num_products_closed_12m}
+
+  - table: "future_fees"
+    alias: "ff"
+    join_type: "left"
+    "on":
+      - left: "lf.customer_number"
+        right: "ff.customer_number"
+    select_fields:
+      - {field: future_fee_income, label: true}
+
+calculated_fields:
+  - name: product_net_12m
+    expression: "COALESCE(num_products_opened_12m, 0) - COALESCE(num_products_closed_12m, 0)"
+    output_type: int
+  - name: target_fee_income_12m
+    expression: "COALESCE(future_fee_income, 0)"
+    output_type: float
+    label: true
+  - name: target_clv_12m
+    expression: "COALESCE(future_fee_income, 0)"
+    output_type: float
+    label: true
+  - name: target_margin_12m
+    expression: "0.0"
+    output_type: float
+    label: true
+
+# Training labels (columns marked label: true are dropped in --mode scoring)
+labels:
+  - target_fee_income_12m
+  - target_clv_12m
+  - target_margin_12m
+
+target:
+  clean_table: "feature_store_clv"
+  rejected_table: "feature_store_clv_rejected"
+  data_columns:
+    - customer_id
+    - snapshot_month
+    - fee_income_m1
+    - fee_income_12m
+    - avg_monthly_fee_12m
+    - card_spend_12m
+    - num_products_opened_12m
+    - num_products_closed_12m
+    - product_net_12m
+    - nii_m1
+    - avg_monthly_nii_12m
+    - target_fee_income_12m
+    - target_clv_12m
+    - target_margin_12m
+  meta_columns:
+    - loaded_at
+    - batch_id
+
+streaming:
+  enabled: true
+  batch_size: 5000
+  fetch_strategy: cursor
