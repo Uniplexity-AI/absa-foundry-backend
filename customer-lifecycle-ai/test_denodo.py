@@ -1,4 +1,5 @@
 import os
+import sys
 import jaydebeapi
 import jpype
 from dotenv import load_dotenv
@@ -21,30 +22,38 @@ print(f"User: {user}")
 print("========================================\n")
 
 try:
-    # 2. Safely start the Java Virtual Machine
+    # Resolve the absolute path to the Jar file dynamically so it works on any machine
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    jar_path = os.path.join(base_dir, "scripts", "Jar.jar")
+    
+    if not os.path.exists(jar_path):
+        print(f"\n❌ CRITICAL ERROR: Windows cannot find the driver file at:\n{jar_path}")
+        print("Please check the folder and make sure the file is named exactly 'Jar.jar'.")
+        sys.exit(1)
+
+    # 2. Safely start the Java Virtual Machine WITH the Jar file already attached
     if java_home:
         java_home = java_home.replace('"', '').replace('\\', '/')
         os.environ["PATH"] = java_home + "/bin;" + os.environ.get("PATH", "")
         jvm_path = java_home + "/bin/server/jvm.dll"
         print(f"-> Starting JVM at: {jvm_path}")
         if not jpype.isJVMStarted():
-            jpype.startJVM(jvm_path)
+            jpype.startJVM(jvm_path, f"-Djava.class.path={jar_path}")
     else:
         print("-> JAVA_HOME not set in .env! Attempting default system Java...")
         if not jpype.isJVMStarted():
-            jpype.startJVM(jpype.getDefaultJVMPath())
+            jpype.startJVM(jpype.getDefaultJVMPath(), f"-Djava.class.path={jar_path}")
 
     # 3. Connect to Denodo using the JDBC driver
     jdbc_url = f"jdbc:vdb://{host}:{port}/{db}?sslTrustServerCertificate=true"
-    jar_path = "./scripts/Jar.jar"
     driver_class = "com.denodo.vdp.jdbc.Driver"
     
     print(f"-> Connecting to JDBC URL: {jdbc_url}")
     conn = jaydebeapi.connect(
         jclassname=driver_class,
         url=jdbc_url,
-        driver_args=[user, password],
-        jars=jar_path
+        driver_args=[user, password]
+        # We don't pass jars=jar_path here because we already fed it to startJVM
     )
     
     # 4. Run a quick ping query
