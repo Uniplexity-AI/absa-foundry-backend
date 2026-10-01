@@ -67,14 +67,29 @@ class DenodoStreamingExtractor:
 
         try:
             logger.info("Connecting to Denodo JDBC...")
+            
+            import jpype
+            if self.java_home:
+                # Add bin to path to find sister dlls
+                cleaned_jh = self.java_home.replace('"', '').replace('\\', '/')
+                os.environ["PATH"] = cleaned_jh + "/bin;" + os.environ.get("PATH", "")
+                jvm_path = cleaned_jh + "/bin/server/jvm.dll"
+                if not jpype.isJVMStarted():
+                    logger.info(f"Starting JVM at {jvm_path} with jar {self.path_jar}")
+                    jpype.startJVM(jvm_path, f"-Djava.class.path={self.path_jar}")
+            else:
+                if not jpype.isJVMStarted():
+                    logger.info(f"Starting default system JVM with jar {self.path_jar}")
+                    jpype.startJVM(jpype.getDefaultJVMPath(), f"-Djava.class.path={self.path_jar}")
+
             conn = jaydebeapi.connect(
                 "com.denodo.vdp.jdbc.Driver",
                 conn_url,
                 {
                     "user": self.username,
                     "password": self.password
-                },
-                self.path_jar
+                }
+                # Omit jars=self.path_jar since it's now explicitly injected at boot
             )
             
             cursor = conn.cursor()

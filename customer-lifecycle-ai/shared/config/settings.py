@@ -66,9 +66,10 @@ class Settings(BaseSettings):
     denodo_db: str = "aro_emdw_db"
     
     # JVM / JDBC Settings
-    java_home: str = "Oracle Corporation/jdk-18"
-    denodo_cacerts_path: str = "./scripts/cacerts"
-    denodo_jar_path: str = "./scripts/Jar.jar"
+    java_home: str = ""
+    # Use absolute paths dynamically resolved from the project root
+    denodo_cacerts_path: str = str(_ENV_FILE.parent / "scripts" / "cacerts")
+    denodo_jar_path: str = str(_ENV_FILE.parent / "scripts" / "Jar.jar")
 
     @property
     def denodo_jdbc_url(self) -> str:
