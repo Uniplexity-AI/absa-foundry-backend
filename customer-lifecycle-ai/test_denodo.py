@@ -22,7 +22,7 @@ print(f"User: {user}")
 print("========================================\n")
 
 try:
-    # Resolve the absolute path to the Jar file dynamically so it works on any machine
+    # Resolve the absolute path to the Jar file dynamically
     base_dir = os.path.dirname(os.path.abspath(__file__))
     jar_path = os.path.join(base_dir, "scripts", "Jar.jar")
     
@@ -38,11 +38,12 @@ try:
         jvm_path = java_home + "/bin/server/jvm.dll"
         print(f"-> Starting JVM at: {jvm_path}")
         if not jpype.isJVMStarted():
-            jpype.startJVM(jvm_path, f"-Djava.class.path={jar_path}")
+            # Use both legacy and modern JPype classpath injection
+            jpype.startJVM(jvm_path, f"-Djava.class.path={jar_path}", classpath=[jar_path])
     else:
         print("-> JAVA_HOME not set in .env! Attempting default system Java...")
         if not jpype.isJVMStarted():
-            jpype.startJVM(jpype.getDefaultJVMPath(), f"-Djava.class.path={jar_path}")
+            jpype.startJVM(jpype.getDefaultJVMPath(), f"-Djava.class.path={jar_path}", classpath=[jar_path])
 
     # 3. Connect to Denodo using the JDBC driver
     jdbc_url = f"jdbc:vdb://{host}:{port}/{db}?sslTrustServerCertificate=true"
@@ -52,8 +53,8 @@ try:
     conn = jaydebeapi.connect(
         jclassname=driver_class,
         url=jdbc_url,
-        driver_args=[user, password]
-        # We don't pass jars=jar_path here because we already fed it to startJVM
+        driver_args=[user, password],
+        jars=jar_path  # Re-added just in case JayDeBeApi handles the classloader uniquely!
     )
     
     # 4. Run a quick ping query
