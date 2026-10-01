@@ -16,7 +16,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 
 from gateway.dependencies import require_auth
 from shared.auth.models import UserContext
@@ -35,6 +35,40 @@ from app.schemas.schemas import FeatureSnapshot, ComputeBatchResponse, GapActivi
 router = APIRouter(prefix="/features", tags=["Feature Engineering"])
 _service = FeatureService()
 
+
+# ===========================================================================
+# POST /features/extract-historical
+# ===========================================================================
+@router.get("/extract-historical/status")
+def get_extraction_status(user: UserContext = Depends(require_auth)):
+    """Get the current progress of the historical ETL extraction."""
+    import json
+    from pathlib import Path
+    progress_file = Path(__file__).resolve().parent.parent.parent / "extraction_progress.json"
+    if progress_file.exists():
+        try:
+            with open(progress_file, "r") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"status": "idle", "current": 0, "total": 24, "current_date": ""}
+
+@router.post("/extract-historical")
+def extract_historical(
+    background_tasks: BackgroundTasks,
+    user: UserContext = Depends(require_auth),
+):
+    def run_historical_etl():
+        import subprocess
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        subprocess.run(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", "run_historical_etl.ps1"],
+            cwd=str(repo_root),
+            timeout=3600
+        )
+    background_tasks.add_task(run_historical_etl)
+    return {"status": "extraction_started"}
 
 # ===========================================================================
 # POST /features/compute-batch
@@ -130,3 +164,5 @@ def get_latest(
             detail=f"No features found for customer '{customer_id}'",
         )
     return result
+
+

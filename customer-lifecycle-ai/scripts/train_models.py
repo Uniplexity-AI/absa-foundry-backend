@@ -1,4 +1,4 @@
-﻿"""Train XGBoost churn model with leakage-free feature selection.
+"""Train XGBoost churn model with leakage-free feature selection.
 
 Follows prediction-service.md §4.4 exactly:
 - Loads features from customer_features (2026-07-17 + 2026-07-22)
@@ -160,7 +160,7 @@ def load_features_and_labels(
     dates: list[str],
     exclude_features: set[str],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str]]:
-    """Load features from customer_features, exclude leakage, generate labels.
+    """Load features from feature_store_churn, exclude leakage.
 
     Returns:
         X: Feature matrix (n_samples, n_features)
@@ -169,71 +169,50 @@ def load_features_and_labels(
         as_of_dates: Per-row snapshot date (for temporal splitting)
         training_features: Ordered list of column names used
     """
-    conn = psycopg2.connect(
-        settings.database_target_url_sync,
-        connect_timeout=10,
-        keepalives=1,
-        keepalives_idle=30,
-        keepalives_interval=10,
-        keepalives_count=3,
-    )
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from banking_ml_python.data_loader import load_training_data
 
-    all_rows: list[dict] = []
-    try:
-        cur = conn.cursor(cursor_factory=extras.RealDictCursor)
-        for dt in dates:
-            cur.execute(
-                "SELECT * FROM customer_features WHERE as_of_date = %s",
-                (dt,),
-            )
-            all_rows.extend(dict(r) for r in cur.fetchall())
-    finally:
-        conn.close()
-
-    # Discover all feature columns (exclude identifiers + leakage)
-    if not all_rows:
+    # Load data using new feature stores
+    df = load_training_data('churn', ['churn_90d'])
+    
+    # Filter by requested dates
+    df['snapshot_month'] = df['snapshot_month'].astype(str)
+    df = df[df['snapshot_month'].isin(dates)]
+    
+    if df.empty:
         raise ValueError("No features loaded — check dates and DB connection")
 
-    all_columns = set(all_rows[0].keys())
+    # Discover all feature columns (exclude identifiers + leakage)
+    all_columns = set(df.columns)
     feature_columns = sorted(
-        all_columns - NON_FEATURE_COLUMNS - exclude_features
+        all_columns - NON_FEATURE_COLUMNS - exclude_features - {'churn_30d', 'churn_90d', 'snapshot_month'}
     )
+    
     logger.info(
         "Loaded %d rows from %s. %d total columns → %d training features "
         "(excluded %d leakage + %d non-feature)",
-        len(all_rows), dates,
+        len(df), dates,
         len(all_columns), len(feature_columns),
         len(exclude_features), len(NON_FEATURE_COLUMNS),
     )
 
     # Build X, y, customer ids, and dates (per row)
-    X_rows = []
-    y_rows = []
-    cust_rows = []
-    date_rows = []
-    excluded_count = 0
-    for row in all_rows:
-        label = generate_churn_label(row)
-        if label is None:
-            excluded_count += 1
-            continue
-        X_rows.append([
-            _safe_float(row.get(col))
-            for col in feature_columns
-        ])
-        y_rows.append(label)
-        cust_rows.append(str(row.get("customer_id", "")))
-        date_rows.append(str(row.get("as_of_date", "")))
+    X = df[feature_columns].apply(pd.to_numeric, errors='coerce').fillna(0.0).values
+    y = df['churn_90d'].values
+    customer_ids = df['customer_id'].astype(str).values
+    as_of_dates = df['snapshot_month'].values
 
     logger.info(
-        "Labels: %d positive, %d negative, %d excluded (ambiguous)",
-        sum(y_rows), len(y_rows) - sum(y_rows), excluded_count,
+        "Labels: %d positive, %d negative",
+        int(sum(y)), len(y) - int(sum(y)),
     )
 
     return (
-        np.array(X_rows), np.array(y_rows),
-        np.array(cust_rows), np.array(date_rows), feature_columns,
+        X, y,
+        customer_ids, as_of_dates, feature_columns,
     )
+
 
 
 # ── Registry Update ────────────────────────────────────────────────

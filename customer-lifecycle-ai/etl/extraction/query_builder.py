@@ -75,6 +75,7 @@ class DynamicQueryBuilder:
         self,
         config: ExtractionConfigSpec,
         last_watermark: datetime | None = None,
+        limit: int | None = None,
     ) -> Select:
         """Build a SQLAlchemy Select statement from an extraction config.
 
@@ -164,7 +165,7 @@ class DynamicQueryBuilder:
 
         # ---- Build base query ----
         if config.aggregations:
-            stmt = select(*columns).select_from(joined)
+            stmt = select(*columns).select_from(joined._selectable if hasattr(joined, '_selectable') else joined)
             # Add GROUP BY
             for gb in config.group_by:
                 parts = gb.split(".")
@@ -173,7 +174,7 @@ class DynamicQueryBuilder:
                 else:
                     stmt = stmt.group_by(text(gb))
         else:
-            stmt = select(*columns).select_from(joined)
+            stmt = select(*columns).select_from(joined._selectable if hasattr(joined, '_selectable') else joined)
 
         # ---- Apply filters ----
         for flt in config.filters:
@@ -193,28 +194,57 @@ class DynamicQueryBuilder:
             len(config.joins), len(config.filters),
             len(config.pre_aggregations), len(config.calculated_fields),
         )
+        if limit:
+            stmt = stmt.order_by(columns[0].asc()).limit(limit)
         return stmt
 
     # ------------------------------------------------------------------
     # Table resolution
     # ------------------------------------------------------------------
 
-    def _resolve_table(self, table_ref: str, alias: str) -> sa.Table:
-        """Resolve a 'schema.table' reference to a SQLAlchemy Table with alias.
-
-        Args:
-            table_ref: Fully qualified table name, e.g. 'raw.customers'.
-            alias: SQL alias for this table reference.
-
-        Returns:
-            An aliased SQLAlchemy Table.
-
-        Raises:
-            QueryBuildError: If the table cannot be reflected.
-        """
+    def _resolve_table(self, table_ref: str, alias: str) -> Any:
         parts = table_ref.split(".")
         schema = parts[0] if len(parts) == 2 else None
         tbl_name = parts[1] if len(parts) == 2 else parts[0]
+
+        # Use lightweight table with auto-vivifying columns for dialect-less extraction
+        tbl = sa.table(tbl_name)
+        if schema:
+            tbl.schema = schema
+
+        class AutoColumnTable:
+            def __init__(self, selectable, name=None):
+                self._selectable = selectable
+                self.name = name or tbl_name
+                
+            @property
+            def c(self):
+                outer_self = self
+                class ColAccessor:
+                    def __getitem__(_, col_name):
+                        if hasattr(outer_self._selectable, "c") and col_name in outer_self._selectable.c:
+                            return outer_self._selectable.c[col_name]
+                        return sa.literal_column(f"{outer_self.name}.{col_name}")
+                    def __getattr__(_, col_name):
+                        return _.__getitem__(col_name)
+                return ColAccessor()
+            
+            def join(self, right, onclause=None, isouter=False, full=False):
+                from sqlalchemy.sql.selectable import Join
+                j = Join(self._selectable, right._selectable if hasattr(right, '_selectable') else right, onclause, isouter=isouter, full=full)
+                return AutoColumnTable(j)
+                
+            def alias(self, alias_name):
+                return AutoColumnTable(self._selectable.alias(alias_name), alias_name)
+                
+            def __clause_element__(self):
+                return self._selectable
+                
+            def __getattr__(self, name):
+                return getattr(self._selectable, name)
+
+        if not self._engine:
+            return AutoColumnTable(tbl).alias(alias)
 
         try:
             table = Table(
@@ -226,6 +256,7 @@ class DynamicQueryBuilder:
             return table.alias(alias)
         except Exception as e:
             raise QueryBuildError(f"Cannot resolve table '{table_ref}': {e}") from e
+
 
     # ------------------------------------------------------------------
     # Join ON clause
@@ -498,3 +529,5 @@ class DynamicQueryBuilder:
             watermark = datetime.now(timezone.utc) - timedelta(minutes=inc.lookback_minutes)
 
         return stmt.where(col > watermark)
+
+

@@ -1,28 +1,38 @@
-﻿import os
+import sys
 
-path = r'services\decision-intelligence-service\app\api\catalog_routes.py'
+path = 'gateway/routes/feature_routes.py'
 with open(path, 'r', encoding='utf-8') as f:
     content = f.read()
 
-# Update add_campaign metadata
-content = content.replace(
-    '            "channel": item.channel,\n            "type": "campaign"\n        }],',
-    '            "channel": item.channel,\n            "expires": item.expires,\n            "type": "campaign"\n        }],'
-)
+content = content.replace('from fastapi import APIRouter, Depends, HTTPException, Query, status', 'from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks')
 
-# Update update_campaign metadata
-content = content.replace(
-    '            "channel": item.channel,\n            "type": "campaign"\n        }]\n    )',
-    '            "channel": item.channel,\n            "expires": item.expires,\n            "type": "campaign"\n        }]\n    )'
-)
+new_endpoint = """
+# ===========================================================================
+# POST /features/extract-historical
+# ===========================================================================
+@router.post("/extract-historical")
+def extract_historical(
+    background_tasks: BackgroundTasks,
+    user: UserContext = Depends(require_auth),
+):
+    def run_historical_etl():
+        import subprocess
+        from pathlib import Path
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        subprocess.run(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", "run_historical_etl.ps1"],
+            cwd=str(repo_root),
+            timeout=3600
+        )
+    background_tasks.add_task(run_historical_etl)
+    return {"status": "extraction_started"}
 
-# Update list_campaigns item appending
-content = content.replace(
-    '                "target_segment": meta.get("target_segment", ""),\n                "channel": meta.get("channel", "")\n            })',
-    '                "target_segment": meta.get("target_segment", ""),\n                "channel": meta.get("channel", ""),\n                "expires": meta.get("expires", "2026-12-31")\n            })'
-)
+# ===========================================================================
+# POST /features/compute-batch
+"""
+
+content = content.replace('# ===========================================================================\n# POST /features/compute-batch', new_endpoint.strip())
 
 with open(path, 'w', encoding='utf-8') as f:
     f.write(content)
-
-print('Updated catalog_routes.py')
+print("Updated successfully")

@@ -89,29 +89,33 @@ class ExtractionExecutor:
 
     def __init__(
         self,
-        engine: sa.Engine,
+        engine: sa.Engine | None,
         metadata: sa.MetaData,
         engine_version: str = "1.0",
         watermark_store: WatermarkStore | None = None,
+        denodo_extractor: Any = None,
     ) -> None:
         """Initialize the extraction executor.
 
         Args:
-            engine: SQLAlchemy engine connected to the source database.
+            engine: SQLAlchemy engine connected to the source database (None if Denodo).
             metadata: Bound MetaData for table reflection.
             engine_version: Current engine semantic version.
             watermark_store: Persisted watermark store for incremental runs.
-                Defaults to etl/checkpoint/extraction_watermarks.json.
+            denodo_extractor: Instance of DenodoStreamingExtractor for JDBC/Denodo sources.
         """
         self._engine = engine
         self._metadata = metadata
+        self._denodo_extractor = denodo_extractor
         self._version_guard = VersionGuard(engine_version)
-        self._join_validator = JoinValidator(engine, metadata)
+        # JoinValidator needs an engine, but if it's None, we skip live DB validation.
+        self._join_validator = JoinValidator(engine, metadata) if engine else None
         self._query_builder = DynamicQueryBuilder(engine, metadata)
         self._rule_engine = BusinessRuleEngine()
         self._watermarks = watermark_store or WatermarkStore(self._DEFAULT_WATERMARK_PATH)
 
-    def execute(self, spec_path: str | Path) -> ExtractionResult:
+
+    def execute(self, spec_path: str | Path, limit: int | None = None) -> ExtractionResult:
         """Execute the full extraction pipeline for a YAML spec.
 
         Pipeline:
@@ -153,15 +157,18 @@ class ExtractionExecutor:
                 logger.info("  Version check: OK")
 
                 # ---- 3. Join validation ----
-                join_report = self._join_validator.validate(spec)
-                if not join_report.is_valid:
-                    result.status = "FAILED"
-                    result.errors = join_report.errors
-                    logger.error("  Join validation FAILED: %s", join_report.errors)
-                    return result
-                for warn in join_report.warnings:
-                    logger.warning("  Join warning: %s", warn)
-                logger.info("  Join validation: OK")
+                if self._join_validator:
+                    join_report = self._join_validator.validate(spec)
+                    if not join_report.is_valid:
+                        result.status = "FAILED"
+                        result.errors = join_report.errors
+                        logger.error("  Join validation FAILED: %s", join_report.errors)
+                        return result
+                    for warn in join_report.warnings:
+                        logger.warning("  Join warning: %s", warn)
+                    logger.info("  Join validation: OK")
+                else:
+                    logger.info("  Join validation: SKIPPED (No DB engine)")
 
                 # ---- 4. Build query (with incremental watermark if enabled) ----
                 last_watermark: datetime | None = None
@@ -173,15 +180,19 @@ class ExtractionExecutor:
                         logger.info("  Incremental: first run, using %d-min lookback",
                                     spec.incremental.lookback_minutes)
 
-                query = self._query_builder.build(spec, last_watermark=last_watermark)
+                query = self._query_builder.build(spec, last_watermark=last_watermark, limit=limit)
                 logger.info("  Query built: OK")
 
                 # ---- 5. Stream & validate (memory-safe with disk staging) ----
                 validation_model = DynamicSchemaFactory.create_model(spec)
 
-                # Use spec.streaming config (fixes Issue 4 — was always 10,000 default)
                 batch_size = spec.streaming.batch_size if spec.streaming.enabled else 10000
-                streaming = StreamingExtractor(self._engine, batch_size=batch_size)
+                if self._denodo_extractor:
+                    self._denodo_extractor.batch_size = batch_size
+                    streaming = self._denodo_extractor
+                else:
+                    streaming = StreamingExtractor(self._engine, batch_size=batch_size)
+
 
                 # Buffer accumulates up to batch_size, then flushes to disk (fixes Issue 3)
                 buffer: list[dict[str, Any]] = []
@@ -404,3 +415,4 @@ class ExtractionExecutor:
             error_details=errors,
             raw_payload=raw_record,
         )
+

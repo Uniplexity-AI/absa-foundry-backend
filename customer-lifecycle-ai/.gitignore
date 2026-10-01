@@ -76,3 +76,6 @@ htmlcov/
 
 # Ruff
 .ruff_cache/
+
+# ChromaDB
+services/database/chroma_db/

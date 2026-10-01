@@ -1,6 +1,3 @@
-"""Train and export 14d, 30d, and 90d lifecycle forecast LightGBM models."""
-from __future__ import annotations
-
 import os
 import sys
 import pickle
@@ -28,6 +25,8 @@ from app.models.lifecycle_predictor import (
     _engineer,
 )
 
+from banking_ml_python.data_loader import load_training_data
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("train_lifecycle")
 
@@ -35,33 +34,11 @@ MODEL_DIR = os.path.join(_PROJECT_ROOT, "models", "churn-lifecycle-prediction")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 
-def generate_synthetic_samples(n: int = 2000) -> list[dict]:
-    rng = np.random.RandomState(42)
-    rows = []
-    for i in range(n):
-        tenure = float(rng.uniform(10, 1500))
-        days = float(rng.exponential(40))
-        days = min(days, tenure)
-        balance = float(rng.exponential(25000)) if rng.rand() > 0.1 else 0.0
-        txn_30 = float(rng.poisson(8 if days < 30 else (2 if days < 90 else 0)))
-        txn_90 = float(txn_30 + rng.poisson(15))
-
-        rows.append({
-            "customer_id": f"CUST{i+1:05d}",
-            "tenure_days": tenure,
-            "days_since_last_txn": days,
-            "total_balance": balance,
-            "txn_count_30d": txn_30,
-            "txn_count_90d": txn_90,
-        })
-    return rows
-
-
 def assign_stage(feat: dict, horizon: int) -> str:
     # Forward-projected days since last transaction at the horizon
-    projected_days = feat["days_since_last_txn"] + horizon * 0.6
-    balance = feat["total_balance"]
-    tenure = feat["tenure_days"] + horizon
+    projected_days = feat.get("days_since_last_txn", 0) + horizon * 0.6
+    balance = feat.get("total_balance", 0)
+    tenure = feat.get("tenure_days", 0) + horizon
 
     if projected_days > 180 or (balance < 10.0 and projected_days > 90):
         return "CHURNED"
@@ -71,13 +48,21 @@ def assign_stage(feat: dict, horizon: int) -> str:
         return "AT_RISK"
     if tenure < 60:
         return "NEW"
-    if feat["txn_velocity_ratio"] > 1.3 and feat["txn_count_30d"] >= 5:
+    if feat.get("txn_velocity_ratio", 0) > 1.3 and feat.get("txn_count_30d", 0) >= 5:
         return "GROWING"
     return "ACTIVE"
 
 
 def train_horizon(horizon: int):
-    raw_rows = generate_synthetic_samples(3000)
+    # Load real historical data instead of synthetic samples
+    df = load_training_data('lifecycle', target_columns=['lifecycle_stage_label'])
+    
+    if df.empty:
+        logger.error("No training data found for lifecycle.")
+        return
+
+    # Convert to list of dicts for _engineer compatibility
+    raw_rows = df.to_dict('records')
     engineered = _engineer(raw_rows, horizon)
 
     feature_cols = list(FEATURES.get(horizon, (
@@ -85,6 +70,12 @@ def train_horizon(horizon: int):
         "txn_count_90d_weighted", "txn_velocity_ratio", "balance_per_txn",
         "is_zero_balance"
     )))
+    
+    # Ensure all feature_cols exist in engineered
+    for row in engineered:
+        for c in feature_cols:
+            if c not in row:
+                row[c] = 0.0
 
     X = np.array([[row[c] for c in feature_cols] for row in engineered], dtype=np.float32)
     y_labels = [assign_stage(row, horizon) for row in engineered]
@@ -107,8 +98,6 @@ def train_horizon(horizon: int):
     )
     clf = CalibratedClassifierCV(estimator=base_clf, method='sigmoid', cv=5)
     clf.fit(X_df, y)
-
-
 
     # Save target encoder
     encoder_path = os.path.join(MODEL_DIR, f"label_encoder_{horizon}d.pkl")

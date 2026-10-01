@@ -58,7 +58,31 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
+    # ---- Denodo / Hadoop (Source — via JDBC) ----
+    denodo_username: str = "SVC-m1-portal-zm"
+    denodo_password: str = "yNUT;1Y1VT6=)e"
+    denodo_host: str = "aus1-prod"
+    denodo_port: int = 9999
+    denodo_db: str = "aro_emdw_db"
+    
+    # JVM / JDBC Settings
+    java_home: str = "Oracle Corporation/jdk-18"
+    denodo_cacerts_path: str = "./scripts/cacerts"
+    denodo_jar_path: str = "./scripts/Jar.jar"
+
+    @property
+    def denodo_jdbc_url(self) -> str:
+        """Construct the Denodo JDBC connection string."""
+        return (
+            f"jdbc:vdb://{self.denodo_host}:{self.denodo_port}/{self.denodo_db}"
+            f"?sslTrustServerCertificate=true"
+            f"&sslTrustStoreLocation={self.denodo_cacerts_path}"
+            f"&queryTimeout=0"
+            f"&chunkTimeout=0"
+        )
+
     # ---- PostgreSQL Target (ETL clean/transformed data) ----
+
     postgres_target_host: str = "localhost"
     postgres_target_port: int = 5432
     postgres_target_db: str = "etl_clean"

@@ -726,6 +726,8 @@ async def run_etl_pipeline(
     force: bool = False,
     triggered_by: str = "cli",
     mode: str = "training",
+    source_type: str = "postgres",
+    limit: int | None = None,
 ) -> dict:
     """Execute the complete ETL pipeline: Extract -> Validate -> Transform -> Load.
 
@@ -771,15 +773,31 @@ async def run_etl_pipeline(
         logger.info("--- Phase 0/4: DYNAMIC EXTRACTOR ---")
         spec_path = os.path.join(_PROJECT_ROOT, extraction_spec)
 
-        engine = get_sync_engine()  # Synchronous engine for Dynamic Extractor
+        engine = None if source_type == "denodo" else get_sync_engine()
         metadata = MetaData()
+
+        denodo_extractor = None
+        if source_type == "denodo":
+            logger.info("Using DenodoStreamingExtractor for JDBC Hadoop connection")
+            from etl.extraction.denodo_connector import DenodoStreamingExtractor
+            denodo_extractor = DenodoStreamingExtractor(
+                username=settings.denodo_username,
+                password=settings.denodo_password,
+                host=settings.denodo_host,
+                port=settings.denodo_port,
+                database=settings.denodo_db,
+                java_home=settings.java_home,
+                cacerts=settings.denodo_cacerts_path,
+                path_jar=settings.denodo_jar_path,
+            )
 
         extractor = ExtractionExecutor(
             engine=engine,
             metadata=metadata,
             engine_version="2.1",
+            denodo_extractor=denodo_extractor,
         )
-        extraction_result = extractor.execute(spec_path)
+        extraction_result = extractor.execute(spec_path, limit=limit)
 
         if extraction_result.status == "FAILED":
             logger.error("Dynamic Extractor FAILED: %s", extraction_result.errors)
@@ -1350,8 +1368,10 @@ def main() -> None:
         help="Path to YAML extraction spec for the Dynamic Extractor pre-processor (e.g., 'etl/config/extraction_specs/customer_360.yaml')",
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--limit", type=int, default=None, help="Limit number of rows extracted (useful for smoke testing)")
     parser.add_argument("--force", action="store_true", help="Re-process even if source was already loaded")
     parser.add_argument("--mode", choices=["training", "scoring"], default="training", help="Execution mode (training keeps labels, scoring drops them)")
+    parser.add_argument("--source-type", choices=["postgres", "denodo"], default="postgres", help="Backend database type for extraction (default: postgres)")
     parser.add_argument(
         "--snapshot",
         default=None,
@@ -1420,6 +1440,8 @@ def main() -> None:
         dry_run=args.dry_run,
         force=args.force,
         mode=args.mode,
+        source_type=args.source_type,
+        limit=args.limit,
     ))
 
     if result["status"] == "SKIPPED_DUPLICATE":
@@ -1431,3 +1453,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
