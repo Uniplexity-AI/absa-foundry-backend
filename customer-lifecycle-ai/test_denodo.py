@@ -38,12 +38,11 @@ try:
         jvm_path = java_home + "/bin/server/jvm.dll"
         print(f"-> Starting JVM at: {jvm_path}")
         if not jpype.isJVMStarted():
-            # Use both legacy and modern JPype classpath injection
-            jpype.startJVM(jvm_path, f"-Djava.class.path={jar_path}", classpath=[jar_path])
+            jpype.startJVM(jvm_path, classpath=[jar_path])
     else:
         print("-> JAVA_HOME not set in .env! Attempting default system Java...")
         if not jpype.isJVMStarted():
-            jpype.startJVM(jpype.getDefaultJVMPath(), f"-Djava.class.path={jar_path}", classpath=[jar_path])
+            jpype.startJVM(jpype.getDefaultJVMPath(), classpath=[jar_path])
 
     # 3. Connect to Denodo using the JDBC driver
     jdbc_url = f"jdbc:vdb://{host}:{port}/{db}?sslTrustServerCertificate=true"

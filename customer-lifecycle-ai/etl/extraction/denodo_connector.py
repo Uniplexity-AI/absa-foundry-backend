@@ -57,13 +57,7 @@ class DenodoStreamingExtractor:
         ))
         logger.info(f"Denodo compiled query:\n{compiled_query}")
 
-        conn_url = (
-            f"jdbc:vdb://{self.host}:{self.port}/{self.database}"
-            f"?sslTrustServerCertificate=true"
-            f"&sslTrustStoreLocation={self.cacerts}"
-            f"&queryTimeout=0"
-            f"&chunkTimeout=0"
-        )
+        conn_url = f"jdbc:vdb://{self.host}:{self.port}/{self.database}?sslTrustServerCertificate=true"
 
         try:
             logger.info("Connecting to Denodo JDBC...")
@@ -76,20 +70,16 @@ class DenodoStreamingExtractor:
                 jvm_path = cleaned_jh + "/bin/server/jvm.dll"
                 if not jpype.isJVMStarted():
                     logger.info(f"Starting JVM at {jvm_path} with jar {self.path_jar}")
-                    jpype.startJVM(jvm_path, f"-Djava.class.path={self.path_jar}")
+                    jpype.startJVM(jvm_path, classpath=[self.path_jar])
             else:
                 if not jpype.isJVMStarted():
                     logger.info(f"Starting default system JVM with jar {self.path_jar}")
-                    jpype.startJVM(jpype.getDefaultJVMPath(), f"-Djava.class.path={self.path_jar}")
+                    jpype.startJVM(jpype.getDefaultJVMPath(), classpath=[self.path_jar])
 
             conn = jaydebeapi.connect(
                 "com.denodo.vdp.jdbc.Driver",
                 conn_url,
-                {
-                    "user": self.username,
-                    "password": self.password
-                }
-                # Omit jars=self.path_jar since it's now explicitly injected at boot
+                [self.username, self.password]
             )
             
             cursor = conn.cursor()
