@@ -814,14 +814,14 @@ async def run_etl_pipeline(
             extraction_result.rows_rejected,
         )
 
-        if df.empty:
-            logger.error("No valid records from extraction spec. Aborting.")
-            return {"status": "FAILED", "error": "No valid records from Dynamic Extractor"}
-
-        # Persist rejected records to audit directory
+        # Persist rejected records to audit directory FIRST so we can debug complete failures!
         if extraction_result.dlq_entries:
             dlq_path = ExtractionExecutor.persist_dlq(extraction_result.dlq_entries)
             logger.info("  %d records persisted to DLQ: %s", len(extraction_result.dlq_entries), dlq_path)
+
+        if df.empty:
+            logger.error("No valid records from extraction spec. Aborting.")
+            return {"status": "FAILED", "error": "No valid records from Dynamic Extractor"}
 
     # ------------------------------------------------------------------
     # PHASE 1: EXTRACT (standard mode — skipped if extraction spec used)
