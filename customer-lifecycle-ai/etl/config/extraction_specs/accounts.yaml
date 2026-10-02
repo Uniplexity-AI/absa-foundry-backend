@@ -39,13 +39,13 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "a_africa_zam_base_customer"
+  table: "Aro_emdw_db.A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL"
   alias: "acct"
   select_fields:
     - field: "account_number"
       alias: "account_id"
       validation: { type: "str", required: true }
-    - field: "account_status"
+    - field: "current_status"
       alias: "status"
       validation: { type: "str", required: true }
     - field: "account_type"
