@@ -1,75 +1,58 @@
-# Accounts — a_africa_zam_base_customer → accounts_clean
-# =============================================================================
-# Maps ABSA account data into accounts_clean.
-# customer_id is resolved by joining a_africa_zam_base_customers_new.
-#
-# ABSA source tables (confirmed):
-#   a_africa_zam_base_customer       → account/product attributes
-#   a_africa_zam_base_customers_new  → customer-account relationship bridge
-#
-# Field mapping (source → backend):
-#   account_number  → account_id
-#   account_status  → status
-#   account_type    → account_type
-#   date_opened     → opened_date
-#   branch_number   → branch_code   (NOTE: accounts_clean has no branch_code
-#                                    column — add it, or drop this field)
-#   customer_number (via bridge) → customer_id
-#
-# NOT COVERED (available in Table 1 but no columns yet in accounts_clean):
-#   currency_swift_code / country_currency_number → currency
-#   location_code / sales_location → location segmentation
-#
-# Usage:
-#   python run_etl.py --extraction-spec etl/config/extraction_specs/accounts.yaml
-# =============================================================================
-
-version: "1.0"
-dataset_name: "accounts"
-description: "Accounts (Table 1) joined with the ownership bridge (Table 2) → accounts_clean."
-
+version: '1.0'
+dataset_name: accounts
+description: "Accounts (Table 1) joined with the ownership bridge (Table 2) \xE2\u2020\
+  \u2019 accounts_clean."
 versioning:
   engine:
-    version: "2.1"
+    version: '2.1'
   dataset:
     version: 1
   schema:
     version: 1
   compatibility:
-    minimum_engine: "1.0"
-
+    minimum_engine: '1.0'
 primary_entity:
-  table: "Aro_emdw_db.A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL"
-  alias: "acct"
+  table: Aro_emdw_db.A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL
+  alias: acct
   select_fields:
-    - field: "account_number"
-      alias: "account_id"
-      validation: { type: "str", required: true }
-    - field: "current_status"
-      alias: "status"
-      validation: { type: "str", required: true }
-    - field: "account_type"
-      alias: "account_type"
-      validation: { type: "str", required: false }
-    - field: "date_opened"
-      alias: "opened_date"
-      validation: { type: "datetime", required: false }
-    - field: "branch_number"
-      alias: "branch_code"
-      validation: { type: "str", required: false }
-
+    - field: account_number
+      alias: account_id
+      validation:
+        type: str
+        required: true
+    - field: current_status
+      alias: status
+      validation:
+        type: str
+        required: true
+    - field: account_type
+      alias: account_type
+      validation:
+        type: str
+        required: false
+    - field: date_opened
+      alias: opened_date
+      validation:
+        type: datetime
+        required: false
+    - field: branch_number
+      alias: branch_code
+      validation:
+        type: str
+        required: false
 joins:
-  - table: "Aro_emdw_db.A_AFRICA_BASE_customer_accounts"
-    alias: "xref"
-    join_type: "left"
-    "on":
-      - left: "acct.account_number"
-        right: "xref.account_number"
+  - table: Aro_emdw_db.A_AFRICA_BASE_customer_accounts
+    alias: xref
+    join_type: left
+    'on':
+      - left: acct.account_number
+        right: xref.account_number
     select_fields:
-      - field: "customer_number"
-        alias: "customer_id"
-        validation: { type: "str", required: false }
-
+      - field: customer_number
+        alias: customer_id
+        validation:
+          type: str
+          required: false
 transform:
   type_casts:
     opened_date: datetime
@@ -87,21 +70,155 @@ transform:
       default_value: UNKNOWN
     - field_name: account_type
       mappings:
-        Savings: SAVINGS
-        savings: SAVINGS
-        Current: CURRENT
-        current: CURRENT
-        Fixed Deposit: FIXED_DEPOSIT
-        fixed deposit: FIXED_DEPOSIT
-        Loan: LOAN
-        loan: LOAN
+        '0': Ultimate_Plus_Account
+        '1': Ordinary Loan
+        '2': Mortgage Loan
+        '3': Staff Current
+        '4': Staff Loan
+        '5': Personal Loan
+        '6': Invoice Discounting
+        '7': Trade Loan Facility
+        '8': Call Deposit
+        '9': Import LC Refinancing
+        '10': Fixed Deposit
+        '11': VAF Loans
+        '12': Control Accounts
+        '14': Memorandum
+        '15': Prepaid Cards
+        '16': Profit And Loss
+        '20': Premier CFC Current Account
+        '21': Premier Life CFC Current Account
+        '22': Premier Fixed Deposit
+        '23': Premier Life Fixed Deposit
+        '24': Premier Home Loan
+        '25': Premier Life Home Loan
+        '26': BarclayloanDirect
+        '27': USD_Barclayloan
+        '28': Barclayloan Plus (Variable Rate)
+        '29': Scheme Loan Plus
+        '30': Premier Life Loan Plus (Variable Rate)
+        '31': Barclayloan
+        '32': Staff Barclayloan
+        '33': Treasury Deposits A/C
+        '34': CFC Personal Current
+        '35': CFC Business Current A/C
+        '36': CFC Business Loan Account
+        '37': CFC Fixed Deposit Account
+        '38': Executive Loan Account
+        '39': Local Business CFC
+        '40': Business Premium
+        '41': Business Current Account
+        '42': Business Fixed Deposits
+        '45': Local Business Current Account
+        '49': Ultimate Account
+        '50': Local Business Gold
+        '51': Higher Rate Dep
+        '52': Junior Mega Savings
+        '53': Ignition Account
+        '54': LA RIBA Current Account
+        '55': Test Accounts
+        '59': CFC SME Loan Account
+        '60': CFC SME Current Account
+        '61': Business Solution Loan
+        '62': Community Account
+        '63': CDA - Large Corporate
+        '64': Business Current (Transactions)
+        '65': Business Current (Trans & Cash)
+        '66': Local Buss Bonus Savings
+        '67': Scheme Loan
+        '68': Business Current Account
+        '69': Business Savings
+        '70': Bank Account
+        '71': Bonus Savings
+        '72': Instant Savings Account
+        '73': Prestige Current
+        '74': High Rate Savings
+        '75': Prestige Plus
+        '76': High Interest Bonus
+        '77': Prestige Bonus Savings
+        '78': Prestige Loan
+        '79': Premier_Plus_Account
+        '80': Potential Loss
+        '81': Control Accounts
+        '82': Financial Accounts
+        '83': Nostro Accounts
+        '84': Liability
+        '85': Head Office
+        '86': Reconcilable
+        '87': Premier Bonus Savings
+        '88': Premier Loan
+        '89': Premier Account
+        '91': NGO Account
+        '93': Tonse Bank Account
+        '94': Tonse Savings Account
+        '95': GRZ Account
+        '96': Financial Institutions
+        '97': Staff Study Loan
+        '98': Staff Personal Loan
+        '99': Staff House Loan
       default_value: UNKNOWN
-
+    - field_name: branch_code
+      mappings:
+        '1': Head Office
+        '2': Head Office - Elunda
+        '3': Chingola & Chingola Prestige
+        '4': Chipata
+        '5': Choma
+        '6': Kabwe
+        '7': Kafue
+        '8': Lusaka - Mungwi Branch
+        '9': Kitwe Business Centre
+        '10': Kitwe Chimwemwe
+        '11': Kapiri Mposhi
+        '12': Livingstone & Livingstone Prestige
+        '13': Luanshya
+        '14': Lusaka Northend
+        '15': Lusaka Levy Branch
+        '16': Lusaka Business Centre
+        '17': Lusaka Longacres & Prestige
+        '18': Kasumbalesa
+        '19': Lusaka - Industrial
+        '20': Mansa
+        '21': Mazabuka
+        '22': Mfuwe
+        '23': Mufulira
+        '24': Monze
+        '25': Ndola Business Centre
+        '26': East Park Mall
+        '27': Kalumbila
+        '29': Solwezi
+        '30': Petauke
+        '31': Lundazi
+        '32': Kasama
+        '33': Centro Mall Branch
+        '34': Absa House Premier
+        '35': Mongu
+        '36': Garden City
+        '37': Chongwe
+        '38': Mkushi
+        '39': Ndola Operations Processing Centre
+        '40': Nakonde
+        '41': Mukuba Branch
+        '42': Chirundu
+        '43': Kabwata
+        '44': Lusaka - Chawama
+        '45': Mpika
+        '46': Ndola - Masala
+        '47': Chambishi
+        '48': Mpongwe
+        '49': East Park Mall
+        '50': Lusaka Operations Processing Centre
+        '51': Cosmopolitan Branch
+        '52': Kitwe Operations Processing Centre
+        '53': Chililabombwe
+        '54': Lusaka Kabulenga
+        '55': Nkwazi Premium Banking Centre
+        '56': Islamic Banking
+      default_value: UNKNOWN
 validation:
   mandatory_fields:
     - account_id
     - status
-
 target:
   clean_table: accounts_clean
   data_columns:
@@ -110,7 +227,6 @@ target:
     - account_type
     - status
     - opened_date
-
 streaming:
   enabled: true
   batch_size: 10000
