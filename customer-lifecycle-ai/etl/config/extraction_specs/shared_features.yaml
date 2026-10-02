@@ -24,16 +24,13 @@ description: >
 
 # ---- Driving table ----
 primary_entity:
-  table: "a_africa_zam_base_customer"
+  table: "a_africa_zam_base_customers_new"
   alias: "c"
   select_fields:
     - field: "customer_number"
       alias: "customer_id"
       validation: {type: "str", required: true}
-    - field: "length_years"
-      validation: {type: "int"}
-    - field: "length_months"
-      validation: {type: "int"}
+
 
 # ---- Pre-aggregations (run on DB before join — prevents row multiplication) ----
 pre_aggregations:
@@ -163,6 +160,8 @@ joins:
       - left: "c.customer_number"
         right: "ce.customer_number"
     select_fields:
+      - field: "length_years"
+      - field: "length_months"
       - field: "district_or_region"
         alias: "geo_region"
       - field: "town_or_city"

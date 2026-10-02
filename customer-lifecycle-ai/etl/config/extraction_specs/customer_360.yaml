@@ -122,7 +122,7 @@ incremental:
 # customer_number is the universal join key across all ABSA DW tables.
 # ---------------------------------------------------------------------------
 primary_entity:
-  table: "a_africa_zam_base_customer"
+  table: "a_africa_zam_base_customers_new"
   alias: "c"
   select_fields:
     - field: "customer_number"
@@ -130,19 +130,6 @@ primary_entity:
       validation:
         type: "str"
         required: true
-
-    # Tenure - forwarded to feature-engineering for tenure_days / tenure_label
-    - field: "length_years"
-      alias: "length_years"
-      validation:
-        type: "int"
-        required: false
-
-    - field: "length_months"
-      alias: "length_months"
-      validation:
-        type: "int"
-        required: false
 
 # ---------------------------------------------------------------------------
 # JOINS
@@ -230,6 +217,8 @@ joins:
       - left: "c.customer_number"
         right: "ce.customer_number"
     select_fields:
+      - field: "length_years"
+      - field: "length_months"
       # Nationality - displayed on profile header
       - field: "country"
         alias: "nationality"
