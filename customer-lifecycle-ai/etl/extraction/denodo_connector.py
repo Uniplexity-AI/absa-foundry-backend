@@ -95,7 +95,10 @@ class DenodoStreamingExtractor:
                     
                 chunk = []
                 for row in rows:
-                    chunk.append(dict(zip(columns, row)))
+                    # Convert raw Java/JPype objects to native Python strings (leave None as None).
+                    # Pydantic will safely coerce these strings back into int/float/datetime downstream!
+                    cleaned_row = [str(x) if x is not None else None for x in row]
+                    chunk.append(dict(zip(columns, cleaned_row)))
                 yield chunk
                 
         except Exception as e:
