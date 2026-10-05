@@ -42,6 +42,21 @@ def list_actions(
     return pilot_action_service.list_actions(customer_id=customer_id, limit=limit)
 
 
+
+@router.delete("/log/{action_id}")
+def delete_action(action_id: int):
+    success = pilot_action_service.delete_action(action_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"success": True}
+
+@router.put("/log/{action_id}")
+def update_action(action_id: int, req: PilotActionLogRequest):
+    success = pilot_action_service.update_action(action_id, req)
+    if not success:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"success": True}
+
 @router.get("/state/{customer_id}", response_model=PilotStateResponse)
 def get_state(customer_id: str) -> PilotStateResponse:
     """Return the per-customer mutable state blob."""

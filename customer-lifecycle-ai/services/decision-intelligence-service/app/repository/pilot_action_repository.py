@@ -148,6 +148,32 @@ class PilotActionRepository:
     # Per-customer mutable state (upsert by customer_id)
     # ------------------------------------------------------------------
 
+
+    def delete_action(self, action_id: int) -> bool:
+        def _q():
+            conn = self._connect()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM etl_clean.pilot_action_log WHERE id = %s", (action_id,))
+                    conn.commit()
+                    return cur.rowcount > 0
+            finally:
+                conn.close()
+        return self._retry(_q, "delete_action")
+
+    def update_action(self, action_id: int, action_type: str, detail: str, meta: dict) -> bool:
+        import json
+        def _q():
+            conn = self._connect()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE etl_clean.pilot_action_log SET action_type = %s, detail = %s, meta = %s WHERE id = %s", (action_type, detail, json.dumps(meta), action_id))
+                    conn.commit()
+                    return cur.rowcount > 0
+            finally:
+                conn.close()
+        return self._retry(_q, "update_action")
+
     def get_state(self, customer_id: str) -> dict:
         """Return the JSONB state blob for a customer ({} if absent)."""
 

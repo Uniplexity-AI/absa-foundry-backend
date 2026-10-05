@@ -79,3 +79,5 @@ htmlcov/
 
 # ChromaDB
 services/database/chroma_db/
+
+database/chroma_db/

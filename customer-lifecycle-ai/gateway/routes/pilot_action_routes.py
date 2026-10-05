@@ -29,6 +29,15 @@ async def proxy_list_actions(request: Request):
     return await _forward(request, "/pilot/actions")
 
 
+
+@router.delete("/log/{action_id}")
+async def proxy_delete_action(request: Request, action_id: int):
+    return await _forward(request, f"/pilot/actions/log/{action_id}")
+
+@router.put("/log/{action_id}")
+async def proxy_update_action(request: Request, action_id: int):
+    return await _forward(request, f"/pilot/actions/log/{action_id}")
+
 @router.get("/state/{customer_id}")
 async def proxy_get_state(request: Request, customer_id: str):
     """Forward per-customer state GET."""

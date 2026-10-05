@@ -1,0 +1,26 @@
+import yaml
+
+def fix_yaml(filepath):
+    with open(filepath, 'r') as f:
+        config = yaml.safe_load(f)
+
+    # 1. Change primary entity to a_africa_zam_base_customers_new
+    if config['primary_entity']['table'] == 'a_africa_zam_base_customer':
+        config['primary_entity']['table'] = 'a_africa_zam_base_customers_new'
+        
+        # Remove length_years and length_months from primary select_fields
+        config['primary_entity']['select_fields'] = [
+            f for f in config['primary_entity']['select_fields']
+            if f.get('field') not in ('length_years', 'length_months')
+        ]
+        
+    # 2. Add length_years and length_months to a_africa_zam_base_customer_employment_daily_zm join
+    for j in config.get('joins', []):
+        # We need to change the join condition because c is now a_africa_zam_base_customers_new
+        # but wait! 'cn' was a_africa_zam_base_customers_new. 
+        # If 'c' is now a_africa_zam_base_customers_new, we should REMOVE the 'cn' join if it exists,
+        # or merge its fields into primary_entity.
+        pass
+
+    # Wait, merging fields from the cn join into primary entity is complex via script.
+    # It's better to just swap the alias back so we don't rewrite the whole file manually.

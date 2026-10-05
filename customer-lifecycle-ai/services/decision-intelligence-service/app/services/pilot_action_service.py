@@ -75,6 +75,13 @@ class PilotActionService:
     # Per-customer state
     # ------------------------------------------------------------------
 
+
+    def delete_action(self, action_id: int) -> bool:
+        return self._repo.delete_action(action_id)
+
+    def update_action(self, action_id: int, req) -> bool:
+        return self._repo.update_action(action_id, req.action_type, req.detail, req.meta)
+
     def get_state(self, customer_id: str) -> PilotStateResponse:
         """Return the current JSONB state blob for a customer."""
         return PilotStateResponse(customer_id=customer_id, state=self._repo.get_state(customer_id))
