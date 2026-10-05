@@ -218,7 +218,13 @@ joins:
         right: "ce.customer_number"
     select_fields:
       - field: "length_years"
+        validation:
+          type: "int"
+          required: false
       - field: "length_months"
+        validation:
+          type: "int"
+          required: false
       # Nationality - displayed on profile header
       - field: "country"
         alias: "nationality"

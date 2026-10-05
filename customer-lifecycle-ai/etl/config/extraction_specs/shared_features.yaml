@@ -161,7 +161,13 @@ joins:
         right: "ce.customer_number"
     select_fields:
       - field: "length_years"
+        validation:
+          type: "int"
+          required: false
       - field: "length_months"
+        validation:
+          type: "int"
+          required: false
       - field: "district_or_region"
         alias: "geo_region"
       - field: "town_or_city"
