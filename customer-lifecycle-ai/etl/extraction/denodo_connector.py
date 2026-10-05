@@ -95,9 +95,22 @@ class DenodoStreamingExtractor:
                     
                 chunk = []
                 for row in rows:
-                    # Convert raw Java/JPype objects to native Python strings (leave None as None).
-                    # Pydantic will safely coerce these strings back into int/float/datetime downstream!
-                    cleaned_row = [str(x) if x is not None else None for x in row]
+                    cleaned_row = []
+                    for x in row:
+                        if x is None:
+                            cleaned_row.append(None)
+                        elif type(x) in (int, float, bool):
+                            import math
+                            if type(x) is float and math.isnan(x):
+                                cleaned_row.append(None)
+                            else:
+                                cleaned_row.append(x)
+                        else:
+                            s = str(x).strip()
+                            if s == "" or s.upper() in ("NULL", "NAN", "NONE"):
+                                cleaned_row.append(None)
+                            else:
+                                cleaned_row.append(s)
                     chunk.append(dict(zip(columns, cleaned_row)))
                 yield chunk
                 
