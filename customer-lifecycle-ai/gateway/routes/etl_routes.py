@@ -10,6 +10,7 @@ FR-CONFIG: Extraction spec CRUD + pipeline trigger
 from __future__ import annotations
 
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -231,16 +232,18 @@ async def trigger_pipeline(body: TriggerRequest):
             if body.limit is not None:
                 cmd.extend(["--limit", str(body.limit)])
             if body.sync:
-                subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), check=True)
+                subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), env=os.environ.copy(), check=True)
                 if body.run_models:
                     models_cmd = [sys.executable, str(_RUN_ETL), "--models", body.run_models]
                     if body.snapshot:
                         models_cmd.extend(["--snapshot", body.snapshot])
+                    if body.source_type:
+                        models_cmd.extend(["--source-type", body.source_type])
                     if body.force:
                         models_cmd.append("--force")
-                    subprocess.run(models_cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), check=True)
+                    subprocess.run(models_cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), env=os.environ.copy(), check=True)
             else:
-                subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent))
+                subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), env=os.environ.copy())
         return TriggerResponse(
             status="triggered", config_name=body.config_name,
             message=f"Pipeline started — logs: logs/{log_name}",
