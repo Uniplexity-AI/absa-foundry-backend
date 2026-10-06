@@ -11,12 +11,10 @@ from __future__ import annotations
 
 import json
 import logging
-import tempfile
 import time as _time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -194,16 +192,12 @@ class ExtractionExecutor:
                     streaming = StreamingExtractor(self._engine, batch_size=batch_size)
 
 
-                # Buffer accumulates up to batch_size, then flushes to disk (fixes Issue 3)
-                buffer: list[dict[str, Any]] = []
-                chunk_files: list[Path] = []
+                # Accumulate all valid records in memory (no parquet/pyarrow needed for pilot scale)
+                all_records: list[dict[str, Any]] = []
                 dlq_entries: list[DLQEntry] = []
                 total_rows = 0
                 total_valid = 0
                 watermark_candidate: datetime | None = None
-                staging_dir = Path(tempfile.gettempdir()) / f"etl_{spec.dataset_name}_{batch_id[:8]}"
-                staging_dir.mkdir(parents=True, exist_ok=True)
-                chunk_idx = 0
 
                 for chunk in streaming.stream(query):
                     total_rows += len(chunk)
@@ -212,6 +206,7 @@ class ExtractionExecutor:
                             candidate = self._as_utc_datetime(record.get("_extraction_watermark"))
                             if candidate and (watermark_candidate is None or candidate > watermark_candidate):
                                 watermark_candidate = candidate
+
                         # Tier 1: Structural validation
                         try:
                             validated = validation_model.model_validate(record)
@@ -239,35 +234,16 @@ class ExtractionExecutor:
                             for w in rules_report.warnings:
                                 record_validated[f"_warning_{w.rule_id}"] = w.message
 
-                        buffer.append(record_validated)
+                        all_records.append(record_validated)
                         total_valid += 1
 
-                        # Flush buffer to disk when full — constant memory regardless of dataset size
-                        if len(buffer) >= batch_size:
-                            chunk_path = staging_dir / f"chunk_{chunk_idx:06d}.parquet"
-                            pd.DataFrame(buffer).to_parquet(chunk_path, index=False)
-                            chunk_files.append(chunk_path)
-                            chunk_idx += 1
-                            buffer.clear()
-
-                # Final flush of remaining buffer
-                if buffer:
-                    chunk_path = staging_dir / f"chunk_{chunk_idx:06d}.parquet"
-                    pd.DataFrame(buffer).to_parquet(chunk_path, index=False)
-                    chunk_files.append(chunk_path)
-
-                # Read all chunks back (O(n) total I/O — each chunk written & read once)
-                if chunk_files:
-                    result.valid_df = pd.concat(
-                        [pd.read_parquet(f) for f in sorted(chunk_files)],
-                        ignore_index=True,
-                    )
+                # Build DataFrame from accumulated records
+                if all_records:
+                    result.valid_df = pd.DataFrame(all_records)
                     result.valid_df = result.valid_df.drop(columns=["_extraction_watermark"], errors="ignore")
-                    result.valid_path = str(staging_dir)
-                elif buffer:
-                    result.valid_df = pd.DataFrame(buffer)
                 else:
                     result.valid_df = pd.DataFrame()
+
 
                 # ---- Build result ----
                 result.rows_extracted = total_rows
