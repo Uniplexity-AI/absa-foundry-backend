@@ -65,6 +65,11 @@ class TriggerRequest(BaseModel):
     config_name: str
     dry_run: bool = False
     sync: bool = False
+    source_type: str | None = None
+    snapshot: str | None = None
+    force: bool = False
+    limit: int | None = None
+    run_models: str | None = None
 
 
 class TriggerResponse(BaseModel):
@@ -217,8 +222,23 @@ async def trigger_pipeline(body: TriggerRequest):
             cmd = [sys.executable, str(_RUN_ETL), "--extraction-spec", str(config_path)]
             if body.dry_run:
                 cmd.append("--dry-run")
+            if body.source_type:
+                cmd.extend(["--source-type", body.source_type])
+            if body.snapshot:
+                cmd.extend(["--snapshot", body.snapshot])
+            if body.force:
+                cmd.append("--force")
+            if body.limit is not None:
+                cmd.extend(["--limit", str(body.limit)])
             if body.sync:
                 subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), check=True)
+                if body.run_models:
+                    models_cmd = [sys.executable, str(_RUN_ETL), "--models", body.run_models]
+                    if body.snapshot:
+                        models_cmd.extend(["--snapshot", body.snapshot])
+                    if body.force:
+                        models_cmd.append("--force")
+                    subprocess.run(models_cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent), check=True)
             else:
                 subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, cwd=str(_RUN_ETL.parent))
         return TriggerResponse(
