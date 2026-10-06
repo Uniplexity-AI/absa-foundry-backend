@@ -26,13 +26,10 @@ primary_entity:
     validation:
       type: str
       required: true
-  - field: length_years
+  - field: account_number
+    alias: account_id_tmp
     validation:
-      type: int
-      required: false
-  - field: length_months
-    validation:
-      type: int
+      type: str
       required: false
 joins:
 - table: a_africa_zam_base_customers_new
@@ -135,12 +132,24 @@ joins:
     validation:
       type: str
       required: false
+- table: Aro_emdw_db.A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL
+  alias: acc
+  join_type: left
+  'on':
+  - left: c.account_number
+    right: acc.account_number
+  select_fields:
+  - field: date_opened
+    alias: date_opened
+    validation:
+      type: datetime
+      required: false
 calculated_fields:
 - name: status
   expression: '''ACTIVE'''
   output_type: str
 - name: customer_since_date
-  expression: '''2020-01-01'''
+  expression: acc.date_opened
   output_type: datetime
 - name: kyc_tier
   expression: '''Standard'''
