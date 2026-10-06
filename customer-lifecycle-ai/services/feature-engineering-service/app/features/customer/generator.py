@@ -52,7 +52,7 @@ class CustomerProfileGenerator:
                 SET
                     customer_segment       = cc.market_segment,
                     market_segment_code    = cc.market_segment_code,
-                    customer_tenure_days   = (%(d)s::date - cc.customer_since_date::date),
+                    customer_tenure_days   = (%(d)s::date - COALESCE(cc.customer_since_date, pa.opened_date)::date),
                     age_years              = EXTRACT(YEAR FROM AGE(%(d)s::date, cc.date_of_birth::date)),
                     onboarding_channel     = NULL,
                     prof_primary_branch    = cc.branch_code
@@ -61,6 +61,13 @@ class CustomerProfileGenerator:
                     FROM customers_clean
                     ORDER BY customer_id, loaded_at DESC
                 ) cc
+                LEFT JOIN LATERAL (
+                    SELECT a.opened_date
+                    FROM accounts_clean a
+                    WHERE a.customer_id = cc.customer_id
+                    ORDER BY a.opened_date NULLS LAST, a.account_id
+                    LIMIT 1
+                ) pa ON TRUE
                 WHERE RIGHT(cf.customer_id, 5) = RIGHT(cc.customer_id, 5)
                   AND cf.as_of_date = %(d)s::date
                 """,

@@ -161,7 +161,10 @@ def get_customer_profile(
         return None
 
     snapshot_date = row["snapshot_date"]
-    customer_since = row["customer_since_date"]
+    # customer_since_date is NULL in customers_clean when loaded from ABSA server
+    # (length_years/length_months not available in Denodo). Fall back to the
+    # earliest account opened_date from accounts_clean, which is already joined.
+    customer_since = row["customer_since_date"] or row["opened_date"]
     tenure_days, tenure_label = _tenure(customer_since, snapshot_date)
 
     account_number = row["stored_account_number"] or row["derived_account_number"]
