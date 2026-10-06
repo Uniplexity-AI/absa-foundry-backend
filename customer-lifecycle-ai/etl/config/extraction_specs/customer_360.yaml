@@ -26,6 +26,14 @@ primary_entity:
     validation:
       type: str
       required: true
+  - field: length_years
+    validation:
+      type: int
+      required: false
+  - field: length_months
+    validation:
+      type: int
+      required: false
 joins:
 - table: a_africa_zam_base_customers_new
   alias: cn
