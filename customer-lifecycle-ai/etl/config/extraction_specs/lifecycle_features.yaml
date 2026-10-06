@@ -1,149 +1,129 @@
-# Lifecycle Features Spec — ABSA Banking ML
-# Grain: one row per customer × snapshot_month
-# Extras only — merged with shared_features in Python / ETL pipeline
-# Source table: a_brains_trans_zam_base_entries_zm
-#
-# Usage:
-#   python run_etl.py --extraction-spec etl/config/extraction_specs/lifecycle_features.yaml \
-#                     --mode training --snapshot 2024-06-01
-
-version: "1.0"
-dataset_name: "lifecycle_features"
+version: '1.0'
+dataset_name: lifecycle_features
 trusted_config: true
-description: >
-  Lifecycle features extraction spec derived from 04_lifecycle_features.sql.
-  Extracts salary consistency, activity trend shifts, channel diversity, and
-  heuristic lifecycle stages.
+description: 'Lifecycle features extraction spec derived from 04_lifecycle_features.sql.
+  Extracts salary consistency, activity trend shifts, channel diversity, and heuristic
+  lifecycle stages.
 
+  '
 primary_entity:
-  table: "a_brains_trans_zam_base_entries_zm"
-  alias: "txn"
+  table: a_brains_trans_zam_base_entries_zm
+  alias: txn
   select_fields:
-    - field: "customer_number"
-      alias: "customer_id"
-      validation: {type: "str", required: true}
-
+  - field: customer_number
+    alias: customer_id
+    validation:
+      type: str
+      required: true
 pre_aggregations:
-  - name: "salary"
-    from_table: "a_brains_trans_zam_base_entries_zm"
-    alias: "sal"
-    filter: "COALESCE(sal.bus_date, sal.posting_date) BETWEEN :history_start AND :snapshot_end"
-    group_by: ["sal.customer_number"]
-    aggregations:
-      - function: COUNT_DISTINCT_FILTER
-        field: "DATE_TRUNC('month', COALESCE(sal.bus_date, sal.posting_date))"
-        filter: >
-          local_amount > 500
-          AND (
-            UPPER(COALESCE(narrative, '')) LIKE '%SALARY%'
-            OR UPPER(COALESCE(narrative, '')) LIKE '%WAGES%'
-            OR UPPER(COALESCE(narrative, '')) LIKE '%PAYROLL%'
-          )
-          AND COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '6 months'
-        alias: salary_months_6m
-      - function: MAX
-        field: >
-          CASE
-            WHEN local_amount > 500
-              AND (
-                UPPER(COALESCE(narrative, '')) LIKE '%SALARY%'
-                OR UPPER(COALESCE(narrative, '')) LIKE '%WAGES%'
-              ) THEN 1 ELSE 0
-          END
-        alias: direct_deposit_flag
-      - function: AVG_FILTER
-        field: "local_amount"
-        filter: >
-          local_amount > 500
-          AND (
-            UPPER(COALESCE(narrative, '')) LIKE '%SALARY%'
-            OR UPPER(COALESCE(narrative, '')) LIKE '%WAGES%'
-          )
-        alias: avg_salary_amount
+- name: salary
+  from_table: a_brains_trans_zam_base_entries_zm
+  alias: sal
+  filter: COALESCE(sal.bus_date, sal.posting_date) BETWEEN :history_start AND :snapshot_end
+  group_by:
+  - sal.customer_number
+  aggregations:
+  - function: COUNT_DISTINCT_FILTER
+    field: DATE_TRUNC('month', COALESCE(sal.bus_date, sal.posting_date))
+    filter: "local_amount > 500 AND (\n  UPPER(COALESCE(narrative, '')) LIKE '%SALARY%'\n\
+      \  OR UPPER(COALESCE(narrative, '')) LIKE '%WAGES%'\n  OR UPPER(COALESCE(narrative,\
+      \ '')) LIKE '%PAYROLL%'\n) AND COALESCE(bus_date, posting_date) > :snapshot_end\
+      \ - INTERVAL '6 months'\n"
+    alias: salary_months_6m
+  - function: MAX
+    field: "CASE\n  WHEN local_amount > 500\n    AND (\n      UPPER(COALESCE(narrative,\
+      \ '')) LIKE '%SALARY%'\n      OR UPPER(COALESCE(narrative, '')) LIKE '%WAGES%'\n\
+      \    ) THEN 1 ELSE 0\nEND\n"
+    alias: direct_deposit_flag
+  - function: AVG_FILTER
+    field: local_amount
+    filter: "local_amount > 500 AND (\n  UPPER(COALESCE(narrative, '')) LIKE '%SALARY%'\n\
+      \  OR UPPER(COALESCE(narrative, '')) LIKE '%WAGES%'\n)\n"
+    alias: avg_salary_amount
+- name: activity_change
+  from_table: a_brains_trans_zam_base_entries_zm
+  alias: ac
+  filter: COALESCE(ac.bus_date, ac.posting_date) BETWEEN :history_start AND :snapshot_end
+  group_by:
+  - ac.customer_number
+  aggregations:
+  - function: COUNT_FILTER
+    field: '*'
+    filter: COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'
+    alias: txn_90d
+  - function: COUNT_FILTER
+    field: '*'
+    filter: 'COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL ''180 days''
+      AND COALESCE(bus_date, posting_date) <= :snapshot_end - INTERVAL ''90 days''
 
-  - name: "activity_change"
-    from_table: "a_brains_trans_zam_base_entries_zm"
-    alias: "ac"
-    filter: "COALESCE(ac.bus_date, ac.posting_date) BETWEEN :history_start AND :snapshot_end"
-    group_by: ["ac.customer_number"]
-    aggregations:
-      - function: COUNT_FILTER
-        field: "*"
-        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
-        alias: txn_90d
-      - function: COUNT_FILTER
-        field: "*"
-        filter: >
-          COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '180 days'
-          AND COALESCE(bus_date, posting_date) <= :snapshot_end - INTERVAL '90 days'
-        alias: txn_prev_90d
-      - function: COUNT
-        field: "*"
-        alias: txn_count_12m
-      - function: COUNT_DISTINCT_FILTER
-        field: "COALESCE(channel, 'BRANCH')"
-        filter: "COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'"
-        alias: distinct_channels_90d
-
+      '
+    alias: txn_prev_90d
+  - function: COUNT
+    field: '*'
+    alias: txn_count_12m
+  - function: COUNT_DISTINCT_FILTER
+    field: COALESCE(channel, 'BRANCH')
+    filter: COALESCE(bus_date, posting_date) > :snapshot_end - INTERVAL '90 days'
+    alias: distinct_channels_90d
 joins:
-  - table: "salary"
-    alias: "sal"
-    join_type: "left"
-    "on":
-      - left: "txn.customer_number"
-        right: "sal.customer_number"
-    select_fields:
-      - {field: salary_months_6m}
-      - {field: direct_deposit_flag, alias: salary_flag}
-      - {field: avg_salary_amount}
-
-  - table: "activity_change"
-    alias: "ac"
-    join_type: "left"
-    "on":
-      - left: "txn.customer_number"
-        right: "ac.customer_number"
-    select_fields:
-      - {field: txn_90d}
-      - {field: txn_prev_90d}
-      - {field: txn_count_12m}
-      - {field: distinct_channels_90d}
-
+- table: salary
+  alias: sal
+  join_type: left
+  'on':
+  - left: txn.customer_number
+    right: sal.customer_number
+  select_fields:
+  - field: salary_months_6m
+  - field: direct_deposit_flag
+    alias: salary_flag
+  - field: avg_salary_amount
+- table: activity_change
+  alias: ac
+  join_type: left
+  'on':
+  - left: txn.customer_number
+    right: ac.customer_number
+  select_fields:
+  - field: txn_90d
+  - field: txn_prev_90d
+  - field: txn_count_12m
+  - field: distinct_channels_90d
 calculated_fields:
-  - name: salary_consistency_3m
-    expression: "1 if salary_months_6m and salary_months_6m >= 3 else 0"
-    output_type: int
+- name: salary_consistency_3m
+  expression: 1 if salary_months_6m and salary_months_6m >= 3 else 0
+  output_type: int
+- name: activity_change_flag
+  expression: 1 if txn_prev_90d and txn_90d and (txn_90d < txn_prev_90d * 0.5) else
+    0
+  output_type: int
+- name: lifecycle_stage_label
+  label: true
+  expression: '''Dormant'' if txn_90d == 0 else
 
-  - name: activity_change_flag
-    expression: "1 if txn_prev_90d and txn_90d and (txn_90d < txn_prev_90d * 0.5) else 0"
-    output_type: int
+    ''Acquisition'' if txn_count_12m < 5 else
 
-  - name: lifecycle_stage_label
-    label: true
-    expression: |
-      'Dormant' if txn_90d == 0 else
-      'Acquisition' if txn_count_12m < 5 else
-      'Growth' if txn_90d > txn_prev_90d else
-      'Maturity'
-    output_type: str
+    ''Growth'' if txn_90d > txn_prev_90d else
 
+    ''Maturity''
+
+    '
+  output_type: str
 target:
-  clean_table: "feature_store_lifecycle"
-  rejected_table: "feature_store_lifecycle_rejected"
+  clean_table: feature_store_lifecycle
+  rejected_table: feature_store_lifecycle_rejected
   data_columns:
-    - customer_id
-    - snapshot_month
-    - salary_flag
-    - salary_consistency_3m
-    - activity_change_flag
-    - avg_salary_amount
-    - txn_count_12m
-    - distinct_channels_90d
-    - lifecycle_stage_label
+  - customer_id
+  - snapshot_month
+  - salary_flag
+  - salary_consistency_3m
+  - activity_change_flag
+  - avg_salary_amount
+  - txn_count_12m
+  - distinct_channels_90d
+  - lifecycle_stage_label
   meta_columns:
-    - loaded_at
-    - batch_id
-
+  - loaded_at
+  - batch_id
 streaming:
   enabled: true
   batch_size: 5000

@@ -9,8 +9,8 @@
 WITH
 params AS (
     SELECT
-        %(as_of_date)s::date AS as_of_date,
-        %(history_start)s::date AS history_start,
+        CAST(%(as_of_date)s AS DATE) AS as_of_date,
+        CAST(%(history_start)s AS DATE) AS history_start,
         %(balance_forward_days)s::int AS balance_forward_days,
         %(large_outflow_threshold)s::numeric AS large_outflow_threshold
 ),
@@ -25,7 +25,7 @@ txn AS (
     CROSS JOIN params p
     WHERE COALESCE(bus_date, posting_date) >= p.history_start
       AND COALESCE(bus_date, posting_date) <= p.as_of_date
-           + (p.balance_forward_days || ' days')::interval
+           + CAST((p.balance_forward_days || ' days') AS INTERVAL)
 ),
 
 cashflow AS (

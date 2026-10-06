@@ -1161,6 +1161,78 @@ def run_models_pipeline(
     ml_path = os.path.join(_PROJECT_ROOT, "banking_ml_python")
     if ml_path not in sys.path:
         sys.path.insert(0, ml_path)
+        
+    # MONKEY-PATCH: Make ML extractors connect to Denodo if requested
+    import os
+    if "--source-type" in sys.argv and sys.argv[sys.argv.index("--source-type") + 1] == "denodo":
+        from shared.config.settings import settings
+        import banking_ml_python.config.db as ml_db
+        import jaydebeapi
+        import jpype
+        import re
+        import pandas as pd
+        
+        logger.info("Monkey-patching banking_ml_python to execute against Denodo...")
+        
+        if not jpype.isJVMStarted():
+            cleaned_jh = settings.java_home.replace('"', '').replace('\\', '/')
+            jvm_path = cleaned_jh + "/bin/server/jvm.dll"
+            os.environ["PATH"] = cleaned_jh + "/bin;" + os.environ.get("PATH", "")
+            jpype.startJVM(jvm_path, classpath=[settings.denodo_jar_path])
+            
+        def denodo_read_sql(sql: str, params: dict | None = None) -> pd.DataFrame:
+            conn_url = f"jdbc:vdb://{settings.denodo_host}:{settings.denodo_port}/{settings.denodo_database}?sslTrustServerCertificate=true"
+            conn = jaydebeapi.connect("com.denodo.vdp.jdbc.Driver", conn_url, [settings.denodo_username, settings.denodo_password])
+            try:
+                param_list = []
+                if params:
+                    def replacer(m):
+                        param_list.append(params[m.group(1)])
+                        return '?'
+                    sql = re.sub(r'%\(([a-zA-Z0-9_]+)\)s', replacer, sql)
+                
+                # We can't easily do cursor.fetchall() to a dataframe if it's huge, but read_sql does it.
+                # However pd.read_sql expects a DBAPI connection, and jaydebeapi is one!
+                # Wait, pd.read_sql requires standard DBAPI fetchall. JayDeBeApi cursor supports fetchall.
+                
+                cursor = conn.cursor()
+                cursor.execute(sql, param_list)
+                columns = [desc[0] for desc in cursor.description]
+                rows = cursor.fetchall()
+                df = pd.DataFrame(rows, columns=columns)
+                cursor.close()
+                return df
+            finally:
+                conn.close()
+                
+        ml_db.read_sql = denodo_read_sql
+        
+    # MONKEY-PATCH: Make ML extractors connect to Denodo instead of Postgres if requested
+    import os
+    if "--source-type" in sys.argv and sys.argv[sys.argv.index("--source-type") + 1] == "denodo":
+        from shared.config.settings import settings
+        import banking_ml_python.config.db as ml_db
+        import jaydebeapi
+        import jpype
+        from contextlib import contextmanager
+        
+        logger.info("Monkey-patching banking_ml_python to execute against Denodo...")
+        
+        if not jpype.isJVMStarted():
+            cleaned_jh = settings.java_home.replace('"', '').replace('\\', '/')
+            jvm_path = cleaned_jh + "/bin/server/jvm.dll"
+            jpype.startJVM(jvm_path, classpath=[settings.denodo_jar_path])
+            
+        @contextmanager
+        def denodo_get_conn():
+            conn_url = f"jdbc:vdb://{settings.denodo_host}:{settings.denodo_port}/{settings.denodo_database}?sslTrustServerCertificate=true"
+            conn = jaydebeapi.connect("com.denodo.vdp.jdbc.Driver", conn_url, [settings.denodo_username, settings.denodo_password])
+            try:
+                yield conn
+            finally:
+                conn.close()
+                
+        ml_db.get_conn = denodo_get_conn
 
     try:
         from extractors.shared import extract_shared
@@ -1215,18 +1287,52 @@ def run_models_pipeline(
 
         try:
             m_t0 = time.monotonic()
-            if model == "shared":
-                df = extract_shared(snap_date)
-            elif model == "clv":
-                df = build_clv(snap_date, mode=mode)
-            elif model == "lifecycle":
-                df = build_lifecycle(snap_date, mode=mode)
-            elif model == "churn":
-                df = build_churn(snap_date, mode=mode)
-            elif model == "balance":
-                df = build_balance(as_of_date, mode=mode)
-            else:
-                continue
+            
+            # Retrieve global extractor if running Denodo, or setup a new one
+            from etl.extraction.executor import ExtractionExecutor
+            from sqlalchemy import MetaData
+            global_extractor = globals().get("denodo_extractor", None)
+            
+            # Setup engine
+            source_type_val = sys.argv[sys.argv.index("--source-type") + 1] if "--source-type" in sys.argv else "postgres"
+            
+            # Initialize executor for the model's YAML spec
+            spec_path = f"etl/config/extraction_specs/{model}_features.yaml"
+            
+            # Note: We should use the same extraction executor logic as the main ETL
+            engine_to_use = None if source_type_val == "denodo" else get_sync_engine()
+            
+            # Setup denodo extractor
+            if source_type_val == "denodo" and not global_extractor:
+                from etl.extraction.denodo_connector import DenodoStreamingExtractor
+                from shared.config.settings import settings
+                global_extractor = DenodoStreamingExtractor(
+                    username=settings.denodo_username,
+                    password=settings.denodo_password,
+                    host=settings.denodo_host,
+                    port=settings.denodo_port,
+                    database=settings.denodo_database,
+                    java_home=settings.java_home,
+                    cacerts=settings.cacerts_path,
+                    path_jar=settings.denodo_jar_path,
+                )
+            
+            executor = ExtractionExecutor(
+                engine=engine_to_use,
+                metadata=MetaData(),
+                engine_version="2.1",
+                denodo_extractor=global_extractor,
+            )
+            
+            # Inject dates into environment or use config overrides
+            os.environ["SNAPSHOT_MONTH"] = str(snap_date)
+            os.environ["HISTORY_START"] = str(snap_date.replace(year=snap_date.year - 2)) # Approx
+            
+            res = executor.execute(spec_path)
+            if res.status == "FAILED":
+                raise RuntimeError(f"Extraction failed for {model}: " + ", ".join(res.errors))
+            
+            df = res.valid_df
 
             extract_dur = time.monotonic() - m_t0
             logger.info("Extraction completed in %.2fs: %d rows x %d cols", extract_dur, len(df), len(df.columns))

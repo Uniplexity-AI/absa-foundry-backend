@@ -1,51 +1,74 @@
+import sys
+import os
 import re
 
-with open("C:/Users/ADMIN/Desktop/uniplexity-ai/ABSA/absa-foundry-backend/customer-lifecycle-ai/run_etl.py", "r", encoding="utf-8") as f:
-    content = f.read()
+with open('run_etl.py', 'r', encoding='utf-8') as f:
+    code = f.read()
 
-# Add mode to run_etl_pipeline definition
-content = content.replace(
-    "    triggered_by: str = \"cli\",\n) -> dict:",
-    "    triggered_by: str = \"cli\",\n    mode: str = \"training\",\n) -> dict:"
-)
+target = '''        try:
+            m_t0 = time.monotonic()
+            if model == "shared":
+                df = extract_shared(snap_date)
+            elif model == "clv":
+                df = build_clv(snap_date, mode=mode)
+            elif model == "lifecycle":
+                df = build_lifecycle(snap_date, mode=mode)
+            elif model == "churn":
+                df = build_churn(snap_date, mode=mode)
+            elif model == "balance":
+                df = build_balance(as_of_date, mode=mode)
+            else:
+                continue'''
 
-# In Phase 3, implement scoring mode drop
-transform_phase = """    # ------------------------------------------------------------------
-    # PHASE 3: TRANSFORM
-    # ------------------------------------------------------------------"""
-scoring_logic = """    # ------------------------------------------------------------------
-    # PHASE 3: TRANSFORM
-    # ------------------------------------------------------------------
-    logger.info("--- Phase 3/4: TRANSFORM ---")
-    
-    if mode == "scoring":
-        logger.info("  SCORING MODE: Dropping forward-looking label columns")
-        target_cols = [c for c in valid_df.columns if c.startswith("target_")]
-        if target_cols:
-            valid_df = valid_df.drop(columns=target_cols)
-            # also remove them from target_data_columns so they are not included in SQL INSERT
-            config.target_data_columns = [c for c in config.target_data_columns if not c.startswith("target_")]
-"""
-content = content.replace(transform_phase + '\n    logger.info("--- Phase 3/4: TRANSFORM ---")', scoring_logic)
+replacement = '''        try:
+            m_t0 = time.monotonic()
+            
+            # Retrieve global extractor if running Denodo, or setup a new one
+            from etl.extraction.executor import ExtractionExecutor
+            from sqlalchemy import MetaData
+            global_extractor = globals().get("denodo_extractor", None)
+            
+            # Setup engine
+            source_type_val = sys.argv[sys.argv.index("--source-type") + 1] if "--source-type" in sys.argv else "postgres"
+            
+            # Initialize executor for the model's YAML spec
+            spec_path = f"etl/config/extraction_specs/{model}_features.yaml"
+            
+            # Note: We should use the same extraction executor logic as the main ETL
+            engine_to_use = None if source_type_val == "denodo" else get_sync_engine()
+            
+            # Setup denodo extractor
+            if source_type_val == "denodo" and not global_extractor:
+                from etl.extraction.denodo_connector import DenodoStreamingExtractor
+                from shared.config.settings import settings
+                global_extractor = DenodoStreamingExtractor(
+                    username=settings.denodo_username,
+                    password=settings.denodo_password,
+                    host=settings.denodo_host,
+                    port=settings.denodo_port,
+                    database=settings.denodo_database,
+                    java_home=settings.java_home,
+                    cacerts=settings.cacerts_path,
+                    path_jar=settings.denodo_jar_path,
+                )
+            
+            executor = ExtractionExecutor(
+                engine=engine_to_use,
+                metadata=MetaData(),
+                engine_version="2.1",
+                denodo_extractor=global_extractor,
+            )
+            
+            # Inject dates into environment or use config overrides
+            os.environ["SNAPSHOT_MONTH"] = str(snap_date)
+            os.environ["HISTORY_START"] = str(snap_date.replace(year=snap_date.year - 2)) # Approx
+            
+            res = executor.execute(spec_path)
+            if res.status == "FAILED":
+                raise RuntimeError(f"Extraction failed for {model}: " + ", ".join(res.errors))
+            
+            df = res.valid_df'''
 
-# In main(), add --mode argument
-argparse_block = """    parser.add_argument("--force", action="store_true", help="Re-process even if source was already loaded")"""
-argparse_block_new = argparse_block + """\n    parser.add_argument("--mode", choices=["training", "scoring"], default="training", help="Execution mode (training keeps labels, scoring drops them)")"""
-content = content.replace(argparse_block, argparse_block_new)
-
-# In main(), pass mode to run_etl_pipeline
-run_pipeline_call = """        extraction_spec=args.extraction_spec,
-        dry_run=args.dry_run,
-        force=args.force,
-    ))"""
-run_pipeline_call_new = """        extraction_spec=args.extraction_spec,
-        dry_run=args.dry_run,
-        force=args.force,
-        mode=args.mode,
-    ))"""
-content = content.replace(run_pipeline_call, run_pipeline_call_new)
-
-with open("C:/Users/ADMIN/Desktop/uniplexity-ai/ABSA/absa-foundry-backend/customer-lifecycle-ai/run_etl.py", "w", encoding="utf-8") as f:
-    f.write(content)
-
-print("Patched successfully")
+code = code.replace(target, replacement)
+with open('run_etl.py', 'w', encoding='utf-8') as f:
+    f.write(code)

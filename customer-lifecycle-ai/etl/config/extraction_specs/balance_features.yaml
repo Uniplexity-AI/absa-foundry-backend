@@ -1,136 +1,120 @@
-# Balance Feature Spec — ABSA Banking ML
-# Grain: customer × day (daily as-of)
-# Source table: a_brains_trans_zam_base_entries_zm
-#
-# Usage:
-#   python run_etl.py --extraction-spec etl/config/extraction_specs/balance_features.yaml \
-#                     --mode training --as-of 2024-06-01
-
-version: "1.0"
-dataset_name: "balance_features"
+version: '1.0'
+dataset_name: balance_features
 trusted_config: true
-description: >
-  Balance forecast features + labels extracted from a_brains_trans_zam_base_entries_zm.
-  Computes cashflow velocities (7d, 30d) and calendar indicators.
-  Target DAB metrics represent forward deposit balance levels.
+description: 'Balance forecast features + labels extracted from a_brains_trans_zam_base_entries_zm.
+  Computes cashflow velocities (7d, 30d) and calendar indicators. Target DAB metrics
+  represent forward deposit balance levels.
 
+  '
 primary_entity:
-  table: "a_brains_trans_zam_base_entries_zm"
-  alias: "txn"
+  table: a_brains_trans_zam_base_entries_zm
+  alias: txn
   select_fields:
-    - field: "customer_number"
-      alias: "customer_id"
-      validation: {type: "str", required: true}
-
+  - field: customer_number
+    alias: customer_id
+    validation:
+      type: str
+      required: true
 pre_aggregations:
-  - name: "cashflow"
-    from_table: "a_brains_trans_zam_base_entries_zm"
-    alias: "cf"
-    filter: "COALESCE(cf.bus_date, cf.posting_date) BETWEEN :history_start AND :as_of_date"
-    group_by: ["cf.customer_number"]
-    aggregations:
-      - function: SUM_FILTER
-        field: "local_amount"
-        filter: "local_amount > 0 AND COALESCE(bus_date, posting_date) > :as_of_date - INTERVAL '7 days'"
-        alias: credits_7d
-      - function: SUM_FILTER
-        field: "ABS(local_amount)"
-        filter: "local_amount < 0 AND COALESCE(bus_date, posting_date) > :as_of_date - INTERVAL '7 days'"
-        alias: debits_7d
-      - function: SUM_FILTER
-        field: "local_amount"
-        filter: "local_amount > 0 AND COALESCE(bus_date, posting_date) > :as_of_date - INTERVAL '30 days'"
-        alias: credits_30d
-      - function: SUM_FILTER
-        field: "ABS(local_amount)"
-        filter: "local_amount < 0 AND COALESCE(bus_date, posting_date) > :as_of_date - INTERVAL '30 days'"
-        alias: debits_30d
-
+- name: cashflow
+  from_table: a_brains_trans_zam_base_entries_zm
+  alias: cf
+  filter: COALESCE(cf.bus_date, cf.posting_date) BETWEEN :history_start AND :as_of_date
+  group_by:
+  - cf.customer_number
+  aggregations:
+  - function: SUM_FILTER
+    field: local_amount
+    filter: local_amount > 0 AND COALESCE(bus_date, posting_date) > :as_of_date -
+      INTERVAL '7 days'
+    alias: credits_7d
+  - function: SUM_FILTER
+    field: ABS(local_amount)
+    filter: local_amount < 0 AND COALESCE(bus_date, posting_date) > :as_of_date -
+      INTERVAL '7 days'
+    alias: debits_7d
+  - function: SUM_FILTER
+    field: local_amount
+    filter: local_amount > 0 AND COALESCE(bus_date, posting_date) > :as_of_date -
+      INTERVAL '30 days'
+    alias: credits_30d
+  - function: SUM_FILTER
+    field: ABS(local_amount)
+    filter: local_amount < 0 AND COALESCE(bus_date, posting_date) > :as_of_date -
+      INTERVAL '30 days'
+    alias: debits_30d
 joins:
-  - table: "cashflow"
-    alias: "cf"
-    join_type: "left"
-    "on":
-      - left: "txn.customer_number"
-        right: "cf.customer_number"
-    select_fields:
-      - {field: credits_7d}
-      - {field: debits_7d}
-      - {field: credits_30d}
-      - {field: debits_30d}
-
+- table: cashflow
+  alias: cf
+  join_type: left
+  'on':
+  - left: txn.customer_number
+    right: cf.customer_number
+  select_fields:
+  - field: credits_7d
+  - field: debits_7d
+  - field: credits_30d
+  - field: debits_30d
 calculated_fields:
-  - name: net_cashflow_7d
-    expression: "(credits_7d or 0) - (debits_7d or 0)"
-    output_type: float
-
-  - name: net_cashflow_30d
-    expression: "(credits_30d or 0) - (debits_30d or 0)"
-    output_type: float
-
-  - name: day_of_month
-    expression: ":as_of_date.day if hasattr(:as_of_date, 'day') else 1"
-    output_type: int
-
-  - name: day_of_week
-    expression: ":as_of_date.weekday() if hasattr(:as_of_date, 'weekday') else 0"
-    output_type: int
-
-  - name: is_month_end
-    expression: "1 if hasattr(:as_of_date, 'day') and :as_of_date.day >= 28 else 0"
-    output_type: int
-
-  - name: is_month_start
-    expression: "1 if hasattr(:as_of_date, 'day') and :as_of_date.day == 1 else 0"
-    output_type: int
-
-  - name: target_dab_30d
-    label: true
-    expression: "None"
-    output_type: float
-
-  - name: target_dab_60d
-    label: true
-    expression: "None"
-    output_type: float
-
-  - name: target_dab_90d
-    label: true
-    expression: "None"
-    output_type: float
-
+- name: net_cashflow_7d
+  expression: (credits_7d or 0) - (debits_7d or 0)
+  output_type: float
+- name: net_cashflow_30d
+  expression: (credits_30d or 0) - (debits_30d or 0)
+  output_type: float
+- name: day_of_month
+  expression: :as_of_date.day if hasattr(:as_of_date, 'day') else 1
+  output_type: int
+- name: day_of_week
+  expression: :as_of_date.weekday() if hasattr(:as_of_date, 'weekday') else 0
+  output_type: int
+- name: is_month_end
+  expression: 1 if hasattr(:as_of_date, 'day') and :as_of_date.day >= 28 else 0
+  output_type: int
+- name: is_month_start
+  expression: 1 if hasattr(:as_of_date, 'day') and :as_of_date.day == 1 else 0
+  output_type: int
+- name: target_dab_30d
+  label: true
+  expression: None
+  output_type: float
+- name: target_dab_60d
+  label: true
+  expression: None
+  output_type: float
+- name: target_dab_90d
+  label: true
+  expression: None
+  output_type: float
 labels:
-  - target_dab_30d
-  - target_dab_60d
-  - target_dab_90d
-
+- target_dab_30d
+- target_dab_60d
+- target_dab_90d
 parameters:
   balance_forward_days: 90
   large_outflow_threshold: 10000
-
 target:
-  clean_table: "feature_store_balance"
-  rejected_table: "feature_store_balance_rejected"
+  clean_table: feature_store_balance
+  rejected_table: feature_store_balance_rejected
   data_columns:
-    - customer_id
-    - as_of_date
-    - credits_7d
-    - debits_7d
-    - net_cashflow_7d
-    - credits_30d
-    - debits_30d
-    - net_cashflow_30d
-    - day_of_month
-    - day_of_week
-    - is_month_end
-    - is_month_start
-    - target_dab_30d
-    - target_dab_60d
-    - target_dab_90d
+  - customer_id
+  - as_of_date
+  - credits_7d
+  - debits_7d
+  - net_cashflow_7d
+  - credits_30d
+  - debits_30d
+  - net_cashflow_30d
+  - day_of_month
+  - day_of_week
+  - is_month_end
+  - is_month_start
+  - target_dab_30d
+  - target_dab_60d
+  - target_dab_90d
   meta_columns:
-    - loaded_at
-    - batch_id
-
+  - loaded_at
+  - batch_id
 streaming:
   enabled: true
   batch_size: 5000

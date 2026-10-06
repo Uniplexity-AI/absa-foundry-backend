@@ -7,16 +7,16 @@
 WITH
 params AS (
     SELECT
-        %(snapshot_month)s::date AS snapshot_month,
-        (%(snapshot_month)s::date + INTERVAL '1 month' - INTERVAL '1 day')::date AS snapshot_end,
-        %(history_start)s::date AS history_start,
+        CAST(%(snapshot_month)s AS DATE) AS snapshot_month,
+        CAST((CAST(%(snapshot_month)s AS DATE) + INTERVAL '1 month' - INTERVAL '1 day') AS DATE) AS snapshot_end,
+        CAST(%(history_start)s AS DATE) AS history_start,
         %(clv_forward_months)s::int AS clv_forward_months
 ),
 
 hist_fees AS (
     SELECT
         customer_number,
-        DATE_TRUNC('month', COALESCE(event_start_date, load_date))::date AS fee_month,
+        CAST(DATE_TRUNC('month', COALESCE(event_start_date, load_date)) AS DATE) AS fee_month,
         SUM(COALESCE(fee_amt, 0) + COALESCE(insurance_amt, 0)) AS fee_income
     FROM ebox_loan_details
     CROSS JOIN params p

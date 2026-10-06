@@ -16,9 +16,9 @@
 WITH
 params AS (
     SELECT
-        %(snapshot_month)s::date AS snapshot_month,
-        (%(snapshot_month)s::date + INTERVAL '1 month' - INTERVAL '1 day')::date AS snapshot_end,
-        %(history_start)s::date AS history_start,
+        CAST(%(snapshot_month)s AS DATE) AS snapshot_month,
+        CAST((CAST(%(snapshot_month)s AS DATE) + INTERVAL '1 month' - INTERVAL '1 day') AS DATE) AS snapshot_end,
+        CAST(%(history_start)s AS DATE) AS history_start,
         %(churn_short_horizon_days)s::int AS churn_short_horizon_days,
         %(churn_horizon_days)s::int AS churn_horizon_days,
         %(dormancy_threshold_days)s::int AS dormancy_threshold_days,
@@ -29,15 +29,15 @@ params AS (
 txn AS (
     SELECT
         customer_number,
-        COALESCE(bus_date, posting_date)::date AS txn_date,
+        CAST(COALESCE(bus_date, posting_date) AS DATE) AS txn_date,
         local_amount,
         transaction_code,
         narrative
     FROM a_brains_trans_zam_base_entries_zm
     CROSS JOIN params p
-    WHERE COALESCE(bus_date, posting_date)::date >= p.history_start
-      AND COALESCE(bus_date, posting_date)::date <= p.snapshot_end
-          + (p.churn_horizon_days || ' days')::interval
+    WHERE CAST(COALESCE(bus_date, posting_date) AS DATE) >= p.history_start
+      AND CAST(COALESCE(bus_date, posting_date) AS DATE) <= p.snapshot_end
+          + CAST((p.churn_horizon_days || ' days') AS INTERVAL)
 ),
 
 -- Recency at snapshot (independent of shared table so labels are self-contained)
@@ -119,7 +119,7 @@ future_txns AS (
     CROSS JOIN params p
     WHERE t.customer_number IS NOT NULL
       AND t.txn_date > p.snapshot_end
-      AND t.txn_date <= p.snapshot_end + (p.churn_horizon_days || ' days')::interval
+      AND t.txn_date <= p.snapshot_end + CAST((p.churn_horizon_days || ' days') AS INTERVAL)
 ),
 
 future_gaps AS (
@@ -127,21 +127,21 @@ future_gaps AS (
         r.customer_number,
         r.recency_days,
         p.snapshot_end,
-        (p.snapshot_end + (p.churn_short_horizon_days || ' days')::interval)::date AS horizon_30_end,
-        (p.snapshot_end + (p.churn_horizon_days || ' days')::interval)::date AS horizon_90_end,
+        (p.snapshot_end + CAST((p.churn_short_horizon_days || ' days') AS INTERVAL))::date AS horizon_30_end,
+        (p.snapshot_end + CAST((p.churn_horizon_days || ' days') AS INTERVAL))::date AS horizon_90_end,
 
         MIN(ft.txn_date) FILTER (
-            WHERE ft.txn_date <= (p.snapshot_end + (p.churn_short_horizon_days || ' days')::interval)::date
+            WHERE ft.txn_date <= (p.snapshot_end + CAST((p.churn_short_horizon_days || ' days') AS INTERVAL))::date
         ) AS first_future_txn_30d,
         MIN(ft.txn_date) FILTER (
-            WHERE ft.txn_date <= (p.snapshot_end + (p.churn_horizon_days || ' days')::interval)::date
+            WHERE ft.txn_date <= (p.snapshot_end + CAST((p.churn_horizon_days || ' days') AS INTERVAL))::date
         ) AS first_future_txn_90d,
 
         MAX(ft.txn_date) FILTER (
-            WHERE ft.txn_date <= (p.snapshot_end + (p.churn_short_horizon_days || ' days')::interval)::date
+            WHERE ft.txn_date <= (p.snapshot_end + CAST((p.churn_short_horizon_days || ' days') AS INTERVAL))::date
         ) AS last_future_txn_30d,
         MAX(ft.txn_date) FILTER (
-            WHERE ft.txn_date <= (p.snapshot_end + (p.churn_horizon_days || ' days')::interval)::date
+            WHERE ft.txn_date <= (p.snapshot_end + CAST((p.churn_horizon_days || ' days') AS INTERVAL))::date
         ) AS last_future_txn_90d
     FROM recency r
     CROSS JOIN params p
@@ -198,7 +198,7 @@ future_activity AS (
     FROM txn
     CROSS JOIN params p
     WHERE txn_date > p.snapshot_end
-      AND txn_date <= p.snapshot_end + (p.churn_horizon_days || ' days')::interval
+      AND txn_date <= p.snapshot_end + CAST((p.churn_horizon_days || ' days') AS INTERVAL)
     GROUP BY customer_number
 ),
 

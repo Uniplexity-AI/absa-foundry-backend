@@ -7,9 +7,9 @@
 WITH
 params AS (
     SELECT
-        %(snapshot_month)s::date AS snapshot_month,
-        (%(snapshot_month)s::date + INTERVAL '1 month' - INTERVAL '1 day')::date AS snapshot_end,
-        %(history_start)s::date AS history_start
+        CAST(%(snapshot_month)s AS DATE) AS snapshot_month,
+        CAST((CAST(%(snapshot_month)s AS DATE) + INTERVAL '1 month' - INTERVAL '1 day') AS DATE) AS snapshot_end,
+        CAST(%(history_start)s AS DATE) AS history_start
 ),
 
 txn AS (

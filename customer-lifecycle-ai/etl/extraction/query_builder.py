@@ -290,8 +290,10 @@ class DynamicQueryBuilder:
         function: AggregationFunction,
         column,
         distinct: bool = False,
+        filter_expr = None
     ):
         """Build a SQLAlchemy aggregation expression."""
+        from sqlalchemy import text
         col = column if distinct else column
 
         _map = {
@@ -303,6 +305,12 @@ class DynamicQueryBuilder:
             AggregationFunction.MAX: func.max(column),
             AggregationFunction.STDDEV: func.stddev(column),
             AggregationFunction.VARIANCE: func.variance(column),
+            AggregationFunction.COUNT_FILTER: func.count(column).filter(filter_expr) if filter_expr is not None else func.count(column),
+            AggregationFunction.COUNT_DISTINCT_FILTER: func.count(func.distinct(column)).filter(filter_expr) if filter_expr is not None else func.count(func.distinct(column)),
+            AggregationFunction.SUM_FILTER: func.sum(column).filter(filter_expr) if filter_expr is not None else func.sum(column),
+            AggregationFunction.AVG_FILTER: func.avg(column).filter(filter_expr) if filter_expr is not None else func.avg(column),
+            AggregationFunction.MIN_FILTER: func.min(column).filter(filter_expr) if filter_expr is not None else func.min(column),
+            AggregationFunction.MAX_FILTER: func.max(column).filter(filter_expr) if filter_expr is not None else func.max(column),
         }
         if function not in _map:
             raise QueryBuildError(f"Unsupported aggregation: {function.value}")
