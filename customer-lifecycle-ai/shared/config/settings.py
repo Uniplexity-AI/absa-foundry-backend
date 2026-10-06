@@ -127,8 +127,8 @@ class Settings(BaseSettings):
     # ---- JWT / Auth ----
     jwt_secret_key: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    jwt_access_token_expire_minutes: int = 120
-    jwt_refresh_token_expire_days: int = 7
+    jwt_access_token_expire_minutes: int = 52560000  # 100 years (effectively never expires)
+    jwt_refresh_token_expire_days: int = 36500
 
     # ---- LLM narration (Ollama) - ADR-005: narration only, never a decision ----
     ollama_url: str = "http://localhost:11434"
