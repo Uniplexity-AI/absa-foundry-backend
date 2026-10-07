@@ -279,12 +279,11 @@ def get_manual_run_status():
 def trigger_manual_run(
     request: Request,
     background_tasks: BackgroundTasks,
-    body: TriggerRequest,
+    snapshot: str | None = None
 ):
     token = request.headers.get("Authorization", "")
     
     def run_pipeline():
-        snapshot = body.snapshot
         state = {"status": "running", "step": 1, "results": [], "snapshot": snapshot}
         def save_state():
             with open(_MANUAL_PROGRESS_FILE, "w") as f:
