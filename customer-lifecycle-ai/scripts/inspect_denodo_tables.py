@@ -142,27 +142,23 @@ def sample_customers_new(extractor, limit: int) -> tuple[pd.DataFrame, list[str]
     logger.info("TABLE 1/5: a_africa_zam_base_customers_new")
     logger.info("=" * 60)
 
-    # Get 10 DISTINCT customers (not just 10 random rows)
+    # Grab a small batch quickly — no DISTINCT (which forces Hadoop to scan everything)
+    # We deduplicate customer_numbers in Python instead
     sql = (
-        "SELECT DISTINCT customer_number "
-        "FROM a_africa_zam_base_customers_new "
+        "SELECT * FROM a_africa_zam_base_customers_new "
         "WHERE load_date >= '2026-01-01' AND customer_number IS NOT NULL"
     )
-    id_df = _query(extractor, sql, limit)
-    customer_ids = id_df["customer_number"].dropna().tolist()
-    logger.info("Found %d distinct customer_numbers: %s", len(customer_ids), customer_ids)
+    # Fetch more than we need so we can deduplicate and still get 10 unique customers
+    raw_df = _query(extractor, sql, limit=limit * 3)
 
-    if not customer_ids:
+    if raw_df.empty or "customer_number" not in raw_df.columns:
         logger.warning("No customers found! Skipping remaining tables.")
         return pd.DataFrame(), []
 
-    # Now pull ALL columns for those specific customers
-    in_clause = ", ".join(f"'{c}'" for c in customer_ids)
-    sql = (
-        f"SELECT * FROM a_africa_zam_base_customers_new "
-        f"WHERE customer_number IN ({in_clause}) AND load_date >= '2026-01-01'"
-    )
-    df = _query(extractor, sql, limit=9999)  # no limit — get all rows for these customers
+    # Deduplicate: keep first row per customer, take up to `limit` unique customers
+    df = raw_df.drop_duplicates(subset=["customer_number"]).head(limit)
+    customer_ids = df["customer_number"].dropna().tolist()
+    logger.info("Found %d distinct customer_numbers: %s", len(customer_ids), customer_ids)
     logger.info("Columns found (%d): %s", len(df.columns), df.columns.tolist())
     out = OUT_DIR / "customers_new.csv"
     df.to_csv(out, index=False)
