@@ -212,27 +212,31 @@ def sample_customer_sms(extractor, customer_ids: list[str]) -> list[str]:
     logger.info("Saved %d rows for %d customers -> %s", len(df), len(customer_ids), out)
     print(df.to_string(index=False))
 
-    # Extract all account numbers for chaining, ignoring case
+    # Extract all account numbers for chaining
     account_numbers = []
-    # Find column that looks like account_number
-    acct_col = next((c for c in df.columns if c.lower() in ("account_number", "account_no", "account")), None)
-    if acct_col:
-        account_numbers = df[acct_col].dropna().unique().tolist()
+    if "account_number" in df.columns:
+        account_numbers = df["account_number"].dropna().unique().tolist()
         logger.info("Found %d unique account_numbers across %d customers: %s",
                      len(account_numbers), len(customer_ids), account_numbers)
     else:
-        logger.warning("No 'account_number' column found in customer_sms! (Columns were: %s)", df.columns.tolist())
+        logger.warning("No 'account_number' column found in customer_sms!")
     return account_numbers
 
 
-def sample_transactions(extractor, account_numbers: list[str], customer_ids: list[str]) -> None:
+def sample_transactions(extractor, account_numbers: list[str]) -> None:
     """
     Table 4/5: a_brains_trans_zam_base_entries_zm
-    Pulls transactions for the account_numbers (or customer_numbers as fallback).
+    Pulls transactions for the account_numbers linked to our 10 customers.
     """
     logger.info("=" * 60)
     logger.info("TABLE 4/5: a_brains_trans_zam_base_entries_zm")
     logger.info("=" * 60)
+
+    if not account_numbers:
+        logger.warning("No account_numbers to query — skipping transactions.")
+        return
+
+    in_clause = ", ".join(f"'{a}'" for a in account_numbers)
 
     # First probe with SELECT * LIMIT 1 to discover columns
     logger.info("Probing column names ...")
@@ -240,19 +244,13 @@ def sample_transactions(extractor, account_numbers: list[str], customer_ids: lis
     logger.info("Columns found (%d): %s", len(probe_df.columns), probe_df.columns.tolist())
 
     # Determine join key — try account_number first, fallback to customer_number
-    cols_lower = [c.lower() for c in probe_df.columns]
-    
-    if "account_number" in cols_lower and account_numbers:
-        # Find exact case
-        join_col = next(c for c in probe_df.columns if c.lower() == "account_number")
-        in_values = account_numbers
-    elif "customer_number" in cols_lower:
-        join_col = next(c for c in probe_df.columns if c.lower() == "customer_number")
-        in_values = customer_ids
-        if account_numbers:
-            logger.info("account_number not found in transactions, falling back to customer_number")
+    if "account_number" in probe_df.columns:
+        join_col = "account_number"
+    elif "customer_number" in probe_df.columns:
+        join_col = "customer_number"
     else:
         logger.error("Cannot find account_number or customer_number in transactions table!")
+        # Fallback: just dump 10 rows
         df = _query(extractor, "SELECT * FROM a_brains_trans_zam_base_entries_zm", limit=10)
         out = OUT_DIR / "transactions.csv"
         df.to_csv(out, index=False)
@@ -260,11 +258,6 @@ def sample_transactions(extractor, account_numbers: list[str], customer_ids: lis
         print(df.to_string(index=False))
         return
 
-    if not in_values:
-        logger.warning("No IDs to query transactions with!")
-        return
-
-    in_clause = ", ".join(f"'{v}'" for v in in_values)
     logger.info("Using join key: %s", join_col)
     sql = (
         f"SELECT * FROM a_brains_trans_zam_base_entries_zm "
@@ -274,51 +267,34 @@ def sample_transactions(extractor, account_numbers: list[str], customer_ids: lis
     df = _query(extractor, sql, limit=200)  # cap at 200 rows to avoid huge output
     out = OUT_DIR / "transactions.csv"
     df.to_csv(out, index=False)
-    logger.info("Saved %d rows for %d %ss -> %s", len(df), len(in_values), join_col, out)
+    logger.info("Saved %d rows for %d accounts -> %s", len(df), len(account_numbers), out)
     print(df.to_string(index=False))
 
 
-def sample_daily_accounts(extractor, account_numbers: list[str], customer_ids: list[str]) -> None:
+def sample_daily_accounts(extractor, account_numbers: list[str]) -> None:
     """
     Table 5/5: A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL
-    Pulls daily account snapshots.
+    Pulls daily account snapshots for the same account_numbers.
     """
     logger.info("=" * 60)
     logger.info("TABLE 5/5: A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL")
     logger.info("=" * 60)
 
-    # Determine join key — try account_number first, fallback to customer_number
-    # We will just probe 1 row again to be safe
-    probe_df = _query(extractor, "SELECT * FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL", limit=1)
-    cols_lower = [c.lower() for c in probe_df.columns]
-
-    if "account_number" in cols_lower and account_numbers:
-        join_col = next(c for c in probe_df.columns if c.lower() == "account_number")
-        in_values = account_numbers
-    elif "customer_number" in cols_lower:
-        join_col = next(c for c in probe_df.columns if c.lower() == "customer_number")
-        in_values = customer_ids
-    else:
-        logger.error("Cannot find account_number or customer_number in daily accounts table!")
+    if not account_numbers:
+        logger.warning("No account_numbers to query — skipping daily accounts.")
         return
 
-    if not in_values:
-        logger.warning("No IDs to query daily accounts with!")
-        return
-
-    in_clause = ", ".join(f"'{v}'" for v in in_values)
-    logger.info("Using join key: %s", join_col)
-    
+    in_clause = ", ".join(f"'{a}'" for a in account_numbers)
     sql = (
         f"SELECT * FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL "
-        f"WHERE {join_col} IN ({in_clause}) "
+        f"WHERE account_number IN ({in_clause}) "
         f"AND date_opened >= '1900-01-01'" # Relaxed filter just in case
     )
     df = _query(extractor, sql, limit=200)  # cap at 200
     logger.info("Columns found (%d): %s", len(df.columns), df.columns.tolist())
     out = OUT_DIR / "daily_accounts.csv"
     df.to_csv(out, index=False)
-    logger.info("Saved %d rows for %d %ss -> %s", len(df), len(in_values), join_col, out)
+    logger.info("Saved %d rows for %d accounts -> %s", len(df), len(account_numbers), out)
     print(df.to_string(index=False))
 
 
@@ -356,10 +332,10 @@ def main():
     account_numbers = sample_customer_sms(extractor, customer_ids)
 
     # Step 4: Transactions for those accounts
-    sample_transactions(extractor, account_numbers, customer_ids)
+    sample_transactions(extractor, account_numbers)
 
     # Step 5: Daily account snapshots for those accounts
-    sample_daily_accounts(extractor, account_numbers, customer_ids)
+    sample_daily_accounts(extractor, account_numbers)
 
     logger.info("")
     logger.info("=" * 60)
