@@ -1,0 +1,37 @@
+<html>
+<head>
+<style>
+body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+.header { text-align: center; margin-bottom: 30px; }
+h1 { color: #DC0037; }
+.faq-container { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
+.question { font-weight: bold; font-size: 16px; color: #DC0037; }
+.answer { margin-top: 5px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="header">
+    <h1>ABSA FAQ Bot Training Data</h1>
+    <p>Document Version: 1.0 | Target: Omnichannel NLP Engine</p>
+</div>
+<div class="faq-container"><div class="question">Q: How do I check my account balance?</div><div class="answer">A: You can check your account balance by logging into the ABSA Mobile App, using Internet Banking, or dialing our USSD service code.</div></div>
+<div class="faq-container"><div class="question">Q: How do I reset my mobile banking PIN?</div><div class="answer">A: To reset your PIN, open the ABSA Mobile App, select 'Forgot PIN' on the login screen, and follow the prompts using your ID and card details.</div></div>
+<div class="faq-container"><div class="question">Q: What should I do if I lose my debit card?</div><div class="answer">A: If your card is lost or stolen, immediately block it via the ABSA Mobile App under 'Manage Cards' or call our 24/7 hotline to prevent unauthorized transactions.</div></div>
+<div class="faq-container"><div class="question">Q: How long does a cross-border transfer take?</div><div class="answer">A: International transfers (SWIFT) typically take 2 to 3 business days to reflect in the beneficiary's account, depending on the destination country.</div></div>
+<div class="faq-container"><div class="question">Q: Can I open a savings account online?</div><div class="answer">A: Yes, you can open an ABSA savings account directly through our website or mobile app without needing to visit a branch.</div></div>
+<div class="faq-container"><div class="question">Q: What are the daily transaction limits on my card?</div><div class="answer">A: Default daily limits vary by account type. You can view and adjust your specific ATM, POS, and online limits in the ABSA Mobile App.</div></div>
+<div class="faq-container"><div class="question">Q: How do I block or freeze my account?</div><div class="answer">A: If you suspect fraud, call our emergency hotline immediately or use the 'Freeze Account' option in your ABSA Internet Banking portal.</div></div>
+<div class="faq-container"><div class="question">Q: How do I update my registered mobile number?</div><div class="answer">A: For security reasons, you must visit your nearest ABSA branch with your ID to update your registered mobile number.</div></div>
+<div class="faq-container"><div class="question">Q: How do I dispute a fraudulent transaction?</div><div class="answer">A: Please download the Dispute Form from our website, fill it out, and email it to disputes@absa.africa, or visit a branch within 30 days of the transaction.</div></div>
+<div class="faq-container"><div class="question">Q: Are there monthly maintenance fees for the current account?</div><div class="answer">A: Yes, standard current accounts carry a monthly maintenance fee. Please refer to our latest pricing guide on the ABSA website for exact amounts.</div></div>
+<div class="faq-container"><div class="question">Q: How do I apply for a personal loan?</div><div class="answer">A: You can apply for a personal loan via Internet Banking, the ABSA Mobile app (if pre-approved), or by speaking to a consultant in-branch.</div></div>
+<div class="faq-container"><div class="question">Q: How do I register for Absa Internet Banking?</div><div class="answer">A: Go to the ABSA website, click on 'Log In', select 'Register', and use your ATM card number and PIN to create your online profile.</div></div>
+<div class="faq-container"><div class="question">Q: Can I use my Absa card internationally?</div><div class="answer">A: Yes, your ABSA Visa/Mastercard is accepted globally. However, please notify us via the app before traveling to prevent your card from being flagged for suspicious activity.</div></div>
+<div class="faq-container"><div class="question">Q: What is the Swift Code for Absa?</div><div class="answer">A: The Swift Code depends on your specific country branch. Please check the 'Bank Details' section on your account statement or our official website.</div></div>
+<div class="faq-container"><div class="question">Q: How do I request a new chequebook?</div><div class="answer">A: You can order a new chequebook through Internet Banking under the 'Service Requests' tab, and it will be delivered to your chosen branch.</div></div>
+<div class="faq-container"><div class="question">Q: How do I pay my utility bills using the mobile app?</div><div class="answer">A: Log into the ABSA Mobile App, go to 'Pay & Transfer', select 'Pay Bill', choose your utility provider, and enter your account number and amount.</div></div>
+<div class="faq-container"><div class="question">Q: Why is my account blocked or suspended?</div><div class="answer">A: Accounts may be suspended due to suspicious activity, outstanding KYC documents, or extended dormancy. Please contact support or visit a branch to resolve this.</div></div>
+<div class="faq-container"><div class="question">Q: What is the minimum balance required for my account?</div><div class="answer">A: Minimum balance requirements depend on your account tier. Savings accounts usually require a minimal balance, while premium current accounts may differ. Check your account terms.</div></div>
+<div class="faq-container"><div class="question">Q: How do I download my bank statements?</div><div class="answer">A: Log into ABSA Internet Banking, select your account, click on 'eStatements', choose your date range, and click 'Download PDF'.</div></div>
+<div class="faq-container"><div class="question">Q: How can I speak to a human agent?</div><div class="answer">A: If I am unable to assist you, simply type 'Agent' or 'Speak to a human', and I will seamlessly transfer this chat to the next available CRM representative.</div></div>
+</body></html>

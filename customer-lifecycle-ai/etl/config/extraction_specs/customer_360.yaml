@@ -127,30 +127,37 @@ joins:
     validation:
       type: str
       required: false
+- table: a_africa_zam_base_customer_sms
+  alias: sms
+  join_type: left
+  'on':
+  - left: c.customer_number
+    right: sms.customer_number
+  select_fields: []
 calculated_fields:
 - name: status
-  expression: '''ACTIVE'''
+  expression: c.customer_status
   output_type: str
 - name: customer_since_date
-  expression: 'NULL'
+  expression: c.relationship_established
   output_type: datetime
 - name: kyc_tier
-  expression: '''Standard'''
+  expression: c.kyc_status
   output_type: str
 - name: date_of_birth
-  expression: '''1980-01-01'''
+  expression: '''NULL'''
   output_type: datetime
 - name: full_name
-  expression: 'NULL'
+  expression: c.first_name || ' ' || c.family_name
   output_type: str
 - name: market_segment
   expression: cn.market_segment
   output_type: str
 - name: account_number
-  expression: 'NULL'
+  expression: sms.account_number
   output_type: str
 - name: national_id
-  expression: 'NULL'
+  expression: c.id_card_number
   output_type: str
 - name: mobile_number
   expression: 'NULL'
@@ -165,7 +172,7 @@ calculated_fields:
   expression: 'NULL'
   output_type: str
 - name: is_deleted
-  expression: 'FALSE'
+  expression: '''NULL'''
   output_type: bool
 transform:
   type_casts:
@@ -178,7 +185,6 @@ transform:
       F: FEMALE
       Male: MALE
       Female: FEMALE
-    default_value: UNKNOWN
   - field_name: status
     mappings:
       A: ACTIVE
@@ -223,3 +229,4 @@ streaming:
   enabled: false
   batch_size: 10000
   fetch_strategy: cursor
+

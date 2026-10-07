@@ -293,12 +293,12 @@ def trigger_manual_run(
         save_state()
         try:
             # Step 1: Extraction & Models
-            cmd = [sys.executable, str(_RUN_ETL), "--extraction-spec", str(_SPECS_DIR / "customer_360.yaml"), "--source-type", "denodo", "--force"]
+            cmd = [sys.executable, str(_RUN_ETL), "--extraction-spec", str(_SPECS_DIR / "customer_360.yaml"), "--source-type", "denodo", "--force", "--limit", "10"]
             if snapshot:
                 cmd.extend(["--snapshot", snapshot])
             subprocess.run(cmd, check=True)
             
-            models_cmd = [sys.executable, str(_RUN_ETL), "--models", "shared,churn,clv,lifecycle,balance", "--force"]
+            models_cmd = [sys.executable, str(_RUN_ETL), "--models", "shared,churn,clv,lifecycle,balance", "--force", "--limit", "10"]
             if snapshot:
                 models_cmd.extend(["--snapshot", snapshot])
             subprocess.run(models_cmd, check=True)
@@ -341,7 +341,7 @@ def trigger_manual_run(
     background_tasks.add_task(run_pipeline)
     return {"status": "started"}
 
-\n# Existing: GET /api/etl/runs
+# Existing: GET /api/etl/runs
 # ═══════════════════════════════════════════════════════════════════
 
 def get_etl_service(
@@ -484,5 +484,8 @@ async def get_db_metadata(
         })
         
     return metadata
+
+
+
 
 

@@ -1158,6 +1158,7 @@ def run_models_pipeline(
     logger.info("=" * 60)
 
     # Ensure banking_ml_python is importable
+    import os
     ml_path = os.path.join(_PROJECT_ROOT, "banking_ml_python")
     if ml_path not in sys.path:
         sys.path.insert(0, ml_path)
@@ -1559,6 +1560,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
