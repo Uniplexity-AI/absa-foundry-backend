@@ -26,6 +26,31 @@ primary_entity:
     validation:
       type: str
       required: true
+  - field: relationship_established
+    alias: customer_since_date
+    validation:
+      type: datetime
+      required: false
+  - field: customer_status
+    alias: status
+    validation:
+      type: str
+      required: false
+  - field: kyc_status
+    alias: kyc_tier
+    validation:
+      type: str
+      required: false
+  - field: display_name
+    alias: full_name
+    validation:
+      type: str
+      required: false
+  - field: id_card_number
+    alias: national_id
+    validation:
+      type: str
+      required: false
 joins:
 - table: a_africa_zam_base_customers_daily_zm
   alias: cn
@@ -135,29 +160,14 @@ joins:
     right: sms.customer_number
   select_fields: []
 calculated_fields:
-- name: status
-  expression: c.customer_status
-  output_type: str
-- name: customer_since_date
-  expression: c.relationship_established
-  output_type: datetime
-- name: kyc_tier
-  expression: c.kyc_status
-  output_type: str
 - name: date_of_birth
   expression: '''NULL'''
   output_type: datetime
-- name: full_name
-  expression: c.display_name
-  output_type: str
 - name: market_segment
   expression: cn.market_segment
   output_type: str
 - name: account_number
   expression: sms.account_number
-  output_type: str
-- name: national_id
-  expression: c.id_card_number
   output_type: str
 - name: mobile_number
   expression: 'NULL'
