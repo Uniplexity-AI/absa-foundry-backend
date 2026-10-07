@@ -26,11 +26,6 @@ primary_entity:
     validation:
       type: str
       required: true
-  - field: relationship_established
-    alias: customer_since_date
-    validation:
-      type: datetime
-      required: false
   - field: customer_status
     alias: status
     validation:
@@ -160,6 +155,9 @@ joins:
     right: sms.customer_number
   select_fields: []
 calculated_fields:
+- name: customer_since_date
+  expression: "(SELECT MIN(acc.date_opened) FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL acc INNER JOIN a_africa_zam_base_customer_sms sms_sq ON acc.account_number = sms_sq.account_number AND acc.branch_number = sms_sq.branch_number WHERE sms_sq.customer_number = c.customer_number)"
+  output_type: datetime
 - name: date_of_birth
   expression: '''NULL'''
   output_type: datetime

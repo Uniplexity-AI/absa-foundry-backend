@@ -46,8 +46,8 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "a_africa_zam_base_customers_daily_zm"
-  alias: "xref"
+  table: "a_africa_zam_base_customer_sms"
+  alias: "sms"
   select_fields:
     - field: "customer_number"
       alias: "customer_id"
@@ -55,14 +55,8 @@ primary_entity:
     - field: "account_number"
       alias: "account_id"
       validation: { type: "str", required: true }
-    - field: "primary_account_indicator"
-      alias: "is_primary"
-      validation: { type: "str", required: false }
-    - field: "sms_alert_ind"
-      alias: "sms_alert_ind"
-      validation: { type: "str", required: false }
-    - field: "contact_status"
-      alias: "contact_status"
+    - field: "branch_number"
+      alias: "branch_id"
       validation: { type: "str", required: false }
 
 validation:
@@ -75,9 +69,7 @@ target:
   data_columns:
     - customer_id
     - account_id
-    - is_primary
-    - sms_alert_ind
-    - contact_status
+    - branch_id
 
 streaming:
   enabled: true
