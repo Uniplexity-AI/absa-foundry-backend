@@ -1369,7 +1369,7 @@ def run_models_pipeline(
 
             # Prepare records
             clean_df = df[db_cols].copy()
-            clean_df = clean_df.replace({np.nan: None})
+            clean_df = clean_df.where(pd.notnull(clean_df), None)
 
             # Build list of values
             all_cols = db_cols + ["loaded_at", "batch_id"]
