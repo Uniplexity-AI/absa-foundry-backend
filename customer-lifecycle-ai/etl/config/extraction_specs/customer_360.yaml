@@ -18,7 +18,7 @@ versioning:
 incremental:
   enabled: false
 primary_entity:
-  table: a_africa_zam_base_customers_new
+  table: a_africa_zam_base_customers_daily_zm
   alias: c
   select_fields:
   - field: customer_number
@@ -27,7 +27,7 @@ primary_entity:
       type: str
       required: true
 joins:
-- table: a_africa_zam_base_customers_new
+- table: a_africa_zam_base_customers_daily_zm
   alias: cn
   join_type: left
   'on':
@@ -148,7 +148,7 @@ calculated_fields:
   expression: '''NULL'''
   output_type: datetime
 - name: full_name
-  expression: c.first_name || ' ' || c.family_name
+  expression: c.display_name
   output_type: str
 - name: market_segment
   expression: cn.market_segment

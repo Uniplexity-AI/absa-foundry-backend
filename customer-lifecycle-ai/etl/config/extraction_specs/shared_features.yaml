@@ -7,7 +7,7 @@ description: 'Shared feature foundation for all ABSA ML models. Joins customer m
 
   '
 primary_entity:
-  table: a_africa_zam_base_customers_new
+  table: a_africa_zam_base_customers_daily_zm
   alias: c
   select_fields:
   - field: customer_number
@@ -117,7 +117,7 @@ pre_aggregations:
     field: barclaycard_grade
     alias: barclaycard_grade
 joins:
-- table: a_africa_zam_base_customers_new
+- table: a_africa_zam_base_customers_daily_zm
   alias: cn
   join_type: left
   'on':

@@ -1,10 +1,10 @@
-# Customer ↔ Account Bridge — a_africa_zam_base_customers_new → customer_account_map
+# Customer ↔ Account Bridge — a_africa_zam_base_customers_daily_zm → customer_account_map
 # =============================================================================
 # Resolves account_number → customer_number. LOAD THIS FIRST — every account /
 # transaction / product spec depends on it.
 #
 # ABSA source table (confirmed):
-#   a_africa_zam_base_customers_new  → product/account ownership bridge
+#   a_africa_zam_base_customers_daily_zm  → product/account ownership bridge
 #
 # Field mapping (source → backend):
 #
@@ -46,7 +46,7 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "a_africa_zam_base_customers_new"
+  table: "a_africa_zam_base_customers_daily_zm"
   alias: "xref"
   select_fields:
     - field: "customer_number"

@@ -1,10 +1,10 @@
-# Customer Master — a_africa_zam_base_customers_new → customers_clean
+# Customer Master — a_africa_zam_base_customers_daily_zm → customers_clean
 # =============================================================================
 # Maps the ABSA customer master into customers_clean,
 # enriched with employment/address data from a_africa_zam_base_customer_employment_daily_zm.
 #
 # ABSA source tables (confirmed):
-#   a_africa_zam_base_customers_new              → customer master (status, segment, risk)
+#   a_africa_zam_base_customers_daily_zm              → customer master (status, segment, risk)
 #   a_africa_zam_base_customer_employment_daily_zm → employment, address, income
 #
 # Field mapping (source → backend):
@@ -43,7 +43,7 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "a_africa_zam_base_customers_new"
+  table: "a_africa_zam_base_customers_daily_zm"
   alias: "cust"
   select_fields:
     - field: "customer_number"
