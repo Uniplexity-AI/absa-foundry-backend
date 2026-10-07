@@ -309,8 +309,15 @@ def main():
         "--limit", type=int, default=10,
         help="Number of distinct customers to sample (default: 10)"
     )
+    parser.add_argument(
+        "--tables", nargs="+",
+        choices=["customers", "employment", "sms", "transactions", "accounts", "all"],
+        default=["all"],
+        help="Which tables to sample. Default: all"
+    )
     args = parser.parse_args()
     limit = args.limit
+    run_all = "all" in args.tables
 
     logger.info("Connecting to Denodo at %s:%s/%s ...",
                 settings.denodo_host, settings.denodo_port, settings.denodo_db)
@@ -319,23 +326,28 @@ def main():
     logger.info("Sampling %d distinct customers. Output -> %s", limit, OUT_DIR)
     logger.info("")
 
-    # Step 1: Get 10 distinct customers (anchor for everything else)
+    # Step 1: Always need customers to anchor the chain
     cust_df, customer_ids = sample_customers_new(extractor, limit)
     if not customer_ids:
         logger.error("No customers found — aborting.")
         return
 
-    # Step 2: Employment data for same customers
-    sample_customer_employment(extractor, customer_ids)
+    # Step 2: Employment data
+    if run_all or "employment" in args.tables:
+        sample_customer_employment(extractor, customer_ids)
 
-    # Step 3: SMS/account data for same customers (returns account numbers)
-    account_numbers = sample_customer_sms(extractor, customer_ids)
+    # Step 3: SMS/account data (we ALWAYS need this if transactions or accounts are selected)
+    account_numbers = []
+    if run_all or "sms" in args.tables or "transactions" in args.tables or "accounts" in args.tables:
+        account_numbers = sample_customer_sms(extractor, customer_ids)
 
-    # Step 4: Transactions for those accounts
-    sample_transactions(extractor, account_numbers)
+    # Step 4: Transactions
+    if run_all or "transactions" in args.tables:
+        sample_transactions(extractor, account_numbers)
 
-    # Step 5: Daily account snapshots for those accounts
-    sample_daily_accounts(extractor, account_numbers)
+    # Step 5: Daily account snapshots
+    if run_all or "accounts" in args.tables:
+        sample_daily_accounts(extractor, account_numbers)
 
     logger.info("")
     logger.info("=" * 60)
