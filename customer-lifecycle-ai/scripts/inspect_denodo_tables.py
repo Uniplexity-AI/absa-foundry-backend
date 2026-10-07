@@ -130,98 +130,171 @@ def _query(extractor: DenodoStreamingExtractor, sql: str, limit: int) -> pd.Data
 
 
 # ---------------------------------------------------------------------------
-# Individual table samplers
+# Individual table samplers (chained via customer_number)
 # ---------------------------------------------------------------------------
-def sample_customers_new(extractor, limit: int) -> None:
+def sample_customers_new(extractor, limit: int) -> tuple[pd.DataFrame, list[str]]:
     """
-    Table: a_africa_zam_base_customers_new
-    Uses SELECT * — prints all discovered columns so you can verify field names.
+    Table 1/5: a_africa_zam_base_customers_new
+    Returns the DataFrame AND a list of distinct customer_numbers to chain
+    into the other tables.
     """
     logger.info("=" * 60)
     logger.info("TABLE 1/5: a_africa_zam_base_customers_new")
     logger.info("=" * 60)
 
-    df = _query(extractor, "SELECT * FROM a_africa_zam_base_customers_new WHERE load_date >= '2026-01-01'", limit)
+    # Grab a small batch quickly — no DISTINCT (which forces Hadoop to scan everything)
+    # We deduplicate customer_numbers in Python instead
+    sql = (
+        "SELECT * FROM a_africa_zam_base_customers_new "
+        "WHERE load_date >= '2026-01-01' AND customer_number IS NOT NULL"
+    )
+    # Fetch more than we need so we can deduplicate and still get 10 unique customers
+    raw_df = _query(extractor, sql, limit=limit * 3)
+
+    if raw_df.empty or "customer_number" not in raw_df.columns:
+        logger.warning("No customers found! Skipping remaining tables.")
+        return pd.DataFrame(), []
+
+    # Deduplicate: keep first row per customer, take up to `limit` unique customers
+    df = raw_df.drop_duplicates(subset=["customer_number"]).head(limit)
+    customer_ids = df["customer_number"].dropna().tolist()
+    logger.info("Found %d distinct customer_numbers: %s", len(customer_ids), customer_ids)
+    
     logger.info("Columns found (%d): %s", len(df.columns), df.columns.tolist())
     out = OUT_DIR / "customers_new.csv"
     df.to_csv(out, index=False)
     logger.info("Saved %d rows -> %s", len(df), out)
     print(df.to_string(index=False))
+    return df, customer_ids
 
 
-def sample_customer_employment(extractor, limit: int) -> None:
+def sample_customer_employment(extractor, customer_ids: list[str]) -> None:
     """
-    Table: a_africa_zam_base_customer_employment_daily_zm
-    Employment & location fields. Uses SELECT * to discover real columns.
+    Table 2/5: a_africa_zam_base_customer_employment_daily_zm
+    Pulls data for the SAME customers from table 1.
     """
     logger.info("=" * 60)
     logger.info("TABLE 2/5: a_africa_zam_base_customer_employment_daily_zm")
     logger.info("=" * 60)
 
-    df = _query(extractor, "SELECT * FROM a_africa_zam_base_customer_employment_daily_zm WHERE load_date >= '2026-01-01'", limit)
+    in_clause = ", ".join(f"'{c}'" for c in customer_ids)
+    sql = (
+        f"SELECT * FROM a_africa_zam_base_customer_employment_daily_zm "
+        f"WHERE customer_number IN ({in_clause})"
+    )
+    df = _query(extractor, sql, limit=9999)
     logger.info("Columns found (%d): %s", len(df.columns), df.columns.tolist())
     out = OUT_DIR / "customer_employment.csv"
     df.to_csv(out, index=False)
-    logger.info("Saved %d rows -> %s", len(df), out)
+    logger.info("Saved %d rows for %d customers -> %s", len(df), len(customer_ids), out)
     print(df.to_string(index=False))
 
 
-def sample_customer_sms(extractor, limit: int) -> None:
+def sample_customer_sms(extractor, customer_ids: list[str]) -> list[str]:
     """
-    Table: a_africa_zam_base_customer_sms
-    Contact/account fields. Uses SELECT * to discover real columns.
+    Table 3/5: a_africa_zam_base_customer_sms
+    Pulls data for the SAME customers. Returns all account_numbers found
+    so we can chain into transactions and accounts tables.
     """
     logger.info("=" * 60)
     logger.info("TABLE 3/5: a_africa_zam_base_customer_sms")
     logger.info("=" * 60)
 
-    df = _query(extractor, "SELECT * FROM a_africa_zam_base_customer_sms WHERE load_date >= '2026-01-01'", limit)
+    in_clause = ", ".join(f"'{c}'" for c in customer_ids)
+    sql = (
+        f"SELECT * FROM a_africa_zam_base_customer_sms "
+        f"WHERE customer_number IN ({in_clause})"
+    )
+    df = _query(extractor, sql, limit=9999)
     logger.info("Columns found (%d): %s", len(df.columns), df.columns.tolist())
     out = OUT_DIR / "customer_sms.csv"
     df.to_csv(out, index=False)
-    logger.info("Saved %d rows -> %s", len(df), out)
+    logger.info("Saved %d rows for %d customers -> %s", len(df), len(customer_ids), out)
     print(df.to_string(index=False))
 
+    # Extract all account numbers for chaining
+    account_numbers = []
+    if "account_number" in df.columns:
+        account_numbers = df["account_number"].dropna().unique().tolist()
+        logger.info("Found %d unique account_numbers across %d customers: %s",
+                     len(account_numbers), len(customer_ids), account_numbers)
+    else:
+        logger.warning("No 'account_number' column found in customer_sms!")
+    return account_numbers
 
-def sample_transactions(extractor, limit: int) -> None:
+
+def sample_transactions(extractor, account_numbers: list[str]) -> None:
     """
-    Table: a_brains_trans_zam_base_entries_zm
-    Raw transaction history for churn / CLV / shared features.
+    Table 4/5: a_brains_trans_zam_base_entries_zm
+    Pulls transactions for the account_numbers linked to our 10 customers.
     """
     logger.info("=" * 60)
     logger.info("TABLE 4/5: a_brains_trans_zam_base_entries_zm")
     logger.info("=" * 60)
 
-    # Step 1: discover all column names with a 1-row probe
-    logger.info("Probing column names with SELECT * LIMIT 1 ...")
-    probe_df = _query(extractor, "SELECT * FROM a_brains_trans_zam_base_entries_zm WHERE system_date >= '2026-01-01'", limit=1)
-    logger.info("Columns found in a_brains_trans_zam_base_entries_zm:")
-    for col in probe_df.columns.tolist():
-        logger.info("  - %s", col)
+    if not account_numbers:
+        logger.warning("No account_numbers to query — skipping transactions.")
+        return
 
-    # Step 2: fetch full sample using SELECT * (safe — no assumed column names)
-    sql = "SELECT * FROM a_brains_trans_zam_base_entries_zm WHERE system_date >= '2026-01-01'"
-    df = _query(extractor, sql, limit)
+    in_clause = ", ".join(f"'{a}'" for a in account_numbers)
+
+    # First probe with SELECT * LIMIT 1 to discover columns
+    logger.info("Probing column names ...")
+    probe_df = _query(extractor, "SELECT * FROM a_brains_trans_zam_base_entries_zm", limit=1)
+    logger.info("Columns found (%d): %s", len(probe_df.columns), probe_df.columns.tolist())
+
+    # Determine join key — try account_number first, fallback to customer_number
+    if "account_number" in probe_df.columns:
+        join_col = "account_number"
+    elif "customer_number" in probe_df.columns:
+        join_col = "customer_number"
+    else:
+        logger.error("Cannot find account_number or customer_number in transactions table!")
+        # Fallback: just dump 10 rows
+        df = _query(extractor, "SELECT * FROM a_brains_trans_zam_base_entries_zm", limit=10)
+        out = OUT_DIR / "transactions.csv"
+        df.to_csv(out, index=False)
+        logger.info("Saved %d unfiltered rows -> %s", len(df), out)
+        print(df.to_string(index=False))
+        return
+
+    logger.info("Using join key: %s", join_col)
+    sql = (
+        f"SELECT * FROM a_brains_trans_zam_base_entries_zm "
+        f"WHERE {join_col} IN ({in_clause}) "
+        f"AND bus_date >= '2026-01-01'"
+    )
+    df = _query(extractor, sql, limit=200)  # cap at 200 rows to avoid huge output
     out = OUT_DIR / "transactions.csv"
     df.to_csv(out, index=False)
-    logger.info("Saved %d rows -> %s", len(df), out)
+    logger.info("Saved %d rows for %d accounts -> %s", len(df), len(account_numbers), out)
     print(df.to_string(index=False))
 
 
-def sample_daily_accounts(extractor, limit: int) -> None:
+def sample_daily_accounts(extractor, account_numbers: list[str]) -> None:
     """
-    Table: A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL
-    Daily account snapshots for balance / CLV / lifecycle features.
+    Table 5/5: A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL
+    Pulls daily account snapshots for the same account_numbers.
     """
     logger.info("=" * 60)
     logger.info("TABLE 5/5: A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL")
     logger.info("=" * 60)
 
-    df = _query(extractor, "SELECT * FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL WHERE system_date >= '2026-01-01'", limit)
+    if not account_numbers:
+        logger.warning("No account_numbers to query — skipping daily accounts.")
+        return
+
+    in_clause = ", ".join(f"'{a}'" for a in account_numbers)
+    sql = (
+        f"SELECT * FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL "
+        f"WHERE account_number IN ({in_clause}) "
+        f"AND date_opened >= '1900-01-01'" # Relaxed filter just in case
+    )
+    df = _query(extractor, sql, limit=200)  # cap at 200
     logger.info("Columns found (%d): %s", len(df.columns), df.columns.tolist())
     out = OUT_DIR / "daily_accounts.csv"
     df.to_csv(out, index=False)
-    logger.info("Saved %d rows -> %s", len(df), out)
+    logger.info("Saved %d rows for %d accounts -> %s", len(df), len(account_numbers), out)
     print(df.to_string(index=False))
 
 
@@ -230,47 +303,47 @@ def sample_daily_accounts(extractor, limit: int) -> None:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="Sample 10 rows from each Denodo source table and save as CSV."
+        description="Sample data for 10 customers from all Denodo source tables and save as CSV."
     )
     parser.add_argument(
         "--limit", type=int, default=10,
-        help="Number of rows to sample per table (default: 10)"
-    )
-    parser.add_argument(
-        "--tables", nargs="+",
-        choices=["customers", "employment", "sms", "transactions", "accounts", "all"],
-        default=["all"],
-        help="Which tables to sample. Default: all"
+        help="Number of distinct customers to sample (default: 10)"
     )
     args = parser.parse_args()
-
-    run_all = "all" in args.tables
-    limit   = args.limit
+    limit = args.limit
 
     logger.info("Connecting to Denodo at %s:%s/%s ...",
                 settings.denodo_host, settings.denodo_port, settings.denodo_db)
     extractor = _build_extractor()
 
-    logger.info("Sampling %d rows per table. Output -> %s", limit, OUT_DIR)
+    logger.info("Sampling %d distinct customers. Output -> %s", limit, OUT_DIR)
     logger.info("")
 
-    if run_all or "customers" in args.tables:
-        sample_customers_new(extractor, limit)
+    # Step 1: Get 10 distinct customers (anchor for everything else)
+    cust_df, customer_ids = sample_customers_new(extractor, limit)
+    if not customer_ids:
+        logger.error("No customers found — aborting.")
+        return
 
-    if run_all or "employment" in args.tables:
-        sample_customer_employment(extractor, limit)
+    # Step 2: Employment data for same customers
+    sample_customer_employment(extractor, customer_ids)
 
-    if run_all or "sms" in args.tables:
-        sample_customer_sms(extractor, limit)
+    # Step 3: SMS/account data for same customers (returns account numbers)
+    account_numbers = sample_customer_sms(extractor, customer_ids)
 
-    if run_all or "transactions" in args.tables:
-        sample_transactions(extractor, limit)
+    # Step 4: Transactions for those accounts
+    sample_transactions(extractor, account_numbers)
 
-    if run_all or "accounts" in args.tables:
-        sample_daily_accounts(extractor, limit)
+    # Step 5: Daily account snapshots for those accounts
+    sample_daily_accounts(extractor, account_numbers)
 
     logger.info("")
-    logger.info("All done! CSVs saved to: %s", OUT_DIR)
+    logger.info("=" * 60)
+    logger.info("SUMMARY")
+    logger.info("  Customers sampled: %d", len(customer_ids))
+    logger.info("  Account numbers found: %d", len(account_numbers))
+    logger.info("  CSVs saved to: %s", OUT_DIR)
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
