@@ -49,29 +49,6 @@ primary_entity:
       type: str
       required: false
 
-# Pre-aggregate MIN(date_opened) grouped by customer_number in a single pass.
-# This avoids a correlated subquery (which would run once per customer row).
-pre_aggregations:
-- name: acct_dates
-  from_table: a_africa_zam_base_customer_accounts_daily_zm
-  alias: acct_dates
-  joins:
-  - table: a_brains_trans_zam_base_daily_accounts_all
-    alias: acc
-    join_type: inner
-    'on':
-    - left: acct_dates.account_number
-      right: acc.account_number
-    - left: acct_dates.branch_number
-      right: acc.branch_number
-    select_fields: []
-  group_by:
-  - acct_dates.customer_number
-  aggregations:
-  - function: MIN
-    field: acc.date_opened
-    alias: customer_since_date
-
 joins:
 - table: a_africa_zam_base_customers_daily_zm
   alias: cn
@@ -173,20 +150,11 @@ joins:
     validation:
       type: str
       required: false
-# Join the pre-aggregated customer_since_date CTE
-- table: acct_dates
-  alias: acct_dates
-  join_type: left
-  'on':
-  - left: c.customer_number
-    right: acct_dates.customer_number
-  select_fields:
-  - field: customer_since_date
-    validation:
-      type: datetime
-      required: false
 
 calculated_fields:
+- name: customer_since_date
+  expression: 'NULL'
+  output_type: datetime
 - name: date_of_birth
   expression: 'NULL'
   output_type: datetime
