@@ -169,12 +169,11 @@ joins:
     validation:
       type: str
       required: false
-  - field: account_number
-    validation:
-      type: str
-      required: false
 
 calculated_fields:
+- name: account_number
+  expression: 'NULL'
+  output_type: str
 - name: customer_since_date
   expression: 'NULL'
   output_type: datetime
