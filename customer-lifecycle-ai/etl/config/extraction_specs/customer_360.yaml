@@ -56,7 +56,7 @@ pre_aggregations:
   from_table: a_africa_zam_base_customer_accounts_daily_zm
   alias: acct_dates
   joins:
-  - table: A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL
+  - table: a_brains_trans_zam_base_daily_accounts_all
     alias: acc
     join_type: inner
     'on':
