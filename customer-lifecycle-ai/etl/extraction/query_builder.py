@@ -336,12 +336,19 @@ class DynamicQueryBuilder:
 
         # Build GROUP BY columns
         group_cols = []
+        group_cols_labeled = []
         for gb in pa.group_by:
             parts = gb.split(".")
             if len(parts) == 2 and parts[0] == pa.alias:
-                group_cols.append(src_table.c[parts[1]])
+                col_name = parts[1]
+                raw_col = src_table.c[col_name]
+                group_cols.append(raw_col)
+                # Label the column so cte.c[col_name] works after .cte()
+                group_cols_labeled.append(raw_col.label(col_name))
             else:
-                group_cols.append(text(gb))
+                col = text(gb)
+                group_cols.append(col)
+                group_cols_labeled.append(col)
 
         # Build aggregation expressions
         agg_exprs = []
@@ -354,8 +361,8 @@ class DynamicQueryBuilder:
             agg_expr = self._build_aggregation(agg.function, agg_col, agg.distinct)
             agg_exprs.append(agg_expr.label(agg.alias))
 
-        # Build CTE select
-        cte_select = select(*group_cols, *agg_exprs)
+        # Build CTE select — use labeled columns so cte.c[name] works on the result
+        cte_select = select(*group_cols_labeled, *agg_exprs)
 
         # Apply filters within CTE
         pa_alias_map = {pa.alias: src_table}
