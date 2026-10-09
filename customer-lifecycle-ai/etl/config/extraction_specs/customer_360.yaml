@@ -22,6 +22,10 @@ incremental:
 primary_entity:
   table: a_africa_zam_base_customers_daily_zm
   alias: c
+  filters:
+  - field: c.market_segment
+    operator: EQUALS
+    value: '65'
   select_fields:
   - field: customer_number
     alias: customer_id

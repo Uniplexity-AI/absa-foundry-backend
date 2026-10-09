@@ -176,8 +176,8 @@ class DynamicQueryBuilder:
         else:
             stmt = select(*columns).select_from(joined._selectable if hasattr(joined, '_selectable') else joined)
 
-        # ---- Apply filters ----
-        for flt in config.filters:
+        # ---- Apply filters (top-level + primary entity) ----
+        for flt in list(getattr(prim, 'filters', [])) + list(config.filters):
             stmt = self._apply_filter(stmt, flt, alias_map)
 
         # ---- Incremental watermark ----

@@ -120,6 +120,10 @@ class EntitySpec(BaseModel):
 
     table: str = Field(description="Fully qualified table name, e.g. 'raw.customers'")
     alias: str = Field(description="SQL alias for this entity, e.g. 'cust'")
+    filters: list[FilterSpec] = Field(
+        default_factory=list,
+        description="Optional WHERE filters applied to the primary entity",
+    )
     select_fields: list[SelectFieldSpec] = Field(
         description="Fields to select from this entity",
     )
