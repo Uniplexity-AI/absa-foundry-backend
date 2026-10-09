@@ -170,10 +170,19 @@ joins:
       type: str
       required: false
 
+- table: a_africa_zam_base_customer_accounts_daily_zm
+  alias: ca
+  join_type: left
+  'on':
+  - left: c.customer_number
+    right: ca.customer_number
+  select_fields:
+  - field: account_number
+    validation:
+      type: str
+      required: false
+
 calculated_fields:
-- name: account_number
-  expression: 'NULL'
-  output_type: str
 - name: customer_since_date
   expression: 'NULL'
   output_type: datetime
