@@ -177,7 +177,7 @@ calculated_fields:
   expression: 'NULL'
   output_type: str
 - name: is_deleted
-  expression: 'NULL'
+  expression: 'false'
   output_type: bool
 
 transform:
