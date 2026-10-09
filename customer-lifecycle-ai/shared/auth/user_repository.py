@@ -467,10 +467,23 @@ class UserRepository:
         """Replace ALL roles for a user (granted-only model).
 
         Removes any roles not in *role_names* and grants any that are missing.
+        Auto-creates custom roles if they don't exist in the database.
         """
         conn = self._pool.getconn()
         try:
             cur = conn.cursor()
+            
+            # Auto-create missing roles sent from frontend
+            if role_names:
+                cur.execute(
+                    """
+                    INSERT INTO iam.roles (role_name, description)
+                    SELECT unnest(%s::text[]), 'Auto-created custom role'
+                    ON CONFLICT (role_name) DO NOTHING
+                    """,
+                    (role_names,)
+                )
+
             # Delete roles not in the new list
             cur.execute(
                 """

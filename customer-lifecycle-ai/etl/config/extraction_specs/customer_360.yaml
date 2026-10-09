@@ -147,16 +147,16 @@ joins:
     validation:
       type: str
       required: false
-- table: a_africa_zam_base_customer_sms
-  alias: sms
+- table: a_africa_zam_base_customer_accounts_daily_zm
+  alias: ca
   join_type: left
   'on':
   - left: c.customer_number
-    right: sms.customer_number
+    right: ca.customer_number
   select_fields: []
 calculated_fields:
 - name: customer_since_date
-  expression: "(SELECT MIN(acc.date_opened) FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL acc INNER JOIN a_africa_zam_base_customer_sms sms_sq ON acc.account_number = sms_sq.account_number AND acc.branch_number = sms_sq.branch_number WHERE sms_sq.customer_number = c.customer_number)"
+  expression: "(SELECT MIN(acc.date_opened) FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL acc INNER JOIN a_africa_zam_base_customer_accounts_daily_zm ca_sq ON acc.account_number = ca_sq.account_number AND acc.branch_number = ca_sq.branch_number WHERE ca_sq.customer_number = c.customer_number)"
   output_type: datetime
 - name: date_of_birth
   expression: '''NULL'''
@@ -165,7 +165,7 @@ calculated_fields:
   expression: cn.market_segment
   output_type: str
 - name: account_number
-  expression: sms.account_number
+  expression: ca.account_number
   output_type: str
 - name: mobile_number
   expression: 'NULL'

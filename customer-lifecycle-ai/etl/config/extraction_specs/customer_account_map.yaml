@@ -46,8 +46,8 @@ versioning:
     minimum_engine: "1.0"
 
 primary_entity:
-  table: "a_africa_zam_base_customer_sms"
-  alias: "sms"
+  table: "a_africa_zam_base_customer_accounts_daily_zm"
+  alias: "ca"
   select_fields:
     - field: "customer_number"
       alias: "customer_id"

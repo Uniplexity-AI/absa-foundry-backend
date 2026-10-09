@@ -299,3 +299,223 @@ async def delete_faq(faq_id: str):
             crash_log.write(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+# ============================================================
+# TICKETS / CASES
+# ============================================================
+
+class TicketCreate(BaseModel):
+    subject: str
+    customer: str
+    type: str = "Complaint"
+    priority: str = "Low"
+    channel: str = "In-Branch"
+    assignedTo: str = "Unassigned"
+    description: str = ""
+
+@router.post("/tickets")
+async def create_ticket(ticket: TicketCreate):
+    import psycopg2
+    import random
+    from datetime import datetime
+    try:
+        conn = psycopg2.connect("postgresql://postgres:wamulehi@localhost:5432/absa_dw")
+        conn.autocommit = True
+        cur = conn.cursor()
+
+        idNum = random.randint(5000, 9999)
+        ticket_id = f"CASE-{idNum}"
+        status = "Open"
+        sla = "On Track"
+        created = datetime.utcnow().strftime("%Y-%m-%d")
+        created_at = datetime.utcnow()
+
+        cur.execute(
+            """INSERT INTO crm_tickets 
+               (id, subject, customer, type, priority, channel, assigned_to, description, status, sla, created, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (ticket_id, ticket.subject, ticket.customer, ticket.type, ticket.priority, ticket.channel, ticket.assignedTo, ticket.description, status, sla, created, created_at)
+        )
+        cur.close()
+        conn.close()
+
+        return {
+            "message": "Ticket created successfully",
+            "ticket": {
+                "id": ticket_id,
+                "subject": ticket.subject,
+                "customer": ticket.customer,
+                "type": ticket.type,
+                "priority": ticket.priority,
+                "channel": ticket.channel,
+                "assignedTo": ticket.assignedTo,
+                "description": ticket.description,
+                "status": status,
+                "sla": sla,
+                "created": created
+            }
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/tickets")
+async def get_tickets():
+    import psycopg2
+    try:
+        conn = psycopg2.connect("postgresql://postgres:wamulehi@localhost:5432/absa_dw")
+        cur = conn.cursor()
+        cur.execute("SELECT id, subject, customer, type, priority, channel, assigned_to, description, status, sla, created FROM crm_tickets ORDER BY created_at DESC LIMIT 1000")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        tickets = []
+        for row in rows:
+            tickets.append({
+                "id": row[0],
+                "subject": row[1],
+                "customer": row[2],
+                "type": row[3],
+                "priority": row[4],
+                "channel": row[5],
+                "assignedTo": row[6],
+                "description": row[7],
+                "status": row[8],
+                "sla": row[9],
+                "created": row[10]
+            })
+        return tickets
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/tickets/{ticket_id}")
+async def delete_ticket(ticket_id: str):
+    import psycopg2
+    try:
+        conn = psycopg2.connect("postgresql://postgres:wamulehi@localhost:5432/absa_dw")
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        cur.execute("DELETE FROM crm_tickets WHERE id = %s", (ticket_id,))
+        deleted_count = cur.rowcount
+        
+        cur.close()
+        conn.close()
+        
+        if deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+            
+        return {"status": "success", "message": "Ticket deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+class TicketUpdate(BaseModel):
+    subject: Optional[str] = None
+    customer: Optional[str] = None
+    type: Optional[str] = None
+    priority: Optional[str] = None
+    channel: Optional[str] = None
+    assignedTo: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    sla: Optional[str] = None
+
+@router.put("/tickets/{ticket_id}")
+async def update_ticket(ticket_id: str, ticket: TicketUpdate):
+    import psycopg2
+    try:
+        conn = psycopg2.connect("postgresql://postgres:wamulehi@localhost:5432/absa_dw")
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        # Build dynamic update query
+        updates = []
+        values = []
+        update_data = ticket.dict(exclude_unset=True)
+        
+        # Map frontend camelCase to db snake_case
+        field_mapping = {
+            "assignedTo": "assigned_to"
+        }
+        
+        for k, v in update_data.items():
+            db_field = field_mapping.get(k, k)
+            updates.append(f"{db_field} = %s")
+            values.append(v)
+            
+        if not updates:
+            return {"status": "success", "message": "No fields to update"}
+            
+        values.append(ticket_id)
+        query = f"UPDATE crm_tickets SET {', '.join(updates)} WHERE id = %s"
+        
+        cur.execute(query, values)
+        updated_count = cur.rowcount
+        
+        cur.close()
+        conn.close()
+        
+        if updated_count == 0:
+            raise HTTPException(status_code=404, detail="Ticket not found")
+            
+        return {"status": "success", "message": "Ticket updated successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/metrics")
+async def get_crm_metrics():
+    import psycopg2
+    try:
+        conn = psycopg2.connect("postgresql://postgres:wamulehi@localhost:5432/absa_dw")
+        cur = conn.cursor()
+        
+        # dynamic base numbers
+        cur.execute("SELECT count(*) FROM crm_tickets")
+        total_tickets = cur.fetchone()[0]
+        
+        cur.execute("SELECT count(*) FROM crm_tickets WHERE priority = 'High'")
+        escalations = cur.fetchone()[0]
+        
+        cur.execute("SELECT count(*) FROM crm_tickets WHERE status = 'Closed' OR status = 'Resolved'")
+        resolved = cur.fetchone()[0]
+        
+        cur.close()
+        conn.close()
+        
+        # Strict reality-based KPIs: if we don't have the data for it, it shows 0.
+        if total_tickets > 0:
+            fcr_rate = (resolved / total_tickets) * 100.0
+        else:
+            fcr_rate = 0.0
+            
+        return {
+            "serviceLevel": "0.0",
+            "avgSpeedAnswer": "0",
+            "abandonmentRate": "0.0",
+            "fcr": f"{fcr_rate:.1f}",
+            "totalInteractions": str(total_tickets),
+            "escalations": str(escalations),
+            "avgHandleTime": "0m 0s"
+        }
+    except Exception as e:
+        return {
+            "serviceLevel": "0.0",
+            "avgSpeedAnswer": "0",
+            "abandonmentRate": "0.0",
+            "fcr": "0.0",
+            "totalInteractions": "0",
+            "escalations": "0",
+            "avgHandleTime": "0m 0s"
+        }
