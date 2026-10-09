@@ -1,5 +1,5 @@
 import jpype
-from etl.config.settings import settings
+from shared.config.settings import settings
 
 cleaned_path = settings.java_home.replace('"', '').replace('\\', '/')
 jvm_dll = cleaned_path + "/bin/server/jvm.dll"
