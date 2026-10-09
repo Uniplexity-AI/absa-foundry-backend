@@ -150,22 +150,32 @@ joins:
     validation:
       type: str
       required: false
+- table: a_africa_zam_base_customer_contacts_daily_zm
+  alias: cc
+  join_type: left
+  'on':
+  - left: c.customer_number
+    right: cc.customer_number
+  select_fields:
+  - field: date_of_birth
+    validation:
+      type: datetime
+      required: false
+  - field: mobile_number
+    validation:
+      type: str
+      required: false
+  - field: account_number
+    validation:
+      type: str
+      required: false
 
 calculated_fields:
 - name: customer_since_date
   expression: 'NULL'
   output_type: datetime
-- name: date_of_birth
-  expression: 'NULL'
-  output_type: datetime
 - name: market_segment
   expression: cn.market_segment
-  output_type: str
-- name: account_number
-  expression: 'NULL'
-  output_type: str
-- name: mobile_number
-  expression: 'NULL'
   output_type: str
 - name: next_of_kin_name
   expression: 'NULL'
