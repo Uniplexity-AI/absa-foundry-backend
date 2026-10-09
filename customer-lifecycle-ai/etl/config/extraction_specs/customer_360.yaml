@@ -1,11 +1,11 @@
 version: '1.0'
 dataset_name: customer_360
 trusted_config: true
-description: 'Unified customer profile extraction from ABSA DW tables into customers_clean.
-  Covers every column read by customer_profile_service.py and CustomerDetail.vue so
-  that the profile / detail pages render without blank tiles.
+description: >
+  Unified customer profile extraction from ABSA DW tables into customers_clean.
+  Covers every column read by customer_profile_service.py and CustomerDetail.vue
+  so that the profile / detail pages render without blank tiles.
 
-  '
 versioning:
   engine:
     version: '2.1'
@@ -15,8 +15,10 @@ versioning:
     version: 2
   compatibility:
     minimum_engine: '1.0'
+
 incremental:
   enabled: false
+
 primary_entity:
   table: a_africa_zam_base_customers_daily_zm
   alias: c
@@ -46,6 +48,20 @@ primary_entity:
     validation:
       type: str
       required: false
+
+# Pre-aggregate MIN(date_opened) grouped by customer_number in a single pass.
+# This avoids a correlated subquery (which would run once per customer row).
+pre_aggregations:
+- name: acct_dates
+  from_table: a_africa_zam_base_customer_accounts_daily_zm
+  alias: acct_dates
+  group_by:
+  - acct_dates.customer_number
+  aggregations:
+  - function: MIN
+    field: date_opened
+    alias: customer_since_date
+
 joins:
 - table: a_africa_zam_base_customers_daily_zm
   alias: cn
@@ -147,25 +163,28 @@ joins:
     validation:
       type: str
       required: false
-- table: a_africa_zam_base_customer_accounts_daily_zm
-  alias: ca
+# Join the pre-aggregated customer_since_date CTE
+- table: acct_dates
+  alias: acct_dates
   join_type: left
   'on':
   - left: c.customer_number
-    right: ca.customer_number
-  select_fields: []
+    right: acct_dates.customer_number
+  select_fields:
+  - field: customer_since_date
+    validation:
+      type: datetime
+      required: false
+
 calculated_fields:
-- name: customer_since_date
-  expression: "(SELECT MIN(acc.date_opened) FROM A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL acc INNER JOIN a_africa_zam_base_customer_accounts_daily_zm ca_sq ON acc.account_number = ca_sq.account_number AND acc.branch_number = ca_sq.branch_number WHERE ca_sq.customer_number = c.customer_number)"
-  output_type: datetime
 - name: date_of_birth
-  expression: '''NULL'''
+  expression: 'NULL'
   output_type: datetime
 - name: market_segment
   expression: cn.market_segment
   output_type: str
 - name: account_number
-  expression: ca.account_number
+  expression: 'NULL'
   output_type: str
 - name: mobile_number
   expression: 'NULL'
@@ -180,8 +199,9 @@ calculated_fields:
   expression: 'NULL'
   output_type: str
 - name: is_deleted
-  expression: '''NULL'''
+  expression: 'NULL'
   output_type: bool
+
 transform:
   type_casts:
     customer_since_date: datetime
@@ -204,10 +224,12 @@ transform:
       C: CLOSED
       Closed: CLOSED
     default_value: ACTIVE
+
 validation:
   enabled: false
   mandatory_fields:
   - customer_id
+
 target:
   clean_table: customers_clean
   rejected_table: customers_rejected
@@ -233,8 +255,8 @@ target:
   meta_columns:
   - loaded_at
   - batch_id
+
 streaming:
   enabled: false
   batch_size: 10000
   fetch_strategy: cursor
-
