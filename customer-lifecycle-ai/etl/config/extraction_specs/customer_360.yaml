@@ -53,6 +53,18 @@ primary_entity:
       type: str
       required: false
 
+# Pre-aggregate to pick a single account per customer to avoid row multiplication
+pre_aggregations:
+- name: primary_account
+  from_table: a_africa_zam_base_customer_accounts_daily_zm
+  alias: primary_account
+  group_by:
+  - primary_account.customer_number
+  aggregations:
+  - function: MAX
+    field: primary_account.account_number
+    alias: account_number
+
 joins:
 - table: a_africa_zam_base_customers_daily_zm
   alias: cn
@@ -169,13 +181,12 @@ joins:
     validation:
       type: str
       required: false
-
-- table: a_africa_zam_base_customer_accounts_daily_zm
-  alias: ca
+- table: primary_account
+  alias: primary_account
   join_type: left
   'on':
   - left: c.customer_number
-    right: ca.customer_number
+    right: primary_account.customer_number
   select_fields:
   - field: account_number
     validation:
