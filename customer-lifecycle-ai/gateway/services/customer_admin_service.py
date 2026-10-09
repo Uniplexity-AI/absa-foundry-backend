@@ -160,17 +160,70 @@ def delete_customers(
     reason_text = (reason or DEFAULT_REASON).strip()[:255]
 
     with engine.begin() as conn:
-        # 1. Purge all related records across state, feature store and child tables
+        # 1. Purge all related records across state, feature store and child tables.
+        # Each table is wrapped in its own SAVEPOINT so that a missing table or
+        # constraint violation is isolated and does NOT roll back the outer transaction.
         for table in CUSTOMER_RELATED_TABLES:
             try:
+                conn.execute(text("SAVEPOINT sp_purge"))
                 conn.execute(
                     text(f"DELETE FROM public.{table} WHERE customer_id = ANY(:ids)"),
                     {"ids": ids},
                 )
+                conn.execute(text("RELEASE SAVEPOINT sp_purge"))
             except Exception as e:
-                logger.warning("Could not purge rows from %s for customers: %s", table, e)
+                logger.warning("Could not purge rows from %s (skipping): %s", table, e)
+                try:
+                    conn.execute(text("ROLLBACK TO SAVEPOINT sp_purge"))
+                    conn.execute(text("RELEASE SAVEPOINT sp_purge"))
+                except Exception:
+                    pass
 
-        # 2. Permanently delete from primary customers_clean table
+        # 2. Dynamically discover any remaining FK-referencing tables not in the
+        # static list above, and purge them too. This handles schema differences
+        # between the dev machine and the ABSA production machine.
+        try:
+            fk_tables = conn.execute(
+                text(
+                    """
+                    SELECT DISTINCT kcu.table_name
+                      FROM information_schema.referential_constraints rc
+                      JOIN information_schema.key_column_usage kcu
+                        ON kcu.constraint_name = rc.constraint_name
+                       AND kcu.constraint_schema = rc.constraint_schema
+                      JOIN information_schema.key_column_usage ccu
+                        ON ccu.constraint_name = rc.unique_constraint_name
+                       AND ccu.constraint_schema = rc.unique_constraint_schema
+                     WHERE ccu.table_name = 'customers_clean'
+                       AND ccu.column_name = 'customer_id'
+                       AND kcu.table_schema = 'public'
+                       AND kcu.table_name != 'customers_clean'
+                    """
+                )
+            ).scalars().all()
+
+            known = set(CUSTOMER_RELATED_TABLES)
+            for extra_table in fk_tables:
+                if extra_table not in known:
+                    try:
+                        conn.execute(text("SAVEPOINT sp_fk"))
+                        conn.execute(
+                            text(f"DELETE FROM public.{extra_table} WHERE customer_id = ANY(:ids)"),
+                            {"ids": ids},
+                        )
+                        conn.execute(text("RELEASE SAVEPOINT sp_fk"))
+                        logger.info("Auto-purged FK table %s", extra_table)
+                    except Exception as fk_exc:
+                        logger.warning("Could not auto-purge FK table %s: %s", extra_table, fk_exc)
+                        try:
+                            conn.execute(text("ROLLBACK TO SAVEPOINT sp_fk"))
+                            conn.execute(text("RELEASE SAVEPOINT sp_fk"))
+                        except Exception:
+                            pass
+        except Exception as disc_exc:
+            logger.warning("FK discovery failed (skipping auto-purge): %s", disc_exc)
+
+        # 3. Permanently delete from primary customers_clean table
         rows = conn.execute(
             text(
                 """
@@ -284,12 +337,16 @@ def _already_deleted(engine: Engine, candidate_ids: Sequence[str]) -> list[str]:
 def deleted_customer_count(engine: Engine | None = None) -> int:
     """How many customers are currently soft-deleted (for the UI restore affordance)."""
     engine = engine or get_sync_target_engine()
-    with engine.connect() as conn:
-        return int(
-            conn.execute(
-                text("SELECT count(*) FROM public.customers_clean WHERE is_deleted")
-            ).scalar_one()
-        )
+    try:
+        with engine.connect() as conn:
+            return int(
+                conn.execute(
+                    text("SELECT count(*) FROM public.customers_clean WHERE is_deleted")
+                ).scalar_one()
+            )
+    except Exception as exc:
+        logger.warning("Could not count deleted customers (is_deleted column may not exist): %s", exc)
+        return 0
 
 
 def list_deleted_customers(limit: int = 100, engine: Engine | None = None) -> list[dict[str, Any]]:
