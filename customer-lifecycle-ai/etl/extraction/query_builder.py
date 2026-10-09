@@ -321,27 +321,33 @@ class DynamicQueryBuilder:
     # ------------------------------------------------------------------
 
     def _build_pre_aggregation_cte(self, pa: PreAggregationSpec):
-        """Build a CTE that pre-aggregates a side table to prevent row multiplication.
-
-        Generates:
-            WITH {name} AS (
-                SELECT {group_by_cols}, {agg_exprs}
-                FROM {from_table}
-                WHERE {filters}
-                GROUP BY {group_by_cols}
-            )
-        """
+        """Build a CTE that pre-aggregates a side table to prevent row multiplication."""
         # Resolve source table
         src_table = self._resolve_table(pa.from_table, pa.alias)
+        pa_alias_map = {pa.alias: src_table}
+
+        # Process inner joins if they exist
+        joined = src_table
+        if hasattr(pa, "joins") and pa.joins:
+            for join_spec in pa.joins:
+                sec_table = self._resolve_table(join_spec.table, join_spec.alias)
+                pa_alias_map[join_spec.alias] = sec_table
+
+                on_clause = self._build_on_clause(join_spec, pa_alias_map)
+                if join_spec.join_type == JoinType.RIGHT:
+                    joined = sec_table.join(joined, onclause=on_clause, isouter=True)
+                else:
+                    is_outer, is_full = self._JOIN_METHODS[join_spec.join_type]
+                    joined = joined.join(sec_table, onclause=on_clause, isouter=is_outer, full=is_full)
 
         # Build GROUP BY columns
         group_cols = []
         group_cols_labeled = []
         for gb in pa.group_by:
             parts = gb.split(".")
-            if len(parts) == 2 and parts[0] == pa.alias:
+            if len(parts) == 2 and parts[0] in pa_alias_map:
                 col_name = parts[1]
-                raw_col = src_table.c[col_name]
+                raw_col = pa_alias_map[parts[0]].c[col_name]
                 group_cols.append(raw_col)
                 # Label the column so cte.c[col_name] works after .cte()
                 group_cols_labeled.append(raw_col.label(col_name))
@@ -354,15 +360,17 @@ class DynamicQueryBuilder:
         agg_exprs = []
         for agg in pa.aggregations:
             parts = agg.field.split(".")
-            if len(parts) == 2 and parts[0] == pa.alias:
-                agg_col = src_table.c[parts[1]]
+            if len(parts) == 2 and parts[0] in pa_alias_map:
+                agg_col = pa_alias_map[parts[0]].c[parts[1]]
             else:
                 agg_col = text(agg.field)
             agg_expr = self._build_aggregation(agg.function, agg_col, agg.distinct)
             agg_exprs.append(agg_expr.label(agg.alias))
 
         # Build CTE select — use labeled columns so cte.c[name] works on the result
-        cte_select = select(*group_cols_labeled, *agg_exprs)
+        cte_select = select(*group_cols_labeled, *agg_exprs).select_from(
+            joined._selectable if hasattr(joined, '_selectable') else joined
+        )
 
         # Apply filters within CTE
         pa_alias_map = {pa.alias: src_table}

@@ -295,6 +295,10 @@ class PreAggregationSpec(BaseModel):
         validation_alias=AliasChoices("from_table", "table"),
     )
     alias: str = Field(default="", description="SQL alias for columns, e.g. 'txn'")
+    joins: list[JoinSpec] = Field(
+        default_factory=list,
+        description="Optional joins to apply inside the CTE before aggregation",
+    )
     aggregations: list[AggregationSpec] = Field(
         default_factory=list,
         description="Aggregations to compute in this CTE",

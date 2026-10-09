@@ -55,11 +55,21 @@ pre_aggregations:
 - name: acct_dates
   from_table: a_africa_zam_base_customer_accounts_daily_zm
   alias: acct_dates
+  joins:
+  - table: A_BRAINS_TRANS_ZAM_BASE_Daily_accounts_ALL
+    alias: acc
+    join_type: inner
+    'on':
+    - left: acct_dates.account_number
+      right: acc.account_number
+    - left: acct_dates.branch_number
+      right: acc.branch_number
+    select_fields: []
   group_by:
   - acct_dates.customer_number
   aggregations:
   - function: MIN
-    field: date_opened
+    field: acc.date_opened
     alias: customer_since_date
 
 joins:
